@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <utility>
 #include <variant>
 #include <optional>
@@ -1525,7 +1525,7 @@ FProperty* MakeProperty(
         static_assert(TAlwaysFalse<T>, "Not all property types are handled in MakeProperty function. Please add missing property type handling.");
     }
 
-    std::unreachable(); // 이론상 도달할 수 없는 코드, (static_assert 지우면 호출됨)
+    assert(false); // 이론상 도달할 수 없는 코드, (static_assert 지우면 호출됨)
 }
 
 template <typename T, EPropertyFlags InFlags>

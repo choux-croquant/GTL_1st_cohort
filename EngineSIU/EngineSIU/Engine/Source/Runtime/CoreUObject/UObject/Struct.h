@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "UObject/Object.h"
 
 struct FProperty;
@@ -128,5 +128,5 @@ requires
         static_assert(TAlwaysFalse<T>, "T is neither UClass nor UScriptStruct");
     }
 
-    std::unreachable();
+    assert(false);
 }

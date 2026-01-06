@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <concepts>
 #include "Container/Array.h"
 #include "Container/Map.h"
@@ -6,10 +6,45 @@
 #include "Math/Transform.h"
 #include "Template/IsTSubclassOf.h"
 #include "Templates/IsArray.h"
+#include <type_traits>
 
 #include "magic_enum/magic_enum.hpp"
 #include "Templates/TemplateUtilities.h"
 
+namespace Detail
+{
+#if defined(__cpp_lib_is_scoped_enum) && __cpp_lib_is_scoped_enum >= 202011L
+
+    template <typename T>
+    using TIsScopedEnum = std::is_scoped_enum<T>;
+
+    template <typename T>
+    inline constexpr bool TIsScopedEnum_V = std::is_scoped_enum_v<T>;
+
+#else
+
+    template <typename T, bool = std::is_enum_v<T>>
+    struct TIsScopedEnumImpl : std::false_type {};
+
+    template <typename T>
+    struct TIsScopedEnumImpl<T, true>
+    {
+    private:
+        using U = std::underlying_type_t<T>;
+    public:
+        // 스코프 enum이면 enum <-> underlying_type 간 암시적 변환이 안 되는 특성을 이용
+        static constexpr bool value =
+            !std::is_convertible_v<T, U> || !std::is_convertible_v<U, T>;
+    };
+
+    template <typename T>
+    struct TIsScopedEnum : std::bool_constant<TIsScopedEnumImpl<T>::value> {};
+
+    template <typename T>
+    inline constexpr bool TIsScopedEnum_V = TIsScopedEnum<T>::value;
+
+#endif
+} // namespace Detail
 
 struct FDistributionVector;
 struct FDistributionFloat;
@@ -129,7 +164,7 @@ consteval EPropertyType GetPropertyType()
     else if constexpr (TIsTSet<T>)                  { return EPropertyType::Set;    }
 
     // enum class만 지원
-    else if constexpr (std::is_scoped_enum_v<T>)    { return EPropertyType::Enum;   }
+    else if constexpr (Detail::TIsScopedEnum_V<T>)    { return EPropertyType::Enum;   }
 
     // 커스텀 구조체
     else if constexpr (std::is_class_v<T> && !std::derived_from<T, UObject>)

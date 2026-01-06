@@ -1657,6 +1657,7 @@
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\BehellaScreenUI.cpp">
       <Filter>Engine\Source\Runtime\Engine\Classes\Actors</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Engine\TimerManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="EngineSIU.natvis" />
@@ -1822,6 +1823,7 @@
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\BehellaScreenUI.h">
       <Filter>Engine\Source\Runtime\Engine\Classes\Actors</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Engine\TimerManager.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\CompositingShader.hlsl" />
