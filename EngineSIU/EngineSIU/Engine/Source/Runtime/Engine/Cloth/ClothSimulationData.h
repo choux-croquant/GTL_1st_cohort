@@ -1,0 +1,236 @@
+#pragma once
+
+#include "Container/Array.h"
+#include "Math/Vector.h"
+#include "Math/Matrix.h"
+#include "Math/Transform.h"
+#include "Math/Quat.h"
+#include "HAL/PlatformType.h"
+#include "CoreUObject/UObject/NameTypes.h"
+
+/**
+ * Cloth Simulation Data Structures
+ * These structures define the runtime simulation state and configuration parameters
+ */
+
+/**
+ * Global simulation configuration parameters
+ */
+struct FClothConfig
+{
+    // Global simulation settings
+    float Mass = 1.0f;
+    float Damping = 0.05f;
+    float Friction = 0.1f;
+
+    // Constraint stiffness (0-1)
+    float StretchStiffness = 0.9f;
+    float BendStiffness = 0.1f;
+    float AttachStiffness = 1.0f;
+
+    // Solver settings
+    int32 NumIterations = 5;
+    float TimeStep = 0.016f; // Fixed 60fps or variable
+    bool bUseXPBD = false;   // Use XPBD instead of PBD
+
+    // Wind and drag
+    float AirDrag = 0.01f;
+    float WindStrength = 1.0f;
+
+    // Collision
+    float CollisionThickness = 0.01f;
+    bool bEnableSelfCollision = false;
+};
+
+/**
+ * Generic constraint structure for distance and bend constraints
+ */
+struct FClothConstraint
+{
+    uint32 ParticleA;
+    uint32 ParticleB;
+    float RestLength; // For distance constraints
+    float Stiffness;  // Per-constraint stiffness
+
+    FClothConstraint()
+        : ParticleA(0), ParticleB(0), RestLength(0.0f), Stiffness(1.0f)
+    {
+    }
+
+    FClothConstraint(uint32 InA, uint32 InB, float InRestLength, float InStiffness = 1.0f)
+        : ParticleA(InA), ParticleB(InB), RestLength(InRestLength), Stiffness(InStiffness)
+    {
+    }
+};
+
+/**
+ * Per-vertex authoring parameters for painted vertex data
+ */
+struct FClothVertexPaintData
+{
+    float MaxDistance = 1.0f;      // How far vertex can move from rest
+    float BackstopDistance = 0.0f; // Collision backstop
+    float BackstopRadius = 0.0f;
+    float Stiffness = 1.0f; // Per-vertex stiffness multiplier
+    bool bFixed = false;    // Is vertex pinned?
+
+    FClothVertexPaintData()
+        : MaxDistance(1.0f), BackstopDistance(0.0f), BackstopRadius(0.0f), Stiffness(1.0f), bFixed(false)
+    {
+    }
+};
+
+/**
+ * Runtime simulation state data
+ */
+struct FClothSimulationData
+{
+    uint32 NumParticles = 0;
+    uint32 NumConstraints = 0;
+
+    // CPU-side copies (for debugging and readback)
+    TArray<FVector> CurrentPositions;
+    TArray<FVector> CurrentVelocities;
+
+    // External forces
+    FVector Gravity = FVector(0.0f, 0.0f, -980.0f); // cm/s^2
+    FVector Wind = FVector(0.0f, 0.0f, 0.0f);
+    FVector ExternalForce = FVector(0.0f, 0.0f, 0.0f);
+
+    // Timing
+    float CurrentTime = 0.0f;
+    float AccumulatedTime = 0.0f;
+
+    FClothSimulationData()
+        : NumParticles(0), NumConstraints(0), Gravity(0.0f, 0.0f, -980.0f), Wind(0.0f, 0.0f, 0.0f), ExternalForce(0.0f, 0.0f, 0.0f), CurrentTime(0.0f), AccumulatedTime(0.0f)
+    {
+    }
+};
+
+/**
+ * LOD-specific mesh data for rendering and simulation
+ */
+struct FClothLODData
+{
+    // Simulation mesh (coarse)
+    TArray<FVector> SimPositions;
+    TArray<uint32> SimIndices;
+
+    // Render mesh (fine detail)
+    TArray<FVector> RenderPositions;
+    TArray<FVector> RenderNormals;
+    TArray<FVector2D> RenderUVs;
+    TArray<uint32> RenderIndices;
+
+    float ScreenSize = 1.0f; // LOD switch distance
+
+    FClothLODData()
+        : ScreenSize(1.0f)
+    {
+    }
+};
+
+/**
+ * Attachment data for connecting cloth to skeletal meshes or static objects
+ */
+struct FClothAttachmentData
+{
+    uint32 ClothVertexIndex;
+
+    // For skeletal mesh attachment
+    FName BoneName;
+    int32 BoneIndex;
+    FTransform LocalOffset;
+
+    // For static attachment
+    FVector WorldPosition;
+
+    // Constraint properties
+    float Stiffness = 1.0f;
+    bool bIsKinematic = true;
+
+    FClothAttachmentData()
+        : ClothVertexIndex(0), BoneName(FName()), BoneIndex(-1), LocalOffset(FTransform::Identity), WorldPosition(FVector::ZeroVector), Stiffness(1.0f), bIsKinematic(true)
+    {
+    }
+};
+
+/**
+ * Collision primitive structures for cloth collision
+ */
+struct FClothCollisionSphere
+{
+    FVector Center;
+    float Radius;
+
+    FClothCollisionSphere()
+        : Center(FVector::ZeroVector), Radius(1.0f)
+    {
+    }
+
+    FClothCollisionSphere(const FVector &InCenter, float InRadius)
+        : Center(InCenter), Radius(InRadius)
+    {
+    }
+};
+
+struct FClothCollisionCapsule
+{
+    FVector Start;
+    FVector End;
+    float Radius;
+
+    FClothCollisionCapsule()
+        : Start(FVector::ZeroVector), End(FVector::ZeroVector), Radius(1.0f)
+    {
+    }
+
+    FClothCollisionCapsule(const FVector &InStart, const FVector &InEnd, float InRadius)
+        : Start(InStart), End(InEnd), Radius(InRadius)
+    {
+    }
+};
+
+struct FClothCollisionBox
+{
+    FVector Center;
+    FVector Extent;
+    FQuat Rotation;
+
+    FClothCollisionBox()
+        : Center(FVector::ZeroVector), Extent(FVector::OneVector), Rotation(FQuat::Identity)
+    {
+    }
+
+    FClothCollisionBox(const FVector &InCenter, const FVector &InExtent, const FQuat &InRotation)
+        : Center(InCenter), Extent(InExtent), Rotation(InRotation)
+    {
+    }
+};
+
+/**
+ * Combined collision primitive type
+ */
+enum class EClothCollisionPrimitiveType : uint8
+{
+    Sphere,
+    Capsule,
+    Box
+};
+
+struct FClothCollisionPrimitive
+{
+    EClothCollisionPrimitiveType Type;
+
+    union
+    {
+        FClothCollisionSphere Sphere;
+        FClothCollisionCapsule Capsule;
+        FClothCollisionBox Box;
+    };
+
+    FClothCollisionPrimitive()
+        : Type(EClothCollisionPrimitiveType::Sphere), Sphere()
+    {
+    }
+};

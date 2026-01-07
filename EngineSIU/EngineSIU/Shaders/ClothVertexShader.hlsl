@@ -1,0 +1,67 @@
+/**
+ * Cloth Vertex Shader
+ * Reads dynamic positions from GPU simulation buffer
+ */
+
+#include "ShaderRegisters.hlsl"
+
+// Cloth dynamic position and normal buffers from simulation
+StructuredBuffer<float4> ClothPositionBuffer : register(t9);  // xyz = position, w = invMass
+StructuredBuffer<float3> ClothNormalBuffer : register(t10);
+
+// Cloth mesh constant buffer
+cbuffer ClothMeshConstants : register(b14)
+{
+    row_major matrix ClothWorldMatrix;
+    uint ClothNumVertices;
+    uint3 ClothPadding;
+};
+
+struct VS_INPUT_Cloth
+{
+    uint VertexID : SV_VertexID;
+    float2 UV : TEXCOORD;
+};
+
+PS_INPUT_CommonMesh mainVS(VS_INPUT_Cloth Input)
+{
+    PS_INPUT_CommonMesh Output;
+    
+    // Read dynamic position from simulation buffer
+    float4 particleData = ClothPositionBuffer[Input.VertexID];
+    float3 position = particleData.xyz;
+    
+    // Read dynamic normal from simulation buffer
+    float3 normal = ClothNormalBuffer[Input.VertexID];
+    
+    // Transform to world space
+    float4 worldPos = mul(float4(position, 1.0), ClothWorldMatrix);
+    Output.WorldPosition = worldPos.xyz;
+    
+    // Transform to clip space
+    Output.Position = mul(worldPos, ViewMatrix);
+    Output.Position = mul(Output.Position, ProjectionMatrix);
+    
+    // Transform normal to world space
+    Output.WorldNormal = normalize(mul(normal, (float3x3)ClothWorldMatrix));
+    
+    // Calculate tangent (simplified - using normal cross up vector)
+    float3 worldTangent;
+    if (abs(Output.WorldNormal.y) < 0.999)
+    {
+        worldTangent = normalize(cross(float3(0, 1, 0), Output.WorldNormal));
+    }
+    else
+    {
+        worldTangent = normalize(cross(float3(1, 0, 0), Output.WorldNormal));
+    }
+    Output.WorldTangent = float4(worldTangent, 1.0);
+    
+    // Pass through UV coordinates
+    Output.UV = Input.UV;
+    
+    // Default color (can be overridden by pixel shader)
+    Output.Color = float4(1, 1, 1, 1);
+    
+    return Output;
+}

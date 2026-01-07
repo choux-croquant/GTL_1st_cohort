@@ -16,6 +16,7 @@
 #include "EditorRenderPass.h"
 #include "DepthPrePass.h"
 #include "TileLightCullingPass.h"
+#include "ClothRenderPass.h"
 #include "TranslucentRenderPass.h"
 
 #include "CompositingPass.h"
@@ -35,7 +36,7 @@
 //------------------------------------------------------------------------------
 // 초기화 및 해제 관련 함수
 //------------------------------------------------------------------------------
-void FRenderer::Initialize(FGraphicsDevice* InGraphics, FDXDBufferManager* InBufferManager, FGPUTimingManager* InGPUTimingManager)
+void FRenderer::Initialize(FGraphicsDevice *InGraphics, FDXDBufferManager *InBufferManager, FGPUTimingManager *InGPUTimingManager)
 {
     Graphics = InGraphics;
     BufferManager = InBufferManager;
@@ -47,7 +48,7 @@ void FRenderer::Initialize(FGraphicsDevice* InGraphics, FDXDBufferManager* InBuf
 
     CreateConstantBuffers();
     CreateCommonShader();
-    
+
     OpaqueRenderPass = AddRenderPass<FOpaqueRenderPass>();
     WorldBillboardRenderPass = AddRenderPass<FWorldBillboardRenderPass>();
     EditorBillboardRenderPass = AddRenderPass<FEditorBillboardRenderPass>();
@@ -59,19 +60,20 @@ void FRenderer::Initialize(FGraphicsDevice* InGraphics, FDXDBufferManager* InBuf
 
     ParticleSpriteRenderPass = AddRenderPass<FParticleSpriteRenderPass>();
     ParticleMeshRenderPass = AddRenderPass<FParticleMeshRenderPass>();
-    
+
     DepthPrePass = AddRenderPass<FDepthPrePass>();
     TileLightCullingPass = AddRenderPass<FTileLightCullingPass>();
+    ClothRenderPass = AddRenderPass<FClothRenderPass>();
 
     PostProcessRenderPass = AddRenderPass<FPostProcessRenderPass>();
-    
+
     CompositingPass = AddRenderPass<FCompositingPass>();
     SlateRenderPass = AddRenderPass<FSlateRenderPass>();
 
     const bool bShadowManagerInitialized = ShadowManager->Initialize(Graphics, BufferManager);
     assert(bShadowManagerInitialized);
 
-    for (IRenderPass* RenderPass : RenderPasses)
+    for (IRenderPass *RenderPass : RenderPasses)
     {
         RenderPass->Initialize(BufferManager, Graphics, ShaderManager);
     }
@@ -83,7 +85,7 @@ void FRenderer::Release()
     delete ShaderManager;
     delete ShadowManager;
 
-    for (const IRenderPass* RenderPass : RenderPasses)
+    for (const IRenderPass *RenderPass : RenderPasses)
     {
         delete RenderPass;
     }
@@ -123,7 +125,7 @@ void FRenderer::CreateConstantBuffers()
 
     UINT TextureBufferSize = sizeof(FTextureUVConstants);
     BufferManager->CreateBufferGeneric<FTextureUVConstants>("FTextureConstants", nullptr, TextureBufferSize, D3D11_BIND_CONSTANT_BUFFER, D3D11_USAGE_DYNAMIC, D3D11_CPU_ACCESS_WRITE);
-    
+
     UINT LitUnlitBufferSize = sizeof(FLitUnlitConstants);
     BufferManager->CreateBufferGeneric<FLitUnlitConstants>("FLitUnlitConstants", nullptr, LitUnlitBufferSize, D3D11_BIND_CONSTANT_BUFFER, D3D11_USAGE_DYNAMIC, D3D11_CPU_ACCESS_WRITE);
 
@@ -146,10 +148,10 @@ void FRenderer::CreateConstantBuffers()
     BufferManager->CreateStructuredBufferGeneric<FMeshParticleInstanceVertex>("ParticleMeshInstanceBuffer", nullptr, MaxParticleInstanceNum, D3D11_USAGE_DYNAMIC, D3D11_CPU_ACCESS_WRITE);
 
     BufferManager->CreateBufferGeneric<FViewportSize>("FViewportSize", nullptr, sizeof(FViewportSize), D3D11_BIND_CONSTANT_BUFFER, D3D11_USAGE_DYNAMIC, D3D11_CPU_ACCESS_WRITE);
-    
+
     // TODO: 함수로 분리
-    ID3D11Buffer* ObjectBuffer = BufferManager->GetConstantBuffer(TEXT("FObjectConstantBuffer"));
-    ID3D11Buffer* CameraConstantBuffer = BufferManager->GetConstantBuffer(TEXT("FCameraConstantBuffer"));
+    ID3D11Buffer *ObjectBuffer = BufferManager->GetConstantBuffer(TEXT("FObjectConstantBuffer"));
+    ID3D11Buffer *CameraConstantBuffer = BufferManager->GetConstantBuffer(TEXT("FCameraConstantBuffer"));
     Graphics->DeviceContext->VSSetConstantBuffers(12, 1, &ObjectBuffer);
     Graphics->DeviceContext->VSSetConstantBuffers(13, 1, &CameraConstantBuffer);
     Graphics->DeviceContext->PSSetConstantBuffers(12, 1, &ObjectBuffer);
@@ -193,19 +195,18 @@ void FRenderer::CreateCommonShader() const
     {
         return;
     }
-    
+
 #pragma region UberShader
     D3D_SHADER_MACRO DefinesGouraud[] =
-    {
-        { GOURAUD, "1" },
-        { nullptr, nullptr }
-    };
+        {
+            {GOURAUD, "1"},
+            {nullptr, nullptr}};
     hr = ShaderManager->AddVertexShaderAndInputLayout(L"GOURAUD_StaticMeshVertexShader", L"Shaders/StaticMeshVertexShader.hlsl", "mainVS", StaticMeshLayoutDesc, ARRAYSIZE(StaticMeshLayoutDesc), DefinesGouraud);
     if (FAILED(hr))
     {
         return;
     }
-    
+
     hr = ShaderManager->AddVertexShaderAndInputLayout(L"GOURAUD_SkeletalMeshVertexShader", L"Shaders/SkeletalMeshVertexShader.hlsl", "mainVS", SkeletalMeshLayoutDesc, ARRAYSIZE(SkeletalMeshLayoutDesc), DefinesGouraud);
     if (FAILED(hr))
     {
@@ -220,7 +221,7 @@ void FRenderer::CreateCommonShader() const
     }
 }
 
-void FRenderer::PrepareRender(FViewportResource* ViewportResource) const
+void FRenderer::PrepareRender(FViewportResource *ViewportResource) const
 {
     // Setup Viewport
     Graphics->DeviceContext->RSSetViewports(1, &ViewportResource->GetD3DViewport());
@@ -240,7 +241,7 @@ void FRenderer::PrepareRender(FViewportResource* ViewportResource) const
 
 void FRenderer::PrepareRenderPass() const
 {
-    for (IRenderPass* RenderPass : RenderPasses)
+    for (IRenderPass *RenderPass : RenderPasses)
     {
         RenderPass->PrepareRenderArr();
     }
@@ -248,13 +249,13 @@ void FRenderer::PrepareRenderPass() const
 
 void FRenderer::ClearRenderArr() const
 {
-    for (IRenderPass* RenderPass : RenderPasses)
+    for (IRenderPass *RenderPass : RenderPasses)
     {
         RenderPass->ClearRenderArr();
     }
 }
 
-void FRenderer::UpdateCommonBuffer(const std::shared_ptr<FEditorViewportClient>& Viewport) const
+void FRenderer::UpdateCommonBuffer(const std::shared_ptr<FEditorViewportClient> &Viewport) const
 {
     FCameraConstantBuffer CameraConstantBuffer;
     CameraConstantBuffer.ViewMatrix = Viewport->GetViewMatrix();
@@ -267,26 +268,26 @@ void FRenderer::UpdateCommonBuffer(const std::shared_ptr<FEditorViewportClient>&
     BufferManager->UpdateConstantBuffer("FCameraConstantBuffer", CameraConstantBuffer);
 }
 
-void FRenderer::BeginRender(const std::shared_ptr<FEditorViewportClient>& Viewport) const
+void FRenderer::BeginRender(const std::shared_ptr<FEditorViewportClient> &Viewport) const
 {
-    FViewportResource* ViewportResource = Viewport->GetViewportResource();
+    FViewportResource *ViewportResource = Viewport->GetViewportResource();
     if (!ViewportResource)
     {
         return;
     }
 
     UpdateCommonBuffer(Viewport);
-    
+
     PrepareRender(ViewportResource);
 }
 
-void FRenderer::Render(const std::shared_ptr<FEditorViewportClient>& Viewport)
+void FRenderer::Render(const std::shared_ptr<FEditorViewportClient> &Viewport)
 {
     if (!GPUTimingManager || !GPUTimingManager->IsInitialized())
     {
         return;
     }
-    
+
     /**
      * 각 렌더 패스의 시작과 끝은 필요한 리소스를 바인딩하고 해제하는 것까지입니다.
      * 다음에 작동할 렌더 패스에서는 이전에 사용했던 리소스들을 충돌 없이 바인딩 할 수 있어야 한다는 의미입니다.
@@ -300,7 +301,7 @@ void FRenderer::Render(const std::shared_ptr<FEditorViewportClient>& Viewport)
      *   2. 렌더 타겟의 생명주기와 용도가 명확함
      *   3. RTV -> SRV 전환 타이밍이 정확히 지켜짐
      */
-    
+
     const uint64 ShowFlag = Viewport->GetShowFlag();
     const EViewModeIndex ViewMode = Viewport->GetViewMode();
 
@@ -308,7 +309,7 @@ void FRenderer::Render(const std::shared_ptr<FEditorViewportClient>& Viewport)
     QUICK_GPU_SCOPE_CYCLE_COUNTER(Renderer_Render_GPU, *GPUTimingManager)
 
     BeginRender(Viewport);
-    
+
     RenderPreScene(Viewport);
     RenderOpaque(Viewport);
     RenderEditorDepthElement(Viewport);
@@ -321,7 +322,7 @@ void FRenderer::Render(const std::shared_ptr<FEditorViewportClient>& Viewport)
     EndRender();
 }
 
-void FRenderer::RenderPreScene(const std::shared_ptr<FEditorViewportClient>& Viewport) const
+void FRenderer::RenderPreScene(const std::shared_ptr<FEditorViewportClient> &Viewport) const
 {
     const uint64 ShowFlag = Viewport->GetShowFlag();
     if (ShowFlag & (EEngineShowFlags::SF_Primitives | EEngineShowFlags::SF_SkeletalMesh))
@@ -348,8 +349,7 @@ void FRenderer::RenderPreScene(const std::shared_ptr<FEditorViewportClient>& Vie
                 TileLightCullingPass->GetPointLights(),
                 TileLightCullingPass->GetSpotLights(),
                 TileLightCullingPass->GetPerTilePointLightIndexMaskBufferSRV(),
-                TileLightCullingPass->GetPerTileSpotLightIndexMaskBufferSRV()
-            );
+                TileLightCullingPass->GetPerTileSpotLightIndexMaskBufferSRV());
 
             {
                 QUICK_SCOPE_CYCLE_COUNTER(UpdateLightBufferPass_CPU)
@@ -371,10 +371,10 @@ void FRenderer::RenderPreScene(const std::shared_ptr<FEditorViewportClient>& Vie
     }
 }
 
-void FRenderer::RenderOpaque(const std::shared_ptr<FEditorViewportClient>& Viewport) const
+void FRenderer::RenderOpaque(const std::shared_ptr<FEditorViewportClient> &Viewport) const
 {
     const uint64 ShowFlag = Viewport->GetShowFlag();
-    
+
     if (ShowFlag & (EEngineShowFlags::SF_Primitives | EEngineShowFlags::SF_SkeletalMesh))
     {
         {
@@ -382,8 +382,16 @@ void FRenderer::RenderOpaque(const std::shared_ptr<FEditorViewportClient>& Viewp
             QUICK_GPU_SCOPE_CYCLE_COUNTER(OpaquePass_GPU, *GPUTimingManager)
             OpaqueRenderPass->Render(Viewport);
         }
+
+        // Render cloth simulation meshes
+        if (ClothRenderPass)
+        {
+            QUICK_SCOPE_CYCLE_COUNTER(ClothPass_CPU)
+            QUICK_GPU_SCOPE_CYCLE_COUNTER(ClothPass_GPU, *GPUTimingManager)
+            ClothRenderPass->Render(Viewport);
+        }
     }
-    
+
     if (ShowFlag & EEngineShowFlags::SF_Particles)
     {
         {
@@ -394,7 +402,7 @@ void FRenderer::RenderOpaque(const std::shared_ptr<FEditorViewportClient>& Viewp
     }
 }
 
-void FRenderer::RenderEditorDepthElement(const std::shared_ptr<FEditorViewportClient>& Viewport) const
+void FRenderer::RenderEditorDepthElement(const std::shared_ptr<FEditorViewportClient> &Viewport) const
 {
     if (GEngine->ActiveWorld->WorldType != EWorldType::PIE)
     {
@@ -411,10 +419,10 @@ void FRenderer::RenderEditorDepthElement(const std::shared_ptr<FEditorViewportCl
     }
 }
 
-void FRenderer::RenderTranslucent(const std::shared_ptr<FEditorViewportClient>& Viewport) const
+void FRenderer::RenderTranslucent(const std::shared_ptr<FEditorViewportClient> &Viewport) const
 {
     const uint64 ShowFlag = Viewport->GetShowFlag();
-    
+
     if (ShowFlag & (EEngineShowFlags::SF_Primitives | EEngineShowFlags::SF_SkeletalMesh))
     {
         {
@@ -432,7 +440,7 @@ void FRenderer::RenderTranslucent(const std::shared_ptr<FEditorViewportClient>& 
             ParticleSpriteRenderPass->Render(Viewport);
         }
     }
-    
+
     if (ShowFlag & EEngineShowFlags::SF_BillboardText)
     {
         {
@@ -451,7 +459,7 @@ void FRenderer::RenderTranslucent(const std::shared_ptr<FEditorViewportClient>& 
     }
 }
 
-void FRenderer::RenderEditorOverlay(const std::shared_ptr<FEditorViewportClient>& Viewport) const
+void FRenderer::RenderEditorOverlay(const std::shared_ptr<FEditorViewportClient> &Viewport) const
 {
     if (GEngine->ActiveWorld->WorldType != EWorldType::PIE)
     {
@@ -463,7 +471,7 @@ void FRenderer::RenderEditorOverlay(const std::shared_ptr<FEditorViewportClient>
     }
 }
 
-void FRenderer::RenderPostProcess(const std::shared_ptr<FEditorViewportClient>& Viewport) const
+void FRenderer::RenderPostProcess(const std::shared_ptr<FEditorViewportClient> &Viewport) const
 {
     const EViewModeIndex ViewMode = Viewport->GetViewMode();
 
@@ -473,7 +481,7 @@ void FRenderer::RenderPostProcess(const std::shared_ptr<FEditorViewportClient>& 
     }
 }
 
-void FRenderer::RenderFinalResult(const std::shared_ptr<FEditorViewportClient>& Viewport) const
+void FRenderer::RenderFinalResult(const std::shared_ptr<FEditorViewportClient> &Viewport) const
 {
     {
         // Compositing: 위에서 렌더한 결과들을 하나로 합쳐서 뷰포트의 최종 이미지를 만드는 작업
@@ -486,10 +494,10 @@ void FRenderer::RenderFinalResult(const std::shared_ptr<FEditorViewportClient>& 
 void FRenderer::EndRender() const
 {
     ClearRenderArr();
-    ShaderManager->ReloadAllShaders(); 
+    ShaderManager->ReloadAllShaders();
 }
 
-void FRenderer::RenderViewport(const std::shared_ptr<FEditorViewportClient>& Viewport) const
+void FRenderer::RenderViewport(const std::shared_ptr<FEditorViewportClient> &Viewport) const
 {
     QUICK_SCOPE_CYCLE_COUNTER(SlatePass_CPU)
     QUICK_GPU_SCOPE_CYCLE_COUNTER(SlatePass_GPU, *GPUTimingManager)

@@ -18,6 +18,7 @@ class AActor;
 class UObject;
 class USceneComponent;
 class FCollisionManager;
+class FClothWorld;
 class AGameMode;
 class UTextComponent;
 
@@ -29,10 +30,10 @@ public:
     UWorld() = default;
     virtual ~UWorld() override;
 
-    static UWorld* CreateWorld(UObject* InOuter, const EWorldType InWorldType, const FString& InWorldName = "DefaultWorld");
+    static UWorld *CreateWorld(UObject *InOuter, const EWorldType InWorldType, const FString &InWorldName = "DefaultWorld");
 
     void InitializeNewWorld();
-    virtual UObject* Duplicate(UObject* InOuter) override;
+    virtual UObject *Duplicate(UObject *InOuter) override;
 
     virtual void Tick(float DeltaTime);
     void BeginPlay();
@@ -44,86 +45,86 @@ public:
      * @param InClass Spawn할 Actor 정보
      * @return Spawn된 Actor
      */
-    AActor* SpawnActor(UClass* InClass, FName InActorName = NAME_None);
+    AActor *SpawnActor(UClass *InClass, FName InActorName = NAME_None);
 
-    /** 
+    /**
      * World에 Actor를 Spawn합니다.
      * @tparam T AActor를 상속받은 클래스
      * @return Spawn된 Actor의 포인터
      */
     template <typename T>
         requires std::derived_from<T, AActor>
-    T* SpawnActor();
+    T *SpawnActor();
 
     /** World에 존재하는 Actor를 제거합니다. */
-    bool DestroyActor(AActor* ThisActor);
+    bool DestroyActor(AActor *ThisActor);
 
-    virtual UWorld* GetWorld() const override;
-    ULevel* GetActiveLevel() const { return ActiveLevel; }
+    virtual UWorld *GetWorld() const override;
+    ULevel *GetActiveLevel() const { return ActiveLevel; }
 
     template <typename T>
         requires std::derived_from<T, AActor>
-    T* DuplicateActor(T* InActor);
+    T *DuplicateActor(T *InActor);
 
     EWorldType WorldType = EWorldType::None;
-    
+
     FEventManager EventManager;
 
-    void SetMainPlayer(APlayer* InPlayer){ MainPlayer = InPlayer; }
-    APlayer* GetMainPlayer() const;
+    void SetMainPlayer(APlayer *InPlayer) { MainPlayer = InPlayer; }
+    APlayer *GetMainPlayer() const;
 
-    void SetPlayerController(APlayerController* InPlayerController){ PlayerController = InPlayerController; }
-    APlayerController* GetPlayerController() const;
+    void SetPlayerController(APlayerController *InPlayerController) { PlayerController = InPlayerController; }
+    APlayerController *GetPlayerController() const;
 
-    AGameMode* GetGameMode() const { return GameMode; }
-    
-    void CheckOverlap(const UPrimitiveComponent* Component, TArray<FOverlapResult>& OutOverlaps) const;
+    AGameMode *GetGameMode() const { return GameMode; }
+
+    void CheckOverlap(const UPrimitiveComponent *Component, TArray<FOverlapResult> &OutOverlaps) const;
 
 public:
     double TimeSeconds;
 
 protected:
-    
     FString WorldName = "DefaultWorld";
-    
+
 private:
-    AGameMode* GameMode = nullptr;
+    AGameMode *GameMode = nullptr;
 
-
-    ULevel* ActiveLevel;
+    ULevel *ActiveLevel;
 
     /** Actor가 Spawn되었고, 아직 BeginPlay가 호출되지 않은 Actor들 */
-    TArray<AActor*> PendingBeginPlayActors;
+    TArray<AActor *> PendingBeginPlayActors;
 
     // TODO: 싱글 플레이어면 상관 없지만, 로컬 멀티 플레이어인 경우를 위해 배열로 관리하는 방법을 고려하기.
-    APlayerController* PlayerController = nullptr;
+    APlayerController *PlayerController = nullptr;
 
-    APlayer* MainPlayer = nullptr;
+    APlayer *MainPlayer = nullptr;
 
-    UTextComponent* MainTextComponent = nullptr;
+    UTextComponent *MainTextComponent = nullptr;
 
-    FCollisionManager* CollisionManager = nullptr;
+    FCollisionManager *CollisionManager = nullptr;
+
+public:
+    // Cloth simulation world (centralized manager)
+    FClothWorld *ClothWorld = nullptr;
 };
-
 
 template <typename T>
     requires std::derived_from<T, AActor>
-T* UWorld::SpawnActor()
+T *UWorld::SpawnActor()
 {
     return Cast<T>(SpawnActor(T::StaticClass()));
 }
 
 template <typename T>
     requires std::derived_from<T, AActor>
-T* UWorld::DuplicateActor(T* InActor)
+T *UWorld::DuplicateActor(T *InActor)
 {
-    if (ULevel* ActiveLevel = GetActiveLevel())
+    if (ULevel *ActiveLevel = GetActiveLevel())
     {
-        T* NewActor = static_cast<T*>(InActor->Duplicate(this));
+        T *NewActor = static_cast<T *>(InActor->Duplicate(this));
         ActiveLevel->Actors.Add(NewActor);
         PendingBeginPlayActors.Add(NewActor);
         return NewActor;
     }
     return nullptr;
 }
-

@@ -1824,6 +1824,8 @@
       <Filter>Engine\Source\Runtime\Engine\Classes\Actors</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Engine\TimerManager.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothSolver.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothSimulationData.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\CompositingShader.hlsl" />

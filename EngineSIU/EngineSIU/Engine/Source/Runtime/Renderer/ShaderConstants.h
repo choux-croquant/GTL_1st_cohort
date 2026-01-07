@@ -19,32 +19,30 @@
 
 // hlsl파일에 들어갈 macro define
 constexpr D3D_SHADER_MACRO Defines[] =
-{
-    "FCONSTANT_NUM_DIRLIGHT", FCONSTANT_TOSTRING(MACRO_FCONSTANT_NUM_MAX_DIRLIGHT),
-    "FCONSTANT_NUM_POINTLIGHT", FCONSTANT_TOSTRING(MACRO_FCONSTANT_NUM_MAX_POINTLIGHT),
-    "FCONSTANT_NUM_SPOTLIGHT", FCONSTANT_TOSTRING(MACRO_FCONSTANT_NUM_MAX_SPOTLIGHT),
-    nullptr, nullptr
-};
-
+    {
+        "FCONSTANT_NUM_DIRLIGHT", FCONSTANT_TOSTRING(MACRO_FCONSTANT_NUM_MAX_DIRLIGHT),
+        "FCONSTANT_NUM_POINTLIGHT", FCONSTANT_TOSTRING(MACRO_FCONSTANT_NUM_MAX_POINTLIGHT),
+        "FCONSTANT_NUM_SPOTLIGHT", FCONSTANT_TOSTRING(MACRO_FCONSTANT_NUM_MAX_SPOTLIGHT),
+        nullptr, nullptr};
 
 struct FConstantBuffersStaticMesh
 {
-    ID3D11Buffer* Camera00;
-    ID3D11Buffer* Light01;
-    ID3D11Buffer* Actor03;
-    ID3D11Buffer* Texture05;
-    ID3D11Buffer* Mesh06;
+    ID3D11Buffer *Camera00;
+    ID3D11Buffer *Light01;
+    ID3D11Buffer *Actor03;
+    ID3D11Buffer *Texture05;
+    ID3D11Buffer *Mesh06;
 };
 
-
-struct FMaterialConstants2 {
-    FVector DiffuseColor = { 0,0,0 };
+struct FMaterialConstants2
+{
+    FVector DiffuseColor = {0, 0, 0};
     float TransparencyScalar = 0;
-    FVector AmbientColor = { 0,0,0 };
+    FVector AmbientColor = {0, 0, 0};
     float DensityScalar = 0;
-    FVector SpecularColor = { 0,0,0 };
+    FVector SpecularColor = {0, 0, 0};
     float SpecularScalar = 0;
-    FVector EmmisiveColor = { 0,0,0 };
+    FVector EmmisiveColor = {0, 0, 0};
     float MaterialPad0;
 };
 
@@ -52,32 +50,31 @@ struct FMaterialConstants2 {
 // LIGHTS
 struct alignas(16) FConstantBufferLightColor
 {
-    alignas(16) FVector Specular = { 0,0,0 };
+    alignas(16) FVector Specular = {0, 0, 0};
 
-    alignas(16) FVector Diffuse = { 0,0,0 };
+    alignas(16) FVector Diffuse = {0, 0, 0};
 
-    alignas(16) FVector Ambient = { 0,0,0 };
+    alignas(16) FVector Ambient = {0, 0, 0};
 };
 
 struct alignas(16) FConstantBufferLightDir
 {
     FLinearColor Color;
 
-    FVector Direction = { 0,0,0 };
+    FVector Direction = {0, 0, 0};
     float Intensity = 0;
 };
 
 struct alignas(16) FConstantBufferLightPoint
 {
     FLinearColor Color;
-    FVector Position = { 0,0,0 };
+    FVector Position = {0, 0, 0};
     float pad0 = 0;
 
     float Intensity = 0;
     float Radius = 0;
     float RadiusFallOff = 0;
     float pad1 = 0;
-
 };
 
 struct alignas(16) FConstantBufferLightSpot
@@ -92,9 +89,7 @@ struct alignas(16) FConstantBufferLightSpot
     float OuterCutOff = 0;
     float pad1 = 0;
     float pad2 = 0;
-
 };
-
 
 /// <summary>
 /// Per-Mesh 상수버퍼 : b6
@@ -107,11 +102,11 @@ struct alignas(16) FConstantBufferMesh
     FMaterialConstants2 Material;
 
     alignas(16) UINT IsSelectedMesh = 0;
-    //FMatrix MVP;      // 모델
-    //FMatrix ModelMatrixInverseTranspose; // normal 변환을 위한 행렬
-    //FVector4 UUIDColor;
-    //bool IsSelected;
-    //FVector pad;
+    // FMatrix MVP;      // 모델
+    // FMatrix ModelMatrixInverseTranspose; // normal 변환을 위한 행렬
+    // FVector4 UUIDColor;
+    // bool IsSelected;
+    // FVector pad;
 };
 
 /// <summary>
@@ -119,7 +114,7 @@ struct alignas(16) FConstantBufferMesh
 /// </summary>
 struct alignas(16) FConstantBufferTexture
 {
-    FVector2D UVOffset = { 0,0 };
+    FVector2D UVOffset = {0, 0};
 };
 
 /// <summary>
@@ -155,7 +150,7 @@ struct alignas(16) FConstantBufferLights
 struct FConstantBufferDebugBox
 {
     FMatrix WorldMatrix;
-    
+
     FVector Extent;
     float Padding2 = 0;
 };
@@ -204,12 +199,11 @@ struct FConstantBufferDebugIcon
 struct FConstantBufferDebugArrow
 {
     FVector Position;
-    float   ScaleXYZ;
-    
-    FVector Direction;
-    float   ScaleZ;
-};
+    float ScaleXYZ;
 
+    FVector Direction;
+    float ScaleZ;
+};
 
 struct FConstantBufferDebugCapsule
 {
@@ -221,18 +215,18 @@ struct FConstantBufferDebugCapsule
 struct alignas(16) FConstantBufferCameraFade
 {
     FLinearColor FadeColor = FLinearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    float  FadeAmount = 0.0f;
+    float FadeAmount = 0.0f;
     FVector Padding;
 };
 
 struct alignas(16) FConstantBufferCameraVignette
 {
     FLinearColor VignetteColor = FLinearColor(0.0f, 0.0f, 0.0f, 0.0f);
-    
+
     FVector2D VignetteCenter = FVector2D(0.5, 0.5);
     float VignetteRadius = 0.5;
     float VignetteSmoothness = 0.1f;
-    
+
     float VignetteIntensity = 1.0f;
     FVector Padding;
 };
@@ -250,11 +244,51 @@ struct FDepthOfFieldConstant
 {
     float F_Stop = 2.8f;
     float SensorWidth = 24.576f; // mm
-    float FocalDistance = 0.f; // cm
-    float FocalLength = 0.f; // mm
+    float FocalDistance = 0.f;   // cm
+    float FocalLength = 0.f;     // mm
 
     float CoCScaleFactor = 2.f;
     float InFocusThreshold = 0.0f;
     float DOFPadding1 = 0.f;
     float DOFPadding2 = 0.f;
+};
+
+/////////////////////////////////////////////////////////////////////////
+// Cloth Simulation Constants
+/////////////////////////////////////////////////////////////////////////
+
+/// <summary>
+/// Cloth simulation constant buffer : b0 (for compute shaders)
+/// Must match ClothSimConstants in ClothCommon.hlsli
+/// </summary>
+struct alignas(16) FClothSimConstants
+{
+    alignas(16) uint32 NumParticles;
+    uint32 NumConstraints;
+    float DeltaTime;
+    float Damping;
+
+    alignas(16) FVector Gravity;
+    float StretchStiffness;
+
+    alignas(16) FVector Wind;
+    float BendStiffness;
+
+    alignas(16) float AirDrag;
+    uint32 NumIterations;
+    uint32 CurrentIteration;
+    uint32 UseXPBD;
+
+    alignas(16) FMatrix WorldMatrix;
+};
+
+/// <summary>
+/// Normal update constant buffer : b1 (for cloth normal compute shader)
+/// </summary>
+struct alignas(16) FClothNormalUpdateConstants
+{
+    uint32 NumTriangles;
+    uint32 Padding0;
+    uint32 Padding1;
+    uint32 Padding2;
 };

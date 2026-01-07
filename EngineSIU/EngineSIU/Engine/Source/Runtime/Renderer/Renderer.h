@@ -14,7 +14,6 @@
 #include "D3D11RHI/GraphicDevice.h"
 #include "D3D11RHI/DXDBufferManager.h"
 
-
 class FPostProcessRenderPass;
 class FParticleMeshRenderPass;
 class FParticleSpriteRenderPass;
@@ -46,6 +45,7 @@ class FSlateRenderPass;
 class FEditorRenderPass;
 class FDepthPrePass;
 class FTileLightCullingPass;
+class FClothRenderPass;
 class FGPUTimingManager;
 
 class FRenderer
@@ -54,32 +54,32 @@ public:
     //==========================================================================
     // 초기화/해제 관련 함수
     //==========================================================================
-    void Initialize(FGraphicsDevice* InGraphics, FDXDBufferManager* InBufferManager, FGPUTimingManager* InGPUTimingManager);
+    void Initialize(FGraphicsDevice *InGraphics, FDXDBufferManager *InBufferManager, FGPUTimingManager *InGPUTimingManager);
     void Release();
 
     //==========================================================================
     // 렌더 패스 관련 함수
     //==========================================================================
-    void Render(const std::shared_ptr<FEditorViewportClient>& Viewport);
-    void RenderViewport(const std::shared_ptr<FEditorViewportClient>& Viewport) const; // TODO: 추후 RenderSlate로 변경해야함
+    void Render(const std::shared_ptr<FEditorViewportClient> &Viewport);
+    void RenderViewport(const std::shared_ptr<FEditorViewportClient> &Viewport) const; // TODO: 추후 RenderSlate로 변경해야함
 
 protected:
-    void BeginRender(const std::shared_ptr<FEditorViewportClient>& Viewport) const;
-    void UpdateCommonBuffer(const std::shared_ptr<FEditorViewportClient>& Viewport) const;
-    void PrepareRender(FViewportResource* ViewportResource) const;
+    void BeginRender(const std::shared_ptr<FEditorViewportClient> &Viewport) const;
+    void UpdateCommonBuffer(const std::shared_ptr<FEditorViewportClient> &Viewport) const;
+    void PrepareRender(FViewportResource *ViewportResource) const;
     void PrepareRenderPass() const;
 
-    void RenderPreScene(const std::shared_ptr<FEditorViewportClient>& Viewport) const;
-    void RenderOpaque(const std::shared_ptr<FEditorViewportClient>& Viewport) const;
-    void RenderEditorDepthElement(const std::shared_ptr<FEditorViewportClient>& Viewport) const;
-    void RenderTranslucent(const std::shared_ptr<FEditorViewportClient>& Viewport) const;
-    void RenderEditorOverlay(const std::shared_ptr<FEditorViewportClient>& Viewport) const;
-    void RenderPostProcess(const std::shared_ptr<FEditorViewportClient>& Viewport) const;
-    void RenderFinalResult(const std::shared_ptr<FEditorViewportClient>& Viewport) const;
-    
+    void RenderPreScene(const std::shared_ptr<FEditorViewportClient> &Viewport) const;
+    void RenderOpaque(const std::shared_ptr<FEditorViewportClient> &Viewport) const;
+    void RenderEditorDepthElement(const std::shared_ptr<FEditorViewportClient> &Viewport) const;
+    void RenderTranslucent(const std::shared_ptr<FEditorViewportClient> &Viewport) const;
+    void RenderEditorOverlay(const std::shared_ptr<FEditorViewportClient> &Viewport) const;
+    void RenderPostProcess(const std::shared_ptr<FEditorViewportClient> &Viewport) const;
+    void RenderFinalResult(const std::shared_ptr<FEditorViewportClient> &Viewport) const;
+
     void EndRender() const;
     void ClearRenderArr() const;
-    
+
     //==========================================================================
     // 버퍼 생성/해제 함수 (템플릿 포함)
     //==========================================================================
@@ -91,50 +91,52 @@ public:
     void CreateCommonShader() const;
 
 public:
-    FGraphicsDevice* Graphics;
-    FDXDBufferManager* BufferManager;
-    FDXDShaderManager* ShaderManager = nullptr;
-    class FShadowManager* ShadowManager = nullptr;
-    FGPUTimingManager* GPUTimingManager = nullptr;
-    
-    class FShadowRenderPass* ShadowRenderPass;
+    FGraphicsDevice *Graphics;
+    FDXDBufferManager *BufferManager;
+    FDXDShaderManager *ShaderManager = nullptr;
+    class FShadowManager *ShadowManager = nullptr;
+    FGPUTimingManager *GPUTimingManager = nullptr;
 
-    FOpaqueRenderPass* OpaqueRenderPass = nullptr;
-    FWorldBillboardRenderPass* WorldBillboardRenderPass = nullptr;
-    FEditorBillboardRenderPass* EditorBillboardRenderPass = nullptr;
-    FGizmoRenderPass* GizmoRenderPass = nullptr;
-    FUpdateLightBufferPass* UpdateLightBufferPass = nullptr;
-    FLineRenderPass* LineRenderPass = nullptr;
-    FEditorRenderPass* EditorRenderPass = nullptr;
-    FTranslucentRenderPass* TranslucentRenderPass = nullptr;
+    class FShadowRenderPass *ShadowRenderPass;
 
-    FParticleSpriteRenderPass* ParticleSpriteRenderPass = nullptr;
-    FParticleMeshRenderPass* ParticleMeshRenderPass = nullptr;
-    
-    FDepthPrePass* DepthPrePass = nullptr;
-    FTileLightCullingPass* TileLightCullingPass = nullptr;
+    FOpaqueRenderPass *OpaqueRenderPass = nullptr;
+    FWorldBillboardRenderPass *WorldBillboardRenderPass = nullptr;
+    FEditorBillboardRenderPass *EditorBillboardRenderPass = nullptr;
+    FGizmoRenderPass *GizmoRenderPass = nullptr;
+    FUpdateLightBufferPass *UpdateLightBufferPass = nullptr;
+    FLineRenderPass *LineRenderPass = nullptr;
+    FEditorRenderPass *EditorRenderPass = nullptr;
+    FTranslucentRenderPass *TranslucentRenderPass = nullptr;
 
-    FPostProcessRenderPass* PostProcessRenderPass = nullptr;
+    FParticleSpriteRenderPass *ParticleSpriteRenderPass = nullptr;
+    FParticleMeshRenderPass *ParticleMeshRenderPass = nullptr;
 
-    FCompositingPass* CompositingPass = nullptr;
-    
-    FSlateRenderPass* SlateRenderPass = nullptr;
+    FDepthPrePass *DepthPrePass = nullptr;
+    FTileLightCullingPass *TileLightCullingPass = nullptr;
+    FClothRenderPass *ClothRenderPass = nullptr;
+
+    FPostProcessRenderPass *PostProcessRenderPass = nullptr;
+
+    FCompositingPass *CompositingPass = nullptr;
+
+    FSlateRenderPass *SlateRenderPass = nullptr;
 
 private:
     template <typename RenderPassType>
         requires std::derived_from<RenderPassType, IRenderPass>
-    RenderPassType* AddRenderPass();
+    RenderPassType *AddRenderPass();
 
-    TArray<IRenderPass*> RenderPasses;
-    
+    TArray<IRenderPass *> RenderPasses;
+
     const int32 MaxBoneNum = 1024;
     const int32 MaxParticleInstanceNum = 1024;
 };
 
-template <typename RenderPassType> requires std::derived_from<RenderPassType, IRenderPass>
-RenderPassType* FRenderer::AddRenderPass()
+template <typename RenderPassType>
+    requires std::derived_from<RenderPassType, IRenderPass>
+RenderPassType *FRenderer::AddRenderPass()
 {
-    RenderPassType* RenderPass = new RenderPassType();
+    RenderPassType *RenderPass = new RenderPassType();
     RenderPasses.Add(RenderPass);
     return RenderPass;
 }
