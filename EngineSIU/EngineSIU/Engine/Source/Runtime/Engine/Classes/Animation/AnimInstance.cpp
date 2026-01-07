@@ -1,4 +1,4 @@
-﻿#include "AnimInstance.h"
+#include "AnimInstance.h"
 
 #include "Actors/BehellaGameMode.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -23,8 +23,8 @@ void UAnimInstance::InitializeAnimation()
 
 void UAnimInstance::UpdateAnimation(float DeltaSeconds, FPoseContext& OutPose)
 {
-    ABehellaGameMode* BGM = Cast<ABehellaGameMode>(GetWorld()->GetGameMode());
-    DeltaSeconds *= BGM->AnimSlowFactor;
+    //ABehellaGameMode* BGM = Cast<ABehellaGameMode>(GetWorld()->GetGameMode());
+    //DeltaSeconds *= BGM->AnimSlowFactor;
     
     NativeUpdateAnimation(DeltaSeconds, OutPose);
 }

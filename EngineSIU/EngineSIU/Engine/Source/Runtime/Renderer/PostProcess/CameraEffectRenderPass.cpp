@@ -43,9 +43,9 @@ void FCameraEffectRenderPass::UpdateCameraEffectConstant(const std::shared_ptr<F
                 VignetteParams.VignetteRadius = PCM->VignetteRadius;
                 VignetteParams.VignetteSmoothness = PCM->VignetteSmoothness;
                 VignetteParams.VignetteIntensity = PCM->VignetteIntensity;
-                LetterBoxParams.LetterBoxColor = FLinearColor(0.0f, 0.0f, 0.0f, 1.0f);
+                /*LetterBoxParams.LetterBoxColor = FLinearColor(0.0f, 0.0f, 0.0f, 1.0f);
                 LetterBoxParams.ScreenAspectRatio = Viewport->AspectRatio;
-                LetterBoxParams.LetterBoxAspectRatio = PCM->GetLetterBoxRatio();
+                LetterBoxParams.LetterBoxAspectRatio = PCM->GetLetterBoxRatio();*/
             }
         }
     }

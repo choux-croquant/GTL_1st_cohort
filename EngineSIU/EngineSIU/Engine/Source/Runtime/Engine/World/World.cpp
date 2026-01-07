@@ -73,8 +73,9 @@ void UWorld::BeginPlay()
     if (!GameMode && this->WorldType == EWorldType::PIE)
     {
         //GameMode = this->SpawnActor<AGameMode>();
-        GameMode = this->SpawnActor<ABehellaGameMode>();    
-        GameMode->SetActorLabel(TEXT("OBJ_BEHELLA_GAMEMODE"));
+        GameMode = this->SpawnActor<AGameMode>();    
+        //GameMode->SetActorLabel(TEXT("OBJ_BEHELLA_GAMEMODE"));
+        GameMode->SetActorLabel(TEXT("OBJ_GAMEMODE"));
         GameMode->InitializeComponent();
 
         GameMode->InitGame();
