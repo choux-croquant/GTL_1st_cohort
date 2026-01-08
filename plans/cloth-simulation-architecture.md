@@ -13,29 +13,28 @@ This document outlines the architecture for implementing a GPU-based cloth simul
 ```mermaid
 graph TB
     subgraph "World / Managers"
-        World[UWorld]
-        ClothPhysMgr[FClothPhysicsManager]
-        ClothWorld[FClothWorld]
+        World[World]
+        ClothPhysMgr[ClothPhysicsManager]
+        ClothWorld[ClothWorld]
     end
 
-    subgraph "Cloth Component Layer"
-        ClothComp[UClothComponent]
-        ClothMeshComp[UClothMeshComponent]
+    subgraph "Component Layer"
+        ClothComp[ClothComponent]
+        StaticMeshComp[StaticMeshComponent]
     end
     
-    subgraph "Asset Layer"
-        ClothAsset[UClothAsset]
-        ClothConfig[FClothConfig]
-        ClothLOD[FClothLODData]
+    subgraph "Asset Layer(created from staticmesh customizable)"
+        ClothAsset[ClothAsset]
+        ClothLOD[ClothLODData]
     end
     
     subgraph "Simulation Layer"
-        ClothInstance[FClothInstance]
-        ClothSolver[FClothSolver]
-        ClothSimData[FClothSimulationData]
+        ClothInstance[ClothInstance]
+        ClothSolver[ClothSolver]
+        ClothSimData[ClothSimulationData]
     end
     
-    subgraph "GPU Compute Layer"
+    subgraph "GPU Layer"
         IntegrateCS[IntegrateCS]
         ConstraintCS[ConstraintSolverCS]
         NormalCS[UpdateNormalsCS]
@@ -43,14 +42,13 @@ graph TB
     end
     
     subgraph "Forces Layer"
-        ForceManager[FClothForceManager]
-        WindComp[UWindComponent]
-        ForceField[UForceFieldComponent]
+        ForceManager[ClothForceManager]
+        WindComp[WindComponent]
     end
     
     subgraph "Rendering Layer"
-        OpaquePass[FOpaqueRenderPass]
-        ClothDebugPass[FClothDebugRenderPass]
+        OpaquePass[OpaqueRenderPass]
+        ClothDebugPass[ClothDebugRenderPass]
     end
     
     World --> ClothPhysMgr
@@ -59,7 +57,7 @@ graph TB
     ClothInstance --> ClothSolver
     
     ClothComp --> ClothAsset
-    ClothMeshComp --> ClothInstance
+    StaticMeshComp --> ClothInstance
 
     ClothSolver --> ClothSimData
     ClothSolver --> IntegrateCS
@@ -69,7 +67,6 @@ graph TB
     
     ForceManager --> ClothWorld
     WindComp --> ForceManager
-    ForceField --> ForceManager
     
     ClothSimData --> OpaquePass
     ClothSimData --> ClothDebugPass
