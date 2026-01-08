@@ -257,10 +257,8 @@ struct FDepthOfFieldConstant
 // Cloth Simulation Constants
 /////////////////////////////////////////////////////////////////////////
 
-/// <summary>
 /// Cloth simulation constant buffer : b0 (for compute shaders)
 /// Must match ClothSimConstants in ClothCommon.hlsli
-/// </summary>
 struct alignas(16) FClothSimConstants
 {
     alignas(16) uint32 NumParticles;

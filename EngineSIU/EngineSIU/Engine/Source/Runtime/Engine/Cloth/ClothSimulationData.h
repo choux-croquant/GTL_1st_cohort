@@ -234,3 +234,140 @@ struct FClothCollisionPrimitive
     {
     }
 };
+
+
+inline FArchive& operator<<(FArchive& Ar, FClothConfig& Cfg)
+{
+    Ar << Cfg.Mass;
+    Ar << Cfg.Damping;
+    Ar << Cfg.Friction;
+
+    Ar << Cfg.StretchStiffness;
+    Ar << Cfg.BendStiffness;
+    Ar << Cfg.AttachStiffness;
+
+    Ar << Cfg.NumIterations;
+    Ar << Cfg.TimeStep;
+    Ar << Cfg.bUseXPBD;
+
+    Ar << Cfg.AirDrag;
+    Ar << Cfg.WindStrength;
+
+    Ar << Cfg.CollisionThickness;
+    Ar << Cfg.bEnableSelfCollision;
+
+    return Ar;
+}
+
+inline FArchive& operator<<(FArchive& Ar, FClothConstraint& C)
+{
+    Ar << C.ParticleA;
+    Ar << C.ParticleB;
+    Ar << C.RestLength;
+    Ar << C.Stiffness;
+    return Ar;
+}
+
+inline FArchive& operator<<(FArchive& Ar, FClothVertexPaintData& V)
+{
+    Ar << V.MaxDistance;
+    Ar << V.BackstopDistance;
+    Ar << V.BackstopRadius;
+    Ar << V.Stiffness;
+    Ar << V.bFixed;
+    return Ar;
+}
+
+inline FArchive& operator<<(FArchive& Ar, FClothSimulationData& Sim)
+{
+    Ar << Sim.NumParticles;
+    Ar << Sim.NumConstraints;
+
+    Ar << Sim.CurrentPositions;
+    Ar << Sim.CurrentVelocities;
+
+    Ar << Sim.Gravity;
+    Ar << Sim.Wind;
+    Ar << Sim.ExternalForce;
+
+    Ar << Sim.CurrentTime;
+    Ar << Sim.AccumulatedTime;
+
+    return Ar;
+}
+
+inline FArchive& operator<<(FArchive& Ar, FClothLODData& LOD)
+{
+    Ar << LOD.SimPositions;
+    Ar << LOD.SimIndices;
+
+    Ar << LOD.RenderPositions;
+    Ar << LOD.RenderNormals;
+    Ar << LOD.RenderUVs;
+    Ar << LOD.RenderIndices;
+
+    Ar << LOD.ScreenSize;
+    return Ar;
+}
+
+inline FArchive& operator<<(FArchive& Ar, FClothAttachmentData& A)
+{
+    Ar << A.ClothVertexIndex;
+    Ar << A.BoneName;
+    Ar << A.BoneIndex;
+    Ar << A.LocalOffset;
+    Ar << A.WorldPosition;
+    Ar << A.Stiffness;
+    Ar << A.bIsKinematic;
+    return Ar;
+}
+
+inline FArchive& operator<<(FArchive& Ar, FClothCollisionSphere& S)
+{
+    Ar << S.Center;
+    Ar << S.Radius;
+    return Ar;
+}
+
+inline FArchive& operator<<(FArchive& Ar, FClothCollisionCapsule& C)
+{
+    Ar << C.Start;
+    Ar << C.End;
+    Ar << C.Radius;
+    return Ar;
+}
+
+inline FArchive& operator<<(FArchive& Ar, FClothCollisionBox& B)
+{
+    Ar << B.Center;
+    Ar << B.Extent;
+    Ar << B.Rotation;
+    return Ar;
+}
+
+inline FArchive& operator<<(FArchive& Ar, FClothCollisionPrimitive& P)
+{
+    // enum class → uint8로 직렬화
+    uint8 TypeAsByte = static_cast<uint8>(P.Type);
+    Ar << TypeAsByte; // 여기서 더 이상 에러 안 남
+
+    if (Ar.IsLoading())
+    {
+        P.Type = static_cast<EClothCollisionPrimitiveType>(TypeAsByte);
+    }
+
+    switch (P.Type)
+    {
+    case EClothCollisionPrimitiveType::Sphere:
+        Ar << P.Sphere;
+        break;
+    case EClothCollisionPrimitiveType::Capsule:
+        Ar << P.Capsule;
+        break;
+    case EClothCollisionPrimitiveType::Box:
+        Ar << P.Box;
+        break;
+    }
+
+    return Ar;
+}

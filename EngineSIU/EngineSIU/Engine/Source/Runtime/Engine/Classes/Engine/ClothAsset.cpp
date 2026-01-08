@@ -1,11 +1,5 @@
-/**
- * Cloth Asset Implementation
- */
-
 #include "ClothAsset.h"
 #include "StaticMesh.h"
-
-//IMPLEMENT_CLASS(UClothAsset)
 
 UClothAsset::UClothAsset()
     : SourceMesh(nullptr)

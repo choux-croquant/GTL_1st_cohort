@@ -20,13 +20,9 @@ FClothInstance::~FClothInstance()
     Release();
 }
 
-bool FClothInstance::Initialize(UClothAsset *InAsset, const FClothConfig &InConfig,
-                                FGraphicsDevice *Graphics, FDXDBufferManager *BufferMgr, FDXDShaderManager *ShaderMgr)
+bool FClothInstance::Initialize(UClothAsset *InAsset, const FClothConfig &InConfig, FGraphicsDevice *Graphics, FDXDBufferManager *BufferMgr, FDXDShaderManager *ShaderMgr)
 {
-    if (!InAsset || !InAsset->IsValid() || !Graphics || !BufferMgr || !ShaderMgr)
-    {
-        return false;
-    }
+    if (!InAsset || !InAsset->IsValid() || !Graphics || !BufferMgr || !ShaderMgr) return false;
 
     // Store configuration
     Config = InConfig;

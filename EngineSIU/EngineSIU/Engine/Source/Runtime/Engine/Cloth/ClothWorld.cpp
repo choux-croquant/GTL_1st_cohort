@@ -12,8 +12,6 @@
 #include "Container/Map.h"
 #include "Engine/UserInterface/Console.h"
 
-// Per-world cloth world storage
-static TMap<UWorld *, FClothWorld *> GClothWorlds;
 
 FClothWorld::FClothWorld()
     : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), Solver(nullptr), bIsInitialized(false), TotalParticleCount(0), TotalConstraintCount(0)
@@ -42,7 +40,7 @@ void FClothWorld::Initialize(FGraphicsDevice *InGraphics, FDXDBufferManager *InB
 
 void FClothWorld::Release()
 {
-    // Clean up all instances
+    // Clean up
     for (FClothInstance *Instance : ActiveInstances)
     {
         if (Instance)
@@ -78,16 +76,12 @@ void FClothWorld::Release()
 
 void FClothWorld::Update(float DeltaTime)
 {
-    if (!bIsInitialized || ActiveInstances.Num() == 0)
-        return;
+    if (!bIsInitialized || ActiveInstances.Num() == 0) return;
 
-    // Step 1: Update kinematic data for all instances
     UpdateKinematicData(DeltaTime);
 
-    // Step 2: Run GPU simulation for all instances
     SimulateAllInstances(DeltaTime);
 
-    // Step 3: Clean up destroyed instances
     CleanupDestroyedInstances();
 }
 
@@ -127,11 +121,10 @@ FClothInstance *FClothWorld::RegisterClothInstance(UClothComponent *Component, U
 
 void FClothWorld::UnregisterClothInstance(FClothInstance *Instance)
 {
-    if (!Instance)
-        return;
+    if (!Instance) return;
 
-    // Remove from active list
     int32 Index = ActiveInstances.Find(Instance);
+
     if (Index != INDEX_NONE)
     {
         ActiveInstances.RemoveAt(Index);
@@ -140,11 +133,9 @@ void FClothWorld::UnregisterClothInstance(FClothInstance *Instance)
         TotalParticleCount -= Instance->GetNumParticles();
         TotalConstraintCount -= Instance->GetNumConstraints();
 
-        // Add to pending removal (will be deleted at end of frame)
         PendingRemoval.Add(Instance);
 
-        UE_LOG(ELogLevel::Display, TEXT("ClothWorld: Unregistered cloth instance - Remaining: %d instances"),
-               ActiveInstances.Num());
+        UE_LOG(ELogLevel::Display, TEXT("ClothWorld: Unregistered cloth instance - Remaining: %d instances"), ActiveInstances.Num());
     }
 }
 
@@ -194,39 +185,4 @@ void FClothWorld::CleanupDestroyedInstances()
         }
     }
     PendingRemoval.Empty();
-}
-
-//------------------------------------------------------------------------------
-// Global accessor functions
-//------------------------------------------------------------------------------
-
-FClothWorld *GetClothWorld(UWorld *World)
-{
-    if (!World)
-        return nullptr;
-
-    FClothWorld **Found = GClothWorlds.Find(World);
-    return Found ? *Found : nullptr;
-}
-
-FClothWorld *GetOrCreateClothWorld(UWorld *World)
-{
-    if (!World)
-        return nullptr;
-
-    // Check if already exists
-    FClothWorld **Found = GClothWorlds.Find(World);
-    if (Found && *Found)
-    {
-        return *Found;
-    }
-
-    // Create new cloth world
-    FClothWorld *ClothWorld = new FClothWorld();
-    GClothWorlds.Add(World, ClothWorld);
-
-    // Note: ClothWorld will be initialized when graphics resources are available
-    // This is typically done in World::Initialize or Engine initialization
-
-    return ClothWorld;
 }

@@ -19,7 +19,7 @@ class UClothComponent;
 class UWorld;
 
 /**
- * Cloth World - Central manager for all cloth simulations
+ * Cloth World - Central manager for cloth simulations
  * Per-world singleton that owns and updates all cloth instances
  */
 class FClothWorld
@@ -47,7 +47,7 @@ public:
     /**
      * Registration API for components
      */
-    FClothInstance *RegisterClothInstance(UClothComponent *Component, UClothAsset *Asset, const FClothConfig &Config);
+    FClothInstance* RegisterClothInstance(UClothComponent *Component, UClothAsset *Asset, const FClothConfig &Config);
     void UnregisterClothInstance(FClothInstance *Instance);
 
     /**
@@ -85,13 +85,13 @@ private:
     FDXDShaderManager *ShaderManager;
 
     // Shared solver for all instances
-    FClothSolver *Solver;
+    FClothSolver* Solver;
 
     // All active cloth instances
-    TArray<FClothInstance *> ActiveInstances;
+    TArray<FClothInstance*> ActiveInstances;
 
     // Instances pending removal
-    TArray<FClothInstance *> PendingRemoval;
+    TArray<FClothInstance*> PendingRemoval;
 
     // State
     bool bIsInitialized;
@@ -100,14 +100,3 @@ private:
     uint32 TotalParticleCount;
     uint32 TotalConstraintCount;
 };
-
-/**
- * Get the cloth world for a given UWorld
- * Returns nullptr if cloth world doesn't exist for this world
- */
-FClothWorld *GetClothWorld(UWorld *World);
-
-/**
- * Create or get the cloth world for a given UWorld
- */
-FClothWorld *GetOrCreateClothWorld(UWorld *World);

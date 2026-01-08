@@ -24,26 +24,7 @@ class UClothAsset;
  * GPU constant buffer structure for cloth simulation
  * Must match ClothSimConstants in ClothCommon.hlsli
  */
-struct FClothSimConstants
-{
-    alignas(16) uint32 NumParticles;
-    uint32 NumConstraints;
-    float DeltaTime;
-    float Damping;
 
-    alignas(16) FVector Gravity;
-    float StretchStiffness;
-
-    alignas(16) FVector Wind;
-    float BendStiffness;
-
-    alignas(16) float AirDrag;
-    uint32 NumIterations;
-    uint32 CurrentIteration;
-    uint32 UseXPBD;
-
-    alignas(16) FMatrix WorldMatrix;
-};
 
 /**
  * GPU particle structure

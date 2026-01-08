@@ -1,15 +1,10 @@
-/**
- * Cloth Mesh Component Implementation
- */
-
 #include "ClothMeshComponent.h"
 #include "Cloth/ClothSolver.h"
 
-//IMPLEMENT_CLASS(UClothMeshComponent)
-
 UClothMeshComponent::UClothMeshComponent()
-    : WorldTransform(FMatrix::Identity), DebugDrawMode(EClothDebugDrawMode::None), bIsVisible(true)
+    : WorldTransform(FMatrix::Identity), DebugDrawMode(EClothDebugDrawMode::None), bIsVisible(true), bSimulate(true)
 {
+    // Set initial bSimulate to true for test
 }
 
 UClothMeshComponent::~UClothMeshComponent()
@@ -50,20 +45,20 @@ void UClothMeshComponent::GetRenderData(FClothRenderData &OutData) const
     OutData.Material = Materials.Num() > 0 ? Materials[0] : nullptr;
 
     // Get data from solver
-    if (Solver && Solver->IsInitialized())
-    {
-        OutData.PositionBufferSRV = Solver->GetPositionBufferSRV();
-        OutData.NormalBufferSRV = Solver->GetNormalBufferSRV();
-        OutData.NumVertices = Solver->GetNumParticles();
-        OutData.NumTriangles = Solver->GetNumParticles() / 3; // Simplified
+    //if (Solver && Solver->IsInitialized())
+    //{
+    //    OutData.PositionBufferSRV = Solver->GetPositionBufferSRV();
+    //    OutData.NormalBufferSRV = Solver->GetNormalBufferSRV();
+    //    OutData.NumVertices = Solver->GetNumParticles();
+    //    OutData.NumTriangles = Solver->GetNumParticles() / 3; // Simplified
 
-        // Get indices from cloth asset
-        if (ClothAsset)
-        {
-            //OutData.Indices = &ClothAsset->GetIndices();
-            //OutData.NumTriangles = ClothAsset->GetIndices().Num() / 3;
-        }
-    }
+    //    // Get indices from cloth asset
+    //    if (ClothAsset)
+    //    {
+    //        //OutData.Indices = &ClothAsset->GetIndices();
+    //        //OutData.NumTriangles = ClothAsset->GetIndices().Num() / 3;
+    //    }
+    //}
 }
 
 UMaterial *UClothMeshComponent::GetMaterial(uint32 Index) const

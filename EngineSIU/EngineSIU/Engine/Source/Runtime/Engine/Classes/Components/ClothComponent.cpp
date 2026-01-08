@@ -8,8 +8,8 @@
 #include "Cloth/ClothInstance.h"
 #include "Cloth/ClothWorld.h"
 #include "World/World.h"
-
-IMPLEMENT_CLASS(UClothComponent)
+#include "Engine/EditorEngine.h"
+#include "Cloth/ClothPhysicsManager.h"
 
 UClothComponent::UClothComponent()
     : ClothAsset(nullptr), ClothInstance(nullptr), bIsSimulating(false), bDebugDrawEnabled(false), AccumulatedForce(FVector::ZeroVector)
@@ -21,7 +21,7 @@ UClothComponent::~UClothComponent()
     // Unregister from ClothWorld
     if (ClothInstance)
     {
-        FClothWorld *ClothWorld = GetClothWorld(GetWorld());
+        FClothWorld *ClothWorld = GEngine->ClothPhysicsManager->GetClothWorld(GetWorld());
         if (ClothWorld)
         {
             ClothWorld->UnregisterClothInstance(ClothInstance);
@@ -38,7 +38,7 @@ void UClothComponent::InitializeComponent()
     // Register with ClothWorld if we have an asset
     if (ClothAsset)
     {
-        FClothWorld *ClothWorld = GetOrCreateClothWorld(GetWorld());
+        FClothWorld *ClothWorld = GEngine->ClothPhysicsManager->CreateClothWorld(GetWorld());
         if (ClothWorld && ClothWorld->IsInitialized())
         {
             ClothInstance = ClothWorld->RegisterClothInstance(this, ClothAsset, ClothAsset->GetConfig());
@@ -92,7 +92,7 @@ void UClothComponent::SetClothAsset(UClothAsset *InAsset)
     // Unregister old instance
     if (ClothInstance)
     {
-        FClothWorld *ClothWorld = GetClothWorld(GetWorld());
+        FClothWorld *ClothWorld = GEngine->ClothPhysicsManager->GetClothWorld(GetWorld());
         if (ClothWorld)
         {
             ClothWorld->UnregisterClothInstance(ClothInstance);
@@ -103,7 +103,7 @@ void UClothComponent::SetClothAsset(UClothAsset *InAsset)
     // Register new instance
     if (InAsset)
     {
-        FClothWorld *ClothWorld = GetOrCreateClothWorld(GetWorld());
+        FClothWorld *ClothWorld = GEngine->ClothPhysicsManager->CreateClothWorld(GetWorld());
         if (ClothWorld && ClothWorld->IsInitialized())
         {
             ClothInstance = ClothWorld->RegisterClothInstance(this, InAsset, InAsset->GetConfig());

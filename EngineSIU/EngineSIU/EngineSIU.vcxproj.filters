@@ -1658,6 +1658,14 @@
       <Filter>Engine\Source\Runtime\Engine\Classes\Actors</Filter>
     </ClCompile>
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Engine\TimerManager.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothSolver.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothInstance.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothWorld.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Engine\ClothAsset.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Components\ClothComponent.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Components\ClothMeshComponent.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Renderer\ClothRenderPass.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothPhysicsManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="EngineSIU.natvis" />
@@ -1826,6 +1834,13 @@
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Engine\TimerManager.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothSolver.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothSimulationData.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothInstance.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothWorld.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Engine\ClothAsset.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Components\ClothComponent.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Components\ClothMeshComponent.h" />
+    <ClInclude Include="Engine\Source\Runtime\Renderer\ClothRenderPass.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothPhysicsManager.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\CompositingShader.hlsl" />
@@ -1858,5 +1873,11 @@
     <None Include="Shaders\GaussianBlurShader.hlsl" />
     <None Include="Shaders\DepthOfFieldShader.hlsl" />
     <None Include="Shaders\FullScreenQuadVertexShader.hlsl" />
+    <None Include="Shaders\Cloth\ClothCommon.hlsli" />
+    <None Include="Shaders\Cloth\ClothIntegrate.hlsl" />
+    <None Include="Shaders\Cloth\ClothConstraintSolver.hlsl" />
+    <None Include="Shaders\Cloth\ClothUpdateNormals.hlsl" />
+    <None Include="Shaders\ClothVertexShader.hlsl" />
+    <None Include="Shaders\ClothPixelShader.hlsl" />
   </ItemGroup>
 </Project>

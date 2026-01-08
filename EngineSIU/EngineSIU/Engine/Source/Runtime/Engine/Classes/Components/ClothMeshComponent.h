@@ -68,6 +68,10 @@ public:
     // Visibility
     void SetVisible(bool bVisible) { bIsVisible = bVisible; }
     bool IsVisible() const { return bIsVisible; }
+    
+public:
+    // Activeness
+    bool bSimulate;
 
 protected:
     // Materials
