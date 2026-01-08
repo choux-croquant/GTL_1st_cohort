@@ -12,23 +12,29 @@ This document outlines the architecture for implementing a GPU-based cloth simul
 
 ```mermaid
 graph TB
-    subgraph "Cloth Component Layer"
-        ClothComp[UClothComponent]
-        ClothMeshComp[UClothMeshComponent]
+    subgraph "World / Managers"
+        World[World]
+        ClothPhysMgr[ClothPhysicsManager]
+        ClothWorld[ClothWorld]
+    end
+
+    subgraph "Component Layer"
+        ClothComp[ClothComponent]
+        StaticMeshComp[StaticMeshComponent]
     end
     
     subgraph "Asset Layer"
-        ClothAsset[UClothAsset]
-        ClothConfig[FClothConfig]
-        ClothLOD[FClothLODData]
+        ClothAsset[ClothAsset]
+        ClothLOD[ClothLODData]
     end
     
     subgraph "Simulation Layer"
-        ClothSolver[FClothSolver]
-        ClothSimData[FClothSimulationData]
+        ClothInstance[ClothInstance]
+        ClothSolver[ClothSolver]
+        ClothSimData[ClothSimulationData]
     end
     
-    subgraph "GPU Compute Layer"
+    subgraph "GPU Layer"
         IntegrateCS[IntegrateCS]
         ConstraintCS[ConstraintSolverCS]
         NormalCS[UpdateNormalsCS]
@@ -36,27 +42,33 @@ graph TB
     end
     
     subgraph "Forces Layer"
-        ForceManager[FClothForceManager]
-        WindComp[UWindComponent]
-        ForceField[UForceFieldComponent]
+        ForceManager[ClothForceManager]
+        WindComp[WindComponent]
     end
     
     subgraph "Rendering Layer"
-        ClothRenderPass[FClothRenderPass]
-        ClothDebugPass[FClothDebugRenderPass]
+        OpaquePass[OpaqueRenderPass]
+        ClothDebugPass[ClothDebugRenderPass]
     end
     
+    World --> ClothPhysMgr
+    ClothPhysMgr --> ClothWorld
+    ClothWorld --> ClothInstance
+    ClothInstance --> ClothSolver
+    
     ClothComp --> ClothAsset
-    ClothMeshComp --> ClothSolver
+    StaticMeshComp --> ClothInstance
+
     ClothSolver --> ClothSimData
     ClothSolver --> IntegrateCS
     ClothSolver --> ConstraintCS
     ClothSolver --> NormalCS
     ClothSolver --> CollisionCS
-    ForceManager --> ClothSolver
+    
+    ForceManager --> ClothWorld
     WindComp --> ForceManager
-    ForceField --> ForceManager
-    ClothSimData --> ClothRenderPass
+    
+    ClothSimData --> OpaquePass
     ClothSimData --> ClothDebugPass
 ```
 
