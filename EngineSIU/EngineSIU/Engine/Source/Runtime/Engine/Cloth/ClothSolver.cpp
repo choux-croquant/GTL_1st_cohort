@@ -651,8 +651,7 @@ void FClothSolver::DispatchIntegration(float DeltaTime)
 
 void FClothSolver::DispatchConstraintSolver(int32 Iteration)
 {
-    if (!Graphics || !Graphics->DeviceContext || !ConstraintSolverCS || NumConstraints == 0)
-        return;
+    if (!Graphics || !Graphics->DeviceContext || !ConstraintSolverCS || NumConstraints == 0) return;
 
     // Bind constant buffer
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &ClothSimConstantBuffer);
