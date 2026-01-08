@@ -23,7 +23,7 @@ graph TB
         StaticMeshComp[StaticMeshComponent]
     end
     
-    subgraph "Asset Layer(created from staticmesh customizable)"
+    subgraph "Asset Layer"
         ClothAsset[ClothAsset]
         ClothLOD[ClothLODData]
     end
