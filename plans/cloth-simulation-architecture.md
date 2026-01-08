@@ -12,6 +12,12 @@ This document outlines the architecture for implementing a GPU-based cloth simul
 
 ```mermaid
 graph TB
+    subgraph "World / Managers"
+        World[UWorld]
+        ClothPhysMgr[FClothPhysicsManager]
+        ClothWorld[FClothWorld]
+    end
+
     subgraph "Cloth Component Layer"
         ClothComp[UClothComponent]
         ClothMeshComp[UClothMeshComponent]
@@ -24,6 +30,7 @@ graph TB
     end
     
     subgraph "Simulation Layer"
+        ClothInstance[FClothInstance]
         ClothSolver[FClothSolver]
         ClothSimData[FClothSimulationData]
     end
@@ -42,21 +49,29 @@ graph TB
     end
     
     subgraph "Rendering Layer"
-        ClothRenderPass[FClothRenderPass]
+        OpaquePass[FOpaqueRenderPass]
         ClothDebugPass[FClothDebugRenderPass]
     end
     
+    World --> ClothPhysMgr
+    ClothPhysMgr --> ClothWorld
+    ClothWorld --> ClothInstance
+    ClothInstance --> ClothSolver
+    
     ClothComp --> ClothAsset
-    ClothMeshComp --> ClothSolver
+    ClothMeshComp --> ClothInstance
+
     ClothSolver --> ClothSimData
     ClothSolver --> IntegrateCS
     ClothSolver --> ConstraintCS
     ClothSolver --> NormalCS
     ClothSolver --> CollisionCS
-    ForceManager --> ClothSolver
+    
+    ForceManager --> ClothWorld
     WindComp --> ForceManager
     ForceField --> ForceManager
-    ClothSimData --> ClothRenderPass
+    
+    ClothSimData --> OpaquePass
     ClothSimData --> ClothDebugPass
 ```
 
