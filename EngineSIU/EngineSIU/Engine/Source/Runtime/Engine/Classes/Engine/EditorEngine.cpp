@@ -22,6 +22,9 @@
 #include "PhysicsEngine/PhysicsAsset.h"
 #include "Particles/ParticleSystem.h"
 #include "LuaScripts/LuaUIManager.h"
+#include "Cloth/ClothPhysicsManager.h"
+#include "Components/ClothMeshComponent.h"
+#include "Cloth/ClothWorld.h"
 
 extern FEngineLoop GEngineLoop;
 
@@ -156,6 +159,7 @@ void UEditorEngine::Tick(float DeltaTime)
                     }
 
                     PhysicsManager->Simulate(DeltaTime);
+                    ClothPhysicsManager->Simulate(DeltaTime);
 
                     for (AActor* Actor : CachedActors)
                     {
@@ -274,7 +278,7 @@ void UEditorEngine::StartPIE()
     ActiveWorld = PIEWorld;
 
     SetPhysXScene(PIEWorld);
-    
+    SetClothWorld(PIEWorld);
     BindEssentialObjects();
     
     PIEWorld->BeginPlay();
@@ -581,6 +585,22 @@ void UEditorEngine::SetPhysXScene(UWorld* World)
         if (Prim && Prim->bSimulate)
         {
             Prim->CreatePhysXGameObject();
+        }
+    }
+}
+
+void UEditorEngine::SetClothWorld(UWorld* World)
+{
+    ClothPhysicsManager->CreateClothWorld(PIEWorld);
+    ClothPhysicsManager->SetCurrentWorld(PIEWorld);
+
+    for (const auto& Actor : World->GetActiveLevel()->Actors)
+    {
+        UClothMeshComponent* Cloth = Actor->GetComponentByClass<UClothMeshComponent>();
+        //USkeletalMeshComponent* Prim = Actor->GetComponentByClass<USkeletalMeshComponent>();
+        if (Cloth && Cloth->bSimulate)
+        {
+            //ClothPhysicsManager->GetCurrentClothWorld()->RegisterClothInstance();
         }
     }
 }

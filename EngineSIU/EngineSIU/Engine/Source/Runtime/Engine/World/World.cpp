@@ -39,16 +39,6 @@ void UWorld::InitializeNewWorld()
     ActiveLevel->InitLevel(this);
 
     CollisionManager = new FCollisionManager();
-
-    // Initialize ClothWorld for this world
-    ClothWorld = GetOrCreateClothWorld(this);
-    if (ClothWorld && GEngine && GEngine->Renderer)
-    {
-        ClothWorld->Initialize(
-            GEngine->Renderer->Graphics,
-            GEngine->Renderer->BufferManager,
-            GEngine->Renderer->ShaderManager);
-    }
 }
 
 UObject *UWorld::Duplicate(UObject *InOuter)

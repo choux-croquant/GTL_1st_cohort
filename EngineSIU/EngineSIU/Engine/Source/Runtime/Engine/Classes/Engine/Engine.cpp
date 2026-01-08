@@ -5,6 +5,7 @@
 #include "UObject/Casts.h"
 #include "World/World.h"
 #include "Physics/PhysicsManager.h"
+#include "Cloth/ClothPhysicsManager.h"
 
 UEngine* GEngine = nullptr;
 
@@ -19,6 +20,8 @@ void UEngine::Init()
     
     PhysicsManager = new FPhysicsManager();
     PhysicsManager->InitPhysX();
+
+    ClothPhysicsManager = new FClothPhysicsManager();
 }
 
 void UEngine::Release()

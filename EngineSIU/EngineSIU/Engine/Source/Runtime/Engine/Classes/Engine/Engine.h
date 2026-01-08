@@ -2,13 +2,13 @@
 
 #include "UObject/Object.h"
 #include "UObject/ObjectMacros.h"
-
 #include "Container/Array.h"
 #include "World/WorldContext.h"
 
 class UAssetManager;
 class UWorld;
 class FPhysicsManager;
+class FClothPhysicsManager;
 
 class UEngine : public UObject
 {
@@ -22,6 +22,7 @@ public:
     
     UAssetManager* AssetManager = nullptr;
     FPhysicsManager* PhysicsManager = nullptr;
+    FClothPhysicsManager* ClothPhysicsManager = nullptr;
 
     TMap<void*, void*> DuplicationMap;
     TArray<AActor*> DupActors;
@@ -38,7 +39,6 @@ public:
     // TODO: UObject->GetWorld() 구현 이후 추가.
     UWorld* GetWorldFromContextObject(const UObject* Object) const;
     FWorldContext* GetWorldContextFromWorld(const UWorld* InWorld);
-
     FWorldContext& CreateNewWorldContext(EWorldType InWorldType);
 
     

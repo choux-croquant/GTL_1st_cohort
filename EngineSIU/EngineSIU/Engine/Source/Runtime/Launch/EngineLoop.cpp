@@ -18,6 +18,7 @@
 #include "SoundManager.h"
 #include "Engine/TimerManager.h"
 #include "Lua/LuaScriptManager.h"
+#include "Cloth/ClothPhysicsManager.h"
 
 extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
 
@@ -97,6 +98,8 @@ int32 FEngineLoop::Init(HINSTANCE hInstance)
     GEngine = FObjectFactory::ConstructObject<UEditorEngine>(nullptr);
     GEngine->Init();
 
+    // TEMP : Init cloth physicsmanager here for D3D maganers
+    GEngine->ClothPhysicsManager->Initialize(Renderer.Graphics, Renderer.BufferManager, Renderer.ShaderManager);
 
     FSoundManager::GetInstance().Initialize();
     FSoundManager::GetInstance().LoadSound("GameBGM", "Contents/Sounds/BGMCinematic.mp3");
