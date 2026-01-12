@@ -101,10 +101,10 @@ void FClothRenderPass::PrepareRender(const std::shared_ptr<FEditorViewportClient
     Graphics->DeviceContext->IASetVertexBuffers(0, 1, &ClothVertexInfo.VertexBuffer, &stride, &offset);
 
     // Set rasterizer state (two-sided rendering)
-    if (ClothRasterizerState)
+    Graphics->DeviceContext->RSSetState(Graphics->RasterizerSolidBack);
+    /*if (ClothRasterizerState)
     {
-        Graphics->DeviceContext->RSSetState(ClothRasterizerState);
-    }
+    }*/
 }
 
 void FClothRenderPass::CleanUpRender(const std::shared_ptr<FEditorViewportClient> &Viewport)
@@ -114,7 +114,7 @@ void FClothRenderPass::CleanUpRender(const std::shared_ptr<FEditorViewportClient
     Graphics->DeviceContext->VSSetShaderResources(9, 2, nullSRVs);
 
     // Reset rasterizer state
-    Graphics->DeviceContext->RSSetState(nullptr);
+    //Graphics->DeviceContext->RSSetState(nullptr);
 }
 
 void FClothRenderPass::CreateResource()

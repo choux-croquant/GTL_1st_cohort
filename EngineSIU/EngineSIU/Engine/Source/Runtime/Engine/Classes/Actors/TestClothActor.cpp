@@ -28,7 +28,7 @@ void ATestClothActor::BeginPlay()
 
 void ATestClothActor::CreateTestCloth()
 {
-    const int32 GridSize = 9;
+    const int32 GridSize = 10;
     const float Spacing = 10.0f;  // 10 cm between particles
 
     TArray<FVector> positions;
