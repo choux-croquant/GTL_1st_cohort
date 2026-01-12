@@ -11,6 +11,7 @@
 #include "Engine/UserInterface/Console.h"
 #include "Core/Math/MathUtility.h"
 #include "ShaderConstants.h"
+#include "Classes/Engine/ClothAsset.h"
 
 #define SAFE_RELEASE(p) \
     if (p)              \
@@ -72,7 +73,7 @@ void FClothSolver::Initialize(FGraphicsDevice *InGraphics, FDXDBufferManager *In
     UE_LOG(ELogLevel::Display, TEXT("ClothSolver: Initialized successfully"));
 }
 
-bool FClothSolver::SetupFromAsset(UClothAsset *InAsset, const FClothConfig &InConfig)
+bool FClothSolver::SetupFromAsset(UClothAsset* InAsset, const FClothConfig& InConfig)
 {
     if (!InAsset)
     {
@@ -86,18 +87,38 @@ bool FClothSolver::SetupFromAsset(UClothAsset *InAsset, const FClothConfig &InCo
     // Store configuration
     Config = InConfig;
 
-    // Copy data from asset (simplified - assumes asset provides this data)
-    // In a full implementation, you would get this from InAsset
-    // For now, we'll just store the config
+    // Validate asset data
+    if (!InAsset->IsValid())
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothSolver: Cloth asset is not valid"));
+        return false;
+    }
 
-    // TODO: Extract data from UClothAsset
-    // RestPositions = InAsset->RestPositions;
-    // InvMasses = InAsset->InvMasses;
-    // Constraints = InAsset->DistanceConstraints;
-    // Indices = InAsset->Indices;
+    // ===== TODO 영역 채움: Asset 데이터 복사 =====
+    // 기본 LOD (필요하다면 LOD 선택 로직을 나중에 추가)
+    const TArray<FVector>& AssetRestPositions = InAsset->GetRestPositions();
+    const TArray<uint32>& AssetIndices = InAsset->GetIndices();
+    const TArray<float>& AssetInvMasses = InAsset->GetInvMasses();
+    const TArray<FClothConstraint>& AssetDistConstraints = InAsset->GetDistanceConstraints();
+    const TArray<FClothConstraint>& AssetBendConstraints = InAsset->GetBendConstraints();
+
+    // 기본 포지션/질량/인덱스 복사
+    RestPositions = AssetRestPositions;
+    Indices = AssetIndices;
+    InvMasses = AssetInvMasses;
+
+    // 제약 조건 복사
+    //DistanceConstraints = AssetDistConstraints;
+    //BendConstraints = AssetBendConstraints;
+
+    // 필요시 Attachment, VertexPaint도 가져온다 (나중에 사용 가능)
+    //AttachmentIndices = InAsset->GetAttachmentIndices();
+    //VertexPaintData = InAsset->GetVertexPaintData();
+
+    // ===== 여기까지 Asset → Solver 데이터 세팅 =====
 
     NumParticles = RestPositions.Num();
-    NumConstraints = Constraints.Num();
+    NumConstraints = AssetDistConstraints.Num() + AssetBendConstraints.Num();
     NumTriangles = Indices.Num() / 3;
 
     if (NumParticles == 0)
@@ -109,8 +130,16 @@ bool FClothSolver::SetupFromAsset(UClothAsset *InAsset, const FClothConfig &InCo
     // Initialize simulation data
     SimData.NumParticles = NumParticles;
     SimData.NumConstraints = NumConstraints;
+
     SimData.CurrentPositions.SetNum(NumParticles);
     SimData.CurrentVelocities.SetNum(NumParticles);
+
+    // 초기 상태: 휴식 위치를 현재 위치로 복사, 속도 0
+    for (int32 i = 0; i < NumParticles; ++i)
+    {
+        SimData.CurrentPositions[i] = RestPositions[i];
+        SimData.CurrentVelocities[i] = FVector::ZeroVector;
+    }
 
     // Create GPU resources
     if (!CreateGPUResources())
@@ -130,11 +159,9 @@ bool FClothSolver::SetupFromAsset(UClothAsset *InAsset, const FClothConfig &InCo
 
     bInitialized = true;
 
-    UE_LOG(ELogLevel::Display, TEXT("ClothSolver: Setup complete - %d particles, %d constraints"),
-           NumParticles, NumConstraints);
-
     return true;
 }
+
 
 void FClothSolver::Release()
 {
@@ -183,8 +210,7 @@ void FClothSolver::Release()
 
 void FClothSolver::Simulate(float InDeltaTime)
 {
-    if (!bInitialized || !Graphics || !Graphics->DeviceContext)
-        return;
+    if (!bInitialized || !Graphics || !Graphics->DeviceContext) return;
 
     // Clamp delta time to prevent instability
     float DeltaTime = FMath::Clamp(InDeltaTime, 0.0001f, 0.033f); // 0.1ms to 33ms
@@ -216,8 +242,7 @@ void FClothSolver::Simulate(float InDeltaTime)
 
 void FClothSolver::ResetSimulation()
 {
-    if (!bInitialized)
-        return;
+    if (!bInitialized) return;
 
     // Reset to initial positions and zero velocities
     if (RestPositions.Num() > 0)
@@ -678,8 +703,7 @@ void FClothSolver::DispatchConstraintSolver(int32 Iteration)
 
 void FClothSolver::DispatchNormalUpdate()
 {
-    if (!Graphics || !Graphics->DeviceContext || NumTriangles == 0)
-        return;
+    if (!Graphics || !Graphics->DeviceContext || NumTriangles == 0) return;
 
     // Step 1: Clear normals
     if (ClearNormalsCS)

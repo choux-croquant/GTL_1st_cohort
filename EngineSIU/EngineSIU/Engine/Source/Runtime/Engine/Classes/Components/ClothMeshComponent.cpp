@@ -1,5 +1,6 @@
 #include "ClothMeshComponent.h"
 #include "Cloth/ClothSolver.h"
+#include "Cloth/ClothInstance.h"
 
 UClothMeshComponent::UClothMeshComponent()
     : WorldTransform(FMatrix::Identity), DebugDrawMode(EClothDebugDrawMode::None), bIsVisible(true), bSimulate(true)
@@ -36,13 +37,21 @@ void UClothMeshComponent::TickComponent(float DeltaTime)
 
 void UClothMeshComponent::GetRenderData(FClothRenderData &OutData) const
 {
-    OutData.PositionBufferSRV = nullptr;
+    if (ClothInstance && ClothInstance->GetSolver())
+    {
+        //FClothSolver* Solver = ClothInstance->GetSolver();
+        OutData.PositionBufferSRV = ClothInstance->GetSolver()->GetPositionBufferSRV();  // GPU buffer
+        OutData.NormalBufferSRV = ClothInstance->GetSolver()->GetNormalBufferSRV();      // GPU buffer
+        OutData.NumVertices = ClothInstance->GetSolver()->GetNumParticles();
+        // ... indices, materials ...
+    }
+    /*OutData.PositionBufferSRV = nullptr;
     OutData.NormalBufferSRV = nullptr;
     OutData.Indices = nullptr;
     OutData.NumVertices = 0;
     OutData.NumTriangles = 0;
     OutData.WorldTransform = WorldTransform;
-    OutData.Material = Materials.Num() > 0 ? Materials[0] : nullptr;
+    OutData.Material = Materials.Num() > 0 ? Materials[0] : nullptr;*/
 
     // Get data from solver
     //if (Solver && Solver->IsInitialized())

@@ -213,6 +213,34 @@ void FGPUTimingManager::RetrieveResults()
         }
     }
     // else if hrDisjoint == S_FALSE: Data not ready yet, do nothing this frame.
+     else if (hr == S_FALSE)
+    {
+        // 데이터가 아직 준비되지 않아도, 쿼리를 재사용하기 전에
+        // 최소 한 번은 GetData로 결과를 버려 경고를 막는다.
+        Context->GetData(
+            FrameQueries[BaseResultIndex].DisjointQuery.Get(),
+            nullptr, 0, 0
+        );
+
+        for (uint32 i = 0; i < MAX_QUERIES_PER_FRAME; ++i)
+        {
+            const uint32 QueryIndex = BaseResultIndex + i;
+            if (!FrameQueries[QueryIndex].bQueryIssued)
+                continue;
+
+            Context->GetData(
+                FrameQueries[QueryIndex].StartQuery.Get(),
+                nullptr, 0, 0
+            );
+            Context->GetData(
+                FrameQueries[QueryIndex].EndQuery.Get(),
+                nullptr, 0, 0
+            );
+
+            FrameQueries[QueryIndex].bQueryIssued = false;
+            FrameQueries[QueryIndex].StatId = TStatId();
+        }
+    }
     // else: Error occurred during GetData for disjoint query.
 }
 

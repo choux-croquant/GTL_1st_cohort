@@ -75,7 +75,7 @@ void UEditorEngine::Release()
         EndPhysicsAssetViewer();
     }
     
-    SaveLevel("Saved/AutoSaves.scene");
+    //SaveLevel("Saved/AutoSaves.scene");
     
     for (FWorldContext* WorldContext : WorldList)
     {
@@ -597,7 +597,6 @@ void UEditorEngine::SetClothWorld(UWorld* World)
     for (const auto& Actor : World->GetActiveLevel()->Actors)
     {
         UClothMeshComponent* Cloth = Actor->GetComponentByClass<UClothMeshComponent>();
-        //USkeletalMeshComponent* Prim = Actor->GetComponentByClass<USkeletalMeshComponent>();
         if (Cloth && Cloth->bSimulate)
         {
             //ClothPhysicsManager->GetCurrentClothWorld()->RegisterClothInstance();

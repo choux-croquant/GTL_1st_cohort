@@ -47,8 +47,8 @@ void FClothRenderPass::ClearRenderArr()
 
 void FClothRenderPass::Render(const std::shared_ptr<FEditorViewportClient> &Viewport)
 {
-    if (ClothComponents.Num() == 0 || !ClothVertexShader || !ClothPixelShader)
-        return;
+    //if (ClothComponents.Num() == 0 || !ClothVertexShader || !ClothPixelShader) return;
+    if (ClothComponents.Num() == 0) return;
 
     PrepareRender(Viewport);
 
@@ -78,6 +78,14 @@ void FClothRenderPass::Release()
 
 void FClothRenderPass::PrepareRender(const std::shared_ptr<FEditorViewportClient> &Viewport)
 {
+    const EResourceType ResourceType = EResourceType::ERT_Scene;
+    FViewportResource* ViewportResource = Viewport->GetViewportResource();
+    FRenderTargetRHI* RenderTargetRHI = ViewportResource->GetRenderTarget(ResourceType);
+    FDepthStencilRHI* DepthStencilRHI = ViewportResource->GetDepthStencil(ResourceType);
+
+    Graphics->DeviceContext->OMSetRenderTargets(1, &RenderTargetRHI->RTV, DepthStencilRHI->DSV);
+    Graphics->DeviceContext->OMSetDepthStencilState(Graphics->DepthStencilState_Default, 0);
+
     // Set shaders
     Graphics->DeviceContext->VSSetShader(ClothVertexShader, nullptr, 0);
     Graphics->DeviceContext->PSSetShader(ClothPixelShader, nullptr, 0);
@@ -87,6 +95,10 @@ void FClothRenderPass::PrepareRender(const std::shared_ptr<FEditorViewportClient
 
     // Set primitive topology
     Graphics->DeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    UINT stride = sizeof(float) * 2; // float2 UV
+    UINT offset = 0;
+    Graphics->DeviceContext->IASetVertexBuffers(0, 1, &ClothVertexInfo.VertexBuffer, &stride, &offset);
 
     // Set rasterizer state (two-sided rendering)
     if (ClothRasterizerState)
@@ -107,36 +119,40 @@ void FClothRenderPass::CleanUpRender(const std::shared_ptr<FEditorViewportClient
 
 void FClothRenderPass::CreateResource()
 {
+    const int32 MaxClothVerts = 65536;
+    TArray<FVector2D> DummyUVs;
+    DummyUVs.SetNum(MaxClothVerts);
+    for (int32 i = 0; i < MaxClothVerts; ++i)
+    {
+        DummyUVs[i] = FVector2D(0.0f, 0.0f);
+    }
+
+    // BufferManager는 FRenderPassBase::Initialize에서 이미 세팅되어 있음
+    BufferManager->CreateVertexBuffer(TEXT("ClothDummyVB"), DummyUVs, ClothVertexInfo);
+
     // Create input layout for cloth (vertex ID + UV)
-    D3D11_INPUT_ELEMENT_DESC layout[] =
-        {
-            {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0}};
+    D3D11_INPUT_ELEMENT_DESC layout[] = {
+            {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0}
+    };
 
     // Load cloth vertex shader with input layout
-    HRESULT hr = ShaderManager->AddVertexShaderAndInputLayout(
-        L"ClothVertexShader",
-        L"Shaders/ClothVertexShader.hlsl",
-        "mainVS",
-        layout,
-        1);
+    HRESULT hr = ShaderManager->AddVertexShaderAndInputLayout(L"ClothVertexShader", L"Shaders/ClothVertexShader.hlsl", "main", layout, ARRAYSIZE(layout));
     if (FAILED(hr))
     {
         UE_LOG(ELogLevel::Error, TEXT("Failed to compile Cloth Vertex Shader"));
         return;
     }
-    ClothVertexShader = ShaderManager->GetVertexShaderByKey(L"ClothVertexShader");
-    ClothInputLayout = ShaderManager->GetInputLayoutByKey(L"ClothVertexShader");
 
     // Load cloth pixel shader
-    hr = ShaderManager->AddPixelShader(
-        L"ClothPixelShader",
-        L"Shaders/ClothPixelShader.hlsl",
-        "mainPS");
+    hr = ShaderManager->AddPixelShader(L"ClothPixelShader", L"Shaders/ClothPixelShader.hlsl", "mainPS");
     if (FAILED(hr))
     {
         UE_LOG(ELogLevel::Error, TEXT("Failed to compile Cloth Pixel Shader"));
         return;
     }
+
+    ClothVertexShader = ShaderManager->GetVertexShaderByKey(L"ClothVertexShader");
+    ClothInputLayout = ShaderManager->GetInputLayoutByKey(L"ClothVertexShader");
     ClothPixelShader = ShaderManager->GetPixelShaderByKey(L"ClothPixelShader");
 
     // Create constant buffer for cloth mesh
@@ -170,16 +186,14 @@ void FClothRenderPass::CreateResource()
 
 void FClothRenderPass::RenderClothComponent(UClothMeshComponent *ClothComponent, const std::shared_ptr<FEditorViewportClient> &Viewport)
 {
-    if (!ClothComponent)
-        return;
+    if (!ClothComponent) return;
 
     // Get render data from component
     FClothRenderData renderData;
     ClothComponent->GetRenderData(renderData);
 
-    if (!renderData.PositionBufferSRV || !renderData.NormalBufferSRV || !renderData.Indices)
-        return;
-
+    // if (!renderData.PositionBufferSRV || !renderData.NormalBufferSRV || !renderData.Indices) return;
+    if (!renderData.PositionBufferSRV || !renderData.NormalBufferSRV) return;
     // Bind simulation buffers as SRVs
     ID3D11ShaderResourceView *clothSRVs[] = {
         renderData.PositionBufferSRV,
@@ -188,14 +202,15 @@ void FClothRenderPass::RenderClothComponent(UClothMeshComponent *ClothComponent,
 
     // Update cloth mesh constant buffer
     UpdateClothMeshConstantBuffer(renderData.WorldTransform, renderData.NumVertices);
-    Graphics->DeviceContext->VSSetConstantBuffers(14, 1, &ClothMeshConstantBuffer);
+    Graphics->DeviceContext->VSSetConstantBuffers(10, 1, &ClothMeshConstantBuffer);
 
     // Set material (if available)
     // TODO: Bind material textures and constants
 
     // Draw cloth mesh
     // Note: Using DrawInstanced with vertex ID to fetch from structured buffer
-    Graphics->DeviceContext->DrawInstanced(renderData.NumTriangles * 3, 1, 0, 0);
+    //Graphics->DeviceContext->DrawInstanced(renderData.NumTriangles * 3, 1, 0, 0);
+    Graphics->DeviceContext->DrawInstanced(renderData.NumVertices, 1, 0, 0);
 }
 
 void FClothRenderPass::UpdateClothMeshConstantBuffer(const FMatrix &WorldTransform, uint32 NumVertices)

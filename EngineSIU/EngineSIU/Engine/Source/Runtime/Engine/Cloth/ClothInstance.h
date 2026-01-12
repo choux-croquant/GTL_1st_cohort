@@ -96,10 +96,12 @@ public:
     const TArray<float> &GetInvMasses() const { return InvMasses; }
     const TArray<FClothConstraint> &GetConstraints() const { return Constraints; }
     const TArray<uint32> &GetIndices() const { return Indices; }
+    
+    FClothSolver* GetSolver() const { return Solver; }
 
 private:
     // Solver for this instance
-    FClothSolver *Solver;
+    FClothSolver* Solver;
 
     // Simulation state
     FClothSimulationData SimData;

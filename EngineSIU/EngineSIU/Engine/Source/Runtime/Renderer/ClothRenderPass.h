@@ -71,4 +71,6 @@ private:
 
     // Rasterizer state (two-sided rendering for cloth)
     ID3D11RasterizerState *ClothRasterizerState;
+
+    FVertexInfo ClothVertexInfo;
 };
