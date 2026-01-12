@@ -41,14 +41,15 @@ void ATestClothActor::CreateTestCloth()
         for (int32 x = 0; x < GridSize; ++x)
         {
             FVector pos;
-            pos.X = x * Spacing;
-            pos.Y = y * Spacing;
-            pos.Z = 0.0f;
+
+            pos.X = 0.0f;
+            pos.Y = x * Spacing;
+            pos.Z = y * Spacing;
 
             positions.Add(pos);
 
-            // Top row is fixed (invMass = 0)
-            float invMass = (y == 0) ? 0.0f : 1.0f;
+            // Top row is fixed (highest Z row 고정)
+            float invMass = (y == GridSize - 1) ? 0.0f : 1.0f;
             invMasses.Add(invMass);
         }
     }

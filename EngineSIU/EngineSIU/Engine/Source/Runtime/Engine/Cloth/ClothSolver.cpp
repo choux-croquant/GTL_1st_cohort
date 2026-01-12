@@ -73,7 +73,7 @@ void FClothSolver::Initialize(FGraphicsDevice *InGraphics, FDXDBufferManager *In
     UE_LOG(ELogLevel::Display, TEXT("ClothSolver: Initialized successfully"));
 }
 
-bool FClothSolver::SetupFromAsset(UClothAsset* InAsset, const FClothConfig& InConfig)
+bool FClothSolver::SetupFromAsset(UClothAsset *InAsset, const FClothConfig &InConfig)
 {
     if (!InAsset)
     {
@@ -96,24 +96,25 @@ bool FClothSolver::SetupFromAsset(UClothAsset* InAsset, const FClothConfig& InCo
 
     // ===== TODO 영역 채움: Asset 데이터 복사 =====
     // 기본 LOD (필요하다면 LOD 선택 로직을 나중에 추가)
-    const TArray<FVector>& AssetRestPositions = InAsset->GetRestPositions();
-    const TArray<uint32>& AssetIndices = InAsset->GetIndices();
-    const TArray<float>& AssetInvMasses = InAsset->GetInvMasses();
-    const TArray<FClothConstraint>& AssetDistConstraints = InAsset->GetDistanceConstraints();
-    const TArray<FClothConstraint>& AssetBendConstraints = InAsset->GetBendConstraints();
+    const TArray<FVector> &AssetRestPositions = InAsset->GetRestPositions();
+    const TArray<uint32> &AssetIndices = InAsset->GetIndices();
+    const TArray<float> &AssetInvMasses = InAsset->GetInvMasses();
+    const TArray<FClothConstraint> &AssetDistConstraints = InAsset->GetDistanceConstraints();
+    const TArray<FClothConstraint> &AssetBendConstraints = InAsset->GetBendConstraints();
 
     // 기본 포지션/질량/인덱스 복사
     RestPositions = AssetRestPositions;
     Indices = AssetIndices;
     InvMasses = AssetInvMasses;
 
-    // 제약 조건 복사
-    //DistanceConstraints = AssetDistConstraints;
-    //BendConstraints = AssetBendConstraints;
+    // 제약 조건 복사 - Combine distance and bend constraints
+    Constraints.Empty();
+    Constraints.Append(AssetDistConstraints);
+    Constraints.Append(AssetBendConstraints);
 
     // 필요시 Attachment, VertexPaint도 가져온다 (나중에 사용 가능)
-    //AttachmentIndices = InAsset->GetAttachmentIndices();
-    //VertexPaintData = InAsset->GetVertexPaintData();
+    // AttachmentIndices = InAsset->GetAttachmentIndices();
+    // VertexPaintData = InAsset->GetVertexPaintData();
 
     // ===== 여기까지 Asset → Solver 데이터 세팅 =====
 
@@ -162,7 +163,6 @@ bool FClothSolver::SetupFromAsset(UClothAsset* InAsset, const FClothConfig& InCo
     return true;
 }
 
-
 void FClothSolver::Release()
 {
     if (!bInitialized)
@@ -210,7 +210,8 @@ void FClothSolver::Release()
 
 void FClothSolver::Simulate(float InDeltaTime)
 {
-    if (!bInitialized || !Graphics || !Graphics->DeviceContext) return;
+    if (!bInitialized || !Graphics || !Graphics->DeviceContext)
+        return;
 
     // Clamp delta time to prevent instability
     float DeltaTime = FMath::Clamp(InDeltaTime, 0.0001f, 0.033f); // 0.1ms to 33ms
@@ -242,7 +243,8 @@ void FClothSolver::Simulate(float InDeltaTime)
 
 void FClothSolver::ResetSimulation()
 {
-    if (!bInitialized) return;
+    if (!bInitialized)
+        return;
 
     // Reset to initial positions and zero velocities
     if (RestPositions.Num() > 0)
@@ -614,8 +616,84 @@ bool FClothSolver::CreateViews()
 
 bool FClothSolver::UploadInitialData()
 {
-    // TODO: Upload initial particle positions, velocities, constraints, indices
-    // This would use Graphics->DeviceContext->UpdateSubresource()
+    if (!Graphics || !Graphics->DeviceContext)
+        return false;
+
+    // Upload position data (convert to GPU particle format)
+    if (PositionBuffer[0] && PositionBuffer[1] && RestPositions.Num() == NumParticles)
+    {
+        TArray<FClothParticleGPU> particlesGPU;
+        particlesGPU.SetNum(NumParticles);
+
+        for (uint32 i = 0; i < NumParticles; ++i)
+        {
+            particlesGPU[i].Position = RestPositions[i];
+            particlesGPU[i].InvMass = (i < static_cast<uint32>(InvMasses.Num())) ? InvMasses[i] : 1.0f;
+        }
+
+        // Upload to both ping-pong buffers
+        Graphics->DeviceContext->UpdateSubresource(PositionBuffer[0], 0, nullptr, particlesGPU.GetData(), 0, 0);
+        Graphics->DeviceContext->UpdateSubresource(PositionBuffer[1], 0, nullptr, particlesGPU.GetData(), 0, 0);
+
+        UE_LOG(ELogLevel::Display, TEXT("ClothSolver: Uploaded %d positions (first pos: %f, %f, %f)"),
+               NumParticles, RestPositions[0].X, RestPositions[0].Y, RestPositions[0].Z);
+    }
+
+    // Upload velocity data (all zeros initially)
+    if (VelocityBuffer && SimData.CurrentVelocities.Num() == NumParticles)
+    {
+        TArray<FClothVelocityGPU> velocitiesGPU;
+        velocitiesGPU.SetNum(NumParticles);
+
+        for (uint32 i = 0; i < NumParticles; ++i)
+        {
+            velocitiesGPU[i].Velocity = SimData.CurrentVelocities[i];
+            velocitiesGPU[i].Padding = 0.0f;
+        }
+
+        Graphics->DeviceContext->UpdateSubresource(VelocityBuffer, 0, nullptr, velocitiesGPU.GetData(), 0, 0);
+    }
+
+    // Upload constraint data
+    if (ConstraintBuffer && Constraints.Num() > 0)
+    {
+        TArray<FClothConstraintGPU> constraintsGPU;
+        constraintsGPU.SetNum(Constraints.Num());
+
+        for (int32 i = 0; i < Constraints.Num(); ++i)
+        {
+            constraintsGPU[i].ParticleA = Constraints[i].ParticleA;
+            constraintsGPU[i].ParticleB = Constraints[i].ParticleB;
+            constraintsGPU[i].RestLength = Constraints[i].RestLength;
+            constraintsGPU[i].Stiffness = Constraints[i].Stiffness;
+        }
+
+        Graphics->DeviceContext->UpdateSubresource(ConstraintBuffer, 0, nullptr, constraintsGPU.GetData(), 0, 0);
+
+        UE_LOG(ELogLevel::Display, TEXT("ClothSolver: Uploaded %d constraints"), Constraints.Num());
+    }
+
+    // Upload index data
+    if (IndexBuffer && Indices.Num() > 0)
+    {
+        Graphics->DeviceContext->UpdateSubresource(IndexBuffer, 0, nullptr, Indices.GetData(), 0, 0);
+
+        UE_LOG(ELogLevel::Display, TEXT("ClothSolver: Uploaded %d indices"), Indices.Num());
+    }
+
+    // Initialize normal buffer (will be computed by simulation)
+    if (NormalBuffer)
+    {
+        TArray<FVector> initialNormals;
+        initialNormals.SetNum(NumParticles);
+
+        for (uint32 i = 0; i < NumParticles; ++i)
+        {
+            initialNormals[i] = FVector(0.0f, 0.0f, 1.0f); // Default up normal
+        }
+
+        Graphics->DeviceContext->UpdateSubresource(NormalBuffer, 0, nullptr, initialNormals.GetData(), 0, 0);
+    }
 
     return true;
 }
@@ -676,7 +754,8 @@ void FClothSolver::DispatchIntegration(float DeltaTime)
 
 void FClothSolver::DispatchConstraintSolver(int32 Iteration)
 {
-    if (!Graphics || !Graphics->DeviceContext || !ConstraintSolverCS || NumConstraints == 0) return;
+    if (!Graphics || !Graphics->DeviceContext || !ConstraintSolverCS || NumConstraints == 0)
+        return;
 
     // Bind constant buffer
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &ClothSimConstantBuffer);
@@ -703,7 +782,8 @@ void FClothSolver::DispatchConstraintSolver(int32 Iteration)
 
 void FClothSolver::DispatchNormalUpdate()
 {
-    if (!Graphics || !Graphics->DeviceContext || NumTriangles == 0) return;
+    if (!Graphics || !Graphics->DeviceContext || NumTriangles == 0)
+        return;
 
     // Step 1: Clear normals
     if (ClearNormalsCS)
