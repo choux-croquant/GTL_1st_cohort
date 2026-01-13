@@ -58,6 +58,11 @@ struct FDistanceConstraint
     uint ParticleB;
     float RestLength;
     float Stiffness;
+
+    float Compliance; // XPBD
+    float Lambda;     // XPBD
+    float Padding0;
+    float Padding1;
 };
 
 /**

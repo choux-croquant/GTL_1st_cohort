@@ -77,5 +77,6 @@ float4 mainPS(PS_INPUT_CommonMesh Input) : SV_TARGET
     // Convert to sRGB for output
     finalColor = LinearToSRGB(finalColor);
     
-    return float4(finalColor, Material.Transparency);
+    //return float4(finalColor, Material.Transparency);
+    return float4(1.0f, 1.0f, 1.0f, 1.0f);
 }

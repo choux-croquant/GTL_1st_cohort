@@ -28,8 +28,7 @@ void IntegrateCS(uint3 DTid : SV_DispatchThreadID)
     FClothVelocity velocity = VelocityBuffer[idx];
     
     // Skip fixed particles (invMass == 0)
-    if (particle.InvMass == 0.0f)
-        return;
+    if (particle.InvMass == 0.0f) return;
     
     // Calculate total external force
     float3 force = float3(0, 0, 0);

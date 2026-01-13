@@ -8,6 +8,8 @@
 
 // Input/Output buffers
 RWStructuredBuffer<FClothParticle> PositionBuffer : register(u0);
+RWStructuredBuffer<FClothVelocity> VelocityBuffer : register(u1);
+//RWStructuredBuffer<FDistanceConstraint> ConstraintBufferRW : register(u2);
 StructuredBuffer<FDistanceConstraint> ConstraintBuffer : register(t0);
 
 /**
@@ -23,78 +25,105 @@ StructuredBuffer<FDistanceConstraint> ConstraintBuffer : register(t0);
 void SolveDistanceConstraintsCS(uint3 DTid : SV_DispatchThreadID)
 {
     uint idx = DTid.x;
-    
-    // Bounds check
-    if (idx >= NumConstraints)
-        return;
-    
-    // Load constraint data
+    if (idx >= NumConstraints) return;
+
     FDistanceConstraint constraint = ConstraintBuffer[idx];
-    
-    // Load particle data
+
     FClothParticle pA = PositionBuffer[constraint.ParticleA];
     FClothParticle pB = PositionBuffer[constraint.ParticleB];
-    
-    // Calculate current distance vector
+
+    // ===== 추가: 속도 로드 =====
+    FClothVelocity vA = VelocityBuffer[constraint.ParticleA];
+    FClothVelocity vB = VelocityBuffer[constraint.ParticleB];
+
     float3 delta = pB.Position - pA.Position;
     float currentLength = length(delta);
-    
-    // Skip if particles are at same position (avoid division by zero)
-    if (currentLength < 1e-6f)
-        return;
-    
-    // Calculate constraint error (difference from rest length)
+
+    if (currentLength < 1e-6f) return;
+
     float error = currentLength - constraint.RestLength;
-    
-    // Direction vector
     float3 dir = delta / currentLength;
-    
-    // Calculate correction magnitude
-    float invMassSum = pA.InvMass + pB.InvMass;
-    
-    // Skip if both particles are fixed
-    if (invMassSum < 1e-6f)
-        return;
-    
-    // Apply stiffness
+
+    float w1 = pA.InvMass;
+    float w2 = pB.InvMass;
+    float wSum = w1 + w2;
+
+    if (wSum < 1e-6f) return;
+
     float stiffness = constraint.Stiffness * StretchStiffness;
-    
-    // XPBD modification for time-step independent behavior
-    if (UseXPBD)
+
+    if (!UseXPBD)
     {
-        // Calculate compliance (inverse stiffness) adjusted for time step
-        float alpha = 1.0f / (stiffness * DeltaTime * DeltaTime);
-        
-        // Modify effective inverse mass sum
-        float effectiveInvMass = invMassSum + alpha;
-        
-        if (effectiveInvMass > 1e-6f)
+        float lambda = error * stiffness / wSum;
+        float3 common = lambda * dir;
+
+        float3 correctionA = -w1 * common;
+        float3 correctionB = w2 * common;
+
+        float effectiveStiffness = stiffness;
+
+        if (w1 < 1e-6f)  // pA가 고정점
         {
-            stiffness = 1.0f / effectiveInvMass;
+            // 모든 보정을 pB에만 적용, 하지만 stiffness를 반반 나눔
+            correctionA = float3(0, 0, 0);
+            correctionB = -error * dir * effectiveStiffness * 0.5f;
         }
+        else if (w2 < 1e-6f)  // pB가 고정점
+        {
+            correctionA = error * dir * effectiveStiffness * 0.5f;
+            correctionB = float3(0, 0, 0);
+        }
+
+        float maxCorr = constraint.RestLength * 0.015f;
+        correctionA = ClampFloat3(correctionA, -maxCorr, maxCorr);
+        correctionB = ClampFloat3(correctionB, -maxCorr, maxCorr);
+
+        pA.Position += correctionA;
+        pB.Position += correctionB;
+
+        // ===== 추가: 속도 업데이트 =====
+        float correctionDamping = 1.0f - Damping;  // 같은 damping 적용
+        vA.Velocity += correctionA / DeltaTime * correctionDamping;
+        vB.Velocity += correctionB / DeltaTime * correctionDamping;
     }
-    
-    // Calculate position correction
-    float3 correction = dir * error * stiffness;
-    
-    // Distribute correction based on inverse mass
-    // Lighter particles (higher invMass) move more
-    float3 correctionA = -correction * (pA.InvMass / invMassSum);
-    float3 correctionB = correction * (pB.InvMass / invMassSum);
-    
-    // Clamp corrections to prevent explosions
-    float maxCorrection = constraint.RestLength * 0.5f; // Max 50% of rest length per iteration
-    correctionA = ClampFloat3(correctionA, -maxCorrection, maxCorrection);
-    correctionB = ClampFloat3(correctionB, -maxCorrection, maxCorrection);
-    
-    // Apply corrections
-    pA.Position += correctionA;
-    pB.Position += correctionB;
-    
-    // Write back (Note: potential race condition with Jacobi iteration)
-    // This is acceptable as convergence happens over multiple iterations
+    else
+    {
+        float alpha = constraint.Compliance;
+        float lambda = constraint.Lambda;
+        float alphaTilde = alpha / (DeltaTime * DeltaTime);
+        float denom = wSum + alphaTilde;
+
+        if (denom > 1e-6f)
+        {
+            float dLambda = (-error - alphaTilde * lambda) / denom;
+            lambda += dLambda;
+            constraint.Lambda = lambda;
+        }
+
+        float3 common = lambda * dir;
+        float3 correctionA = -w1 * common;
+        float3 correctionB = w2 * common;
+
+        float maxCorr = constraint.RestLength * 0.1f;
+        correctionA = ClampFloat3(correctionA, -maxCorr, maxCorr);
+        correctionB = ClampFloat3(correctionB, -maxCorr, maxCorr);
+
+        pA.Position += correctionA;
+        pB.Position += correctionB;
+
+        // ===== 추가: 속도 업데이트 =====
+        float correctionDamping = 1.0f - Damping;
+        vA.Velocity += correctionA / DeltaTime * correctionDamping;
+        vB.Velocity += correctionB / DeltaTime * correctionDamping;
+    }
+
+    // Write back
     PositionBuffer[constraint.ParticleA] = pA;
     PositionBuffer[constraint.ParticleB] = pB;
+    VelocityBuffer[constraint.ParticleA] = vA;  // 추가
+    VelocityBuffer[constraint.ParticleB] = vB;  // 추가
+
+    //ConstraintBufferRW[idx] = constraint;
 }
 
 /**
