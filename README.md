@@ -1,4 +1,7 @@
-﻿# GTL_W13_T3
+﻿# GTL_1st_cohort
+
+이 레포지토리는 기존 엔진 렌더링 파이프라인 위에 GPU 기반 Cloth System을 통합·구현하기 위한 저장소입니다.  
+Cloth Asset, Cloth Solver(Compute Shader), Cloth Render Pass를 추가하고, StaticMesh / SkeletalMesh 파이프라인과 연동하는 작업을 포함합니다.
 
 # Clone시 주의사항
 이 레포지토리에는 submodule이 포함되어있어, 일반적인 방식으로 clone하면, 컴파일할 때 정상적으로 컴파일되지 않습니다.
