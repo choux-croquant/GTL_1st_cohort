@@ -15,6 +15,7 @@ struct FClothRenderData
 {
     ID3D11ShaderResourceView *PositionBufferSRV;
     ID3D11ShaderResourceView *NormalBufferSRV;
+    ID3D11ShaderResourceView *IndexBufferSRV;
     const TArray<uint32> *Indices;
     uint32 NumVertices;
     uint32 NumTriangles;
@@ -68,7 +69,7 @@ public:
     // Visibility
     void SetVisible(bool bVisible) { bIsVisible = bVisible; }
     bool IsVisible() const { return bIsVisible; }
-    
+
 public:
     // Activeness
     bool bSimulate;

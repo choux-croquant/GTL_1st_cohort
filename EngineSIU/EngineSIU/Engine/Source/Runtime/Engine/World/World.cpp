@@ -12,6 +12,7 @@
 #include "GameFramework/GameMode.h"
 #include "Engine/Classes/Actors/BehellaGameMode.h"
 #include "Classes/Components/TextComponent.h"
+#include "Actors/TestClothActor.h"
 
 class UEditorEngine;
 
@@ -76,9 +77,12 @@ void UWorld::Tick(float DeltaTime)
 
 void UWorld::BeginPlay()
 {
+    // TEST
+    ATestClothActor* ClothActor = this->SpawnActor<ATestClothActor>();
+    ClothActor->SetActorLocation(FVector(20, 0, 0));
+
     if (!GameMode && this->WorldType == EWorldType::PIE)
     {
-        // GameMode = this->SpawnActor<AGameMode>();
         GameMode = this->SpawnActor<AGameMode>();
         // GameMode->SetActorLabel(TEXT("OBJ_BEHELLA_GAMEMODE"));
         GameMode->SetActorLabel(TEXT("OBJ_GAMEMODE"));

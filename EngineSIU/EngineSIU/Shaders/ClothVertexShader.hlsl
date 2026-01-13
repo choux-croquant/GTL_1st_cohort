@@ -10,7 +10,7 @@ StructuredBuffer<float4> ClothPositionBuffer : register(t9);  // xyz = position,
 StructuredBuffer<float3> ClothNormalBuffer : register(t10);
 
 // Cloth mesh constant buffer
-cbuffer ClothMeshConstants : register(b14)
+cbuffer ClothMeshConstants : register(b10)
 {
     row_major matrix ClothWorldMatrix;
     uint ClothNumVertices;
@@ -23,7 +23,7 @@ struct VS_INPUT_Cloth
     float2 UV : TEXCOORD;
 };
 
-PS_INPUT_CommonMesh mainVS(VS_INPUT_Cloth Input)
+PS_INPUT_CommonMesh main(VS_INPUT_Cloth Input)
 {
     PS_INPUT_CommonMesh Output;
     
@@ -61,7 +61,7 @@ PS_INPUT_CommonMesh mainVS(VS_INPUT_Cloth Input)
     Output.UV = Input.UV;
     
     // Default color (can be overridden by pixel shader)
-    Output.Color = float4(1, 1, 1, 1);
+    Output.Color = float4(1, 0, 0, 1);
     
     return Output;
 }

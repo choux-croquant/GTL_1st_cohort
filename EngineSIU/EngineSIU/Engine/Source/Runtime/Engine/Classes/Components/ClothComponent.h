@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include "ActorComponent.h"
+#include "SceneComponent.h"
 #include "../../Cloth/ClothSimulationData.h"
 
 // Forward declarations
@@ -17,9 +17,9 @@ class USkeletalMeshComponent;
 /**
  * Base cloth component - manages simulation lifecycle
  */
-class UClothComponent : public UActorComponent
+class UClothComponent : public USceneComponent
 {
-    DECLARE_CLASS(UClothComponent, UActorComponent)
+    DECLARE_CLASS(UClothComponent, USceneComponent)
 
 public:
     UClothComponent();

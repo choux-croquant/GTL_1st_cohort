@@ -56,6 +56,7 @@ protected:
 private:
     void RenderClothComponent(UClothMeshComponent *ClothComponent, const std::shared_ptr<FEditorViewportClient> &Viewport);
     void UpdateClothMeshConstantBuffer(const FMatrix &WorldTransform, uint32 NumVertices);
+    ID3D11Buffer *CreateIndexBufferFromIndices(const TArray<uint32> &Indices);
 
 private:
     // Cloth components to render
@@ -71,4 +72,9 @@ private:
 
     // Rasterizer state (two-sided rendering for cloth)
     ID3D11RasterizerState *ClothRasterizerState;
+
+    FVertexInfo ClothVertexInfo;
+
+    // Temp index buffer cache (consider better management)
+    ID3D11Buffer *TempIndexBuffer;
 };
