@@ -56,6 +56,11 @@ struct FClothConstraintGPU
     uint32 ParticleB;
     float RestLength;
     float Stiffness;
+
+    float Compliance; // XPBD용
+    float Lambda;     // XPBD용 상태
+    float Padding0;
+    float Padding1;
 };
 
 /**

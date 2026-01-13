@@ -215,6 +215,7 @@ void FClothSolver::Simulate(float InDeltaTime)
 
     // Clamp delta time to prevent instability
     float DeltaTime = FMath::Clamp(InDeltaTime, 0.0001f, 0.033f); // 0.1ms to 33ms
+    //float DeltaTime = 0.016f;
 
     // Update constant buffer
     UpdateConstantBuffers();
@@ -754,14 +755,16 @@ void FClothSolver::DispatchIntegration(float DeltaTime)
 
 void FClothSolver::DispatchConstraintSolver(int32 Iteration)
 {
-    if (!Graphics || !Graphics->DeviceContext || !ConstraintSolverCS || NumConstraints == 0)
-        return;
+    if (!Graphics || !Graphics->DeviceContext || !ConstraintSolverCS || NumConstraints == 0) return;
 
     // Bind constant buffer
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &ClothSimConstantBuffer);
 
     // Bind UAV for positions
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &PositionUAV[CurrentBufferIndex], nullptr);
+    //Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &PositionUAV[CurrentBufferIndex], nullptr);
+    // Bind UAVs
+    ID3D11UnorderedAccessView* uavs[] = { PositionUAV[CurrentBufferIndex], VelocityUAV };
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, nullptr);
 
     // Bind SRV for constraints
     Graphics->DeviceContext->CSSetShaderResources(0, 1, &ConstraintSRV);

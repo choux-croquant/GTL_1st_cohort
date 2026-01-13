@@ -127,7 +127,8 @@ void FClothRenderPass::PrepareRender(const std::shared_ptr<FEditorViewportClient
     }
     else
     {
-        Graphics->DeviceContext->RSSetState(Graphics->RasterizerSolidBack);
+        //Graphics->DeviceContext->RSSetState(Graphics->RasterizerSolidBack);
+        Graphics->DeviceContext->RSSetState(Graphics->RasterizerWireframeBack);
     }
 }
 
@@ -193,7 +194,8 @@ void FClothRenderPass::CreateResource()
 
     // Create rasterizer state for two-sided rendering
     D3D11_RASTERIZER_DESC rastDesc = {};
-    rastDesc.FillMode = D3D11_FILL_SOLID;
+    //rastDesc.FillMode = D3D11_FILL_SOLID;
+    rastDesc.FillMode = D3D11_FILL_WIREFRAME;
     rastDesc.CullMode = D3D11_CULL_NONE; // Two-sided rendering
     rastDesc.FrontCounterClockwise = FALSE;
     rastDesc.DepthClipEnable = TRUE;
@@ -227,7 +229,9 @@ void FClothRenderPass::RenderClothComponent(UClothMeshComponent *ClothComponent,
     // Bind simulation buffers as SRVs
     ID3D11ShaderResourceView *clothSRVs[] = {
         renderData.PositionBufferSRV,
-        renderData.NormalBufferSRV};
+        renderData.NormalBufferSRV
+    };
+
     Graphics->DeviceContext->VSSetShaderResources(9, 2, clothSRVs);
 
     // Update cloth mesh constant buffer

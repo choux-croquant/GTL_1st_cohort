@@ -51,14 +51,32 @@ struct FClothConstraint
     uint32 ParticleB;
     float RestLength; // For distance constraints
     float Stiffness;  // Per-constraint stiffness
+    float Compliance;  // XPBD용
+    float Lambda;      // XPBD용 상태
 
     FClothConstraint()
-        : ParticleA(0), ParticleB(0), RestLength(0.0f), Stiffness(1.0f)
+        : ParticleA(0), ParticleB(0), RestLength(0.0f), Stiffness(1.0f), Compliance(0.0f), Lambda(0.0f)
     {
     }
 
     FClothConstraint(uint32 InA, uint32 InB, float InRestLength, float InStiffness = 1.0f)
-        : ParticleA(InA), ParticleB(InB), RestLength(InRestLength), Stiffness(InStiffness)
+        : ParticleA(InA)
+        , ParticleB(InB)
+        , RestLength(InRestLength)
+        , Stiffness(InStiffness)
+        , Compliance(0.0f)  // 기본값: hard constraint
+        , Lambda(0.0f)      // 누적값 초기화
+    {
+    }
+
+    // 선택: XPBD 파라미터를 직접 지정하는 생성자
+    FClothConstraint(uint32 InA, uint32 InB, float InRestLength, float InStiffness, float InCompliance)
+        : ParticleA(InA)
+        , ParticleB(InB)
+        , RestLength(InRestLength)
+        , Stiffness(InStiffness)
+        , Compliance(InCompliance)
+        , Lambda(0.0f)  // 누적값은 항상 0으로 시작
     {
     }
 };
@@ -93,8 +111,8 @@ struct FClothSimulationData
     TArray<FVector> CurrentVelocities;
 
     // External forces
-    //FVector Gravity = FVector(0.0f, 0.0f, -980.0f); // cm/s^2
-    FVector Gravity = FVector(0.0f, 0.0f, 0.0f); // cm/s^2
+    FVector Gravity = FVector(0.0f, 0.0f, -90.0f); // cm/s^2
+    //FVector Gravity = FVector(0.0f, 0.0f, 0.0f); // cm/s^2
     FVector Wind = FVector(0.0f, 0.0f, 0.0f);
     FVector ExternalForce = FVector(0.0f, 0.0f, 0.0f);
 
@@ -103,8 +121,8 @@ struct FClothSimulationData
     float AccumulatedTime = 0.0f;
 
     FClothSimulationData()
-        //: NumParticles(0), NumConstraints(0), Gravity(0.0f, 0.0f, -980.0f), Wind(0.0f, 0.0f, 0.0f), ExternalForce(0.0f, 0.0f, 0.0f), CurrentTime(0.0f), AccumulatedTime(0.0f)
-        : NumParticles(0), NumConstraints(0), Gravity(0.0f, 0.0f, 0.0f), Wind(0.0f, 0.0f, 0.0f), ExternalForce(0.0f, 0.0f, 0.0f), CurrentTime(0.0f), AccumulatedTime(0.0f)
+        : NumParticles(0), NumConstraints(0), Gravity(0.0f, 0.0f, -90.0f), Wind(0.0f, 0.0f, 0.0f), ExternalForce(0.0f, 0.0f, 0.0f), CurrentTime(0.0f), AccumulatedTime(0.0f)
+        //: NumParticles(0), NumConstraints(0), Gravity(0.0f, 0.0f, 0.0f), Wind(0.0f, 0.0f, 0.0f), ExternalForce(0.0f, 0.0f, 0.0f), CurrentTime(0.0f), AccumulatedTime(0.0f)
     {
     }
 };
