@@ -6,11 +6,9 @@
 
 ATestClothActor::ATestClothActor()
 {
-    // Create cloth mesh component
     ClothMesh = AddComponent<UClothMeshComponent>(TEXT("ClothMesh"));
     RootComponent = ClothMesh;
 
-    // Create cloth asset
     ClothAsset = FObjectFactory::ConstructObject<UClothAsset>(this, TEXT("TestClothAsset"));
 }
 
@@ -29,7 +27,7 @@ void ATestClothActor::BeginPlay()
 void ATestClothActor::CreateTestCloth()
 {
     const int32 GridSize = 10;
-    const float Spacing = 10.0f;  // 10 cm between particles
+    const float Spacing = 2.0f;
 
     TArray<FVector> positions;
     TArray<uint32> indices;
@@ -43,13 +41,19 @@ void ATestClothActor::CreateTestCloth()
             FVector pos;
 
             pos.X = 0.0f;
-            pos.Y = x * Spacing;
-            pos.Z = y * Spacing;
+            pos.Y = Spacing * (x - GridSize / 2);
+            pos.Z = Spacing * (y - GridSize / 2);
 
             positions.Add(pos);
 
-            // Top row is fixed (highest Z row 고정)
-            float invMass = (y == GridSize - 1) ? 0.0f : 1.0f;
+            // Top row`s left & right is fixed
+            float invMass = 1.0f;
+            //float invMass = (y == GridSize - 1) ? 0.0f : 1.0f;
+            if (y == GridSize - 1) {
+                if (x == 0 || x == GridSize - 1) {
+                    invMass = 0.0f;
+                }
+            }
             invMasses.Add(invMass);
         }
     }
@@ -90,7 +94,7 @@ void ATestClothActor::CreateTestCloth()
             if (x < GridSize - 1)
             {
                 int32 neighborIdx = y * GridSize + (x + 1);
-                float restLength = (positions[neighborIdx] - positions[idx]).Size();
+                float restLength = (positions[neighborIdx] - positions[idx]).Length() * 0.01f;
                 constraints.Add(FClothConstraint(idx, neighborIdx, restLength, 0.9f));
             }
 
@@ -98,7 +102,7 @@ void ATestClothActor::CreateTestCloth()
             if (y < GridSize - 1)
             {
                 int32 neighborIdx = (y + 1) * GridSize + x;
-                float restLength = (positions[neighborIdx] - positions[idx]).Size();
+                float restLength = (positions[neighborIdx] - positions[idx]).Length() * 0.01f;
                 constraints.Add(FClothConstraint(idx, neighborIdx, restLength, 0.9f));
             }
         }
@@ -117,11 +121,12 @@ void ATestClothActor::CreateTestCloth()
     // Configure simulation parameters
     FClothConfig config;
     config.Mass = 1.0f;
-    config.Damping = 0.05f;
+    config.Damping = 0.1f;
     config.StretchStiffness = 0.9f;
-    config.NumIterations = 5;
+    config.NumIterations = 2;
     config.TimeStep = 0.016f;
     config.bUseXPBD = false;
+    //config.bUseXPBD = true;
 
     ClothAsset->SetConfig(config);
 }
