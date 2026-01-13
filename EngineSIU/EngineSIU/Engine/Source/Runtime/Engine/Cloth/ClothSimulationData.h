@@ -111,7 +111,7 @@ struct FClothSimulationData
     TArray<FVector> CurrentVelocities;
 
     // External forces
-    FVector Gravity = FVector(0.0f, 0.0f, -90.0f); // cm/s^2
+    FVector Gravity = FVector(100.0f, 0.0f, -900.0f); // cm/s^2
     //FVector Gravity = FVector(0.0f, 0.0f, 0.0f); // cm/s^2
     FVector Wind = FVector(0.0f, 0.0f, 0.0f);
     FVector ExternalForce = FVector(0.0f, 0.0f, 0.0f);
@@ -121,7 +121,7 @@ struct FClothSimulationData
     float AccumulatedTime = 0.0f;
 
     FClothSimulationData()
-        : NumParticles(0), NumConstraints(0), Gravity(0.0f, 0.0f, -90.0f), Wind(0.0f, 0.0f, 0.0f), ExternalForce(0.0f, 0.0f, 0.0f), CurrentTime(0.0f), AccumulatedTime(0.0f)
+        : NumParticles(0), NumConstraints(0), Gravity(100.0f, 0.0f, -900.0f), Wind(0.0f, 0.0f, 0.0f), ExternalForce(0.0f, 0.0f, 0.0f), CurrentTime(0.0f), AccumulatedTime(0.0f)
         //: NumParticles(0), NumConstraints(0), Gravity(0.0f, 0.0f, 0.0f), Wind(0.0f, 0.0f, 0.0f), ExternalForce(0.0f, 0.0f, 0.0f), CurrentTime(0.0f), AccumulatedTime(0.0f)
     {
     }

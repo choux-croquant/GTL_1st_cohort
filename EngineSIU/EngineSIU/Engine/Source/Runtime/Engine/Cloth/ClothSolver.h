@@ -25,7 +25,6 @@ class UClothAsset;
  * Must match ClothSimConstants in ClothCommon.hlsli
  */
 
-
 /**
  * GPU particle structure
  * Must match FClothParticle in ClothCommon.hlsli

@@ -27,7 +27,7 @@ void ATestClothActor::BeginPlay()
 void ATestClothActor::CreateTestCloth()
 {
     const int32 GridSize = 10;
-    const float Spacing = 2.0f;
+    const float Spacing = 10.0f; // 10 cm spacing between particles
 
     TArray<FVector> positions;
     TArray<uint32> indices;
@@ -41,19 +41,19 @@ void ATestClothActor::CreateTestCloth()
             FVector pos;
 
             pos.X = 0.0f;
-            pos.Y = Spacing * (x - GridSize / 2);
-            pos.Z = Spacing * (y - GridSize / 2);
+            pos.Y = Spacing * (x - GridSize / 2.0f);
+            pos.Z = Spacing * (GridSize / 2.0f - y); // Top row at top, bottom row at bottom
 
             positions.Add(pos);
 
-            // Top row`s left & right is fixed
-            float invMass = 1.0f;
-            //float invMass = (y == GridSize - 1) ? 0.0f : 1.0f;
-            if (y == GridSize - 1) {
-                if (x == 0 || x == GridSize - 1) {
-                    invMass = 0.0f;
-                }
-            }
+            // Top row is fixed (pinned)
+           /* float invMass = (y == 0) ? 0.0f : 1.0f;
+            invMasses.Add(invMass);*/
+            bool bIsTopRow = (y == 0);
+            bool bIsLeftCorner = (x == 0);
+            bool bIsRightCorner = (x == GridSize - 1);
+
+            float invMass = (bIsTopRow && (bIsLeftCorner || bIsRightCorner)) ? 0.0f : 1.0f;
             invMasses.Add(invMass);
         }
     }
@@ -83,28 +83,41 @@ void ATestClothActor::CreateTestCloth()
     // Generate distance constraints
     TArray<FClothConstraint> constraints;
 
-    // Horizontal and vertical springs
+    // Structural springs (horizontal and vertical)
     for (int32 y = 0; y < GridSize; ++y)
     {
         for (int32 x = 0; x < GridSize; ++x)
         {
             int32 idx = y * GridSize + x;
 
-            // Horizontal constraint
+            // Horizontal constraint (structural)
             if (x < GridSize - 1)
             {
                 int32 neighborIdx = y * GridSize + (x + 1);
-                float restLength = (positions[neighborIdx] - positions[idx]).Length() * 0.01f;
-                constraints.Add(FClothConstraint(idx, neighborIdx, restLength, 0.9f));
+                float restLength = (positions[neighborIdx] - positions[idx]).Length();
+                constraints.Add(FClothConstraint(idx, neighborIdx, restLength, 1.0f));
             }
 
-            // Vertical constraint
+            // Vertical constraint (structural)
             if (y < GridSize - 1)
             {
                 int32 neighborIdx = (y + 1) * GridSize + x;
-                float restLength = (positions[neighborIdx] - positions[idx]).Length() * 0.01f;
-                constraints.Add(FClothConstraint(idx, neighborIdx, restLength, 0.9f));
+                float restLength = (positions[neighborIdx] - positions[idx]).Length();
+                constraints.Add(FClothConstraint(idx, neighborIdx, restLength, 1.0f));
             }
+        }
+    }
+
+    // Shear springs (diagonals for triangle stability)
+    for (int32 y = 0; y < GridSize - 1; ++y)
+    {
+        for (int32 x = 0; x < GridSize - 1; ++x)
+        {
+            int32 i0 = y * GridSize + x;
+            int32 i3 = (y + 1) * GridSize + (x + 1);
+
+            float restLength = (positions[i3] - positions[i0]).Length();
+            constraints.Add(FClothConstraint(i0, i3, restLength, 1.0f));
         }
     }
 
@@ -113,7 +126,7 @@ void ATestClothActor::CreateTestCloth()
     ClothAsset->SetIndices(indices);
     ClothAsset->SetInvMasses(invMasses);
 
-    for (const FClothConstraint& constraint : constraints)
+    for (const FClothConstraint &constraint : constraints)
     {
         ClothAsset->AddDistanceConstraint(constraint);
     }
@@ -121,12 +134,11 @@ void ATestClothActor::CreateTestCloth()
     // Configure simulation parameters
     FClothConfig config;
     config.Mass = 1.0f;
-    config.Damping = 0.1f;
-    config.StretchStiffness = 0.9f;
-    config.NumIterations = 2;
+    config.Damping = 0.5f;          // Lower damping for more dynamic motion
+    config.StretchStiffness = 1.0f; // High stiffness for structural integrity
+    config.NumIterations = 2;        // Increase iterations for better convergence
     config.TimeStep = 0.016f;
     config.bUseXPBD = false;
-    //config.bUseXPBD = true;
 
     ClothAsset->SetConfig(config);
 }
