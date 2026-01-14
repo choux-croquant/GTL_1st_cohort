@@ -111,7 +111,7 @@ struct FClothSimulationData
     TArray<FVector> CurrentVelocities;
 
     // External forces
-    FVector Gravity = FVector(0.0f, 0.0f, 0.0f); // cm/s^2
+    FVector Gravity = FVector(900.0f, 0.0f, 0.0f); // cm/s^2
     //FVector Gravity = FVector(0.0f, 0.0f, 0.0f); // cm/s^2
     FVector Wind = FVector(0.0f, 0.0f, 0.0f);
     FVector ExternalForce = FVector(0.0f, 0.0f, 0.0f);
