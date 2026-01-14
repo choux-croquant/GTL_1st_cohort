@@ -157,6 +157,7 @@ private:
      */
     void DispatchIntegration(float DeltaTime);
     void DispatchConstraintSolver(int32 Iteration);
+    void DispatchApplyConstraintDeltas();
     void DispatchNormalUpdate();
 
     /**
@@ -176,6 +177,7 @@ private:
     ID3D11ComputeShader *UpdateNormalsCS;
     ID3D11ComputeShader *ClearNormalsCS;
     ID3D11ComputeShader *NormalizeNormalsCS;
+    ID3D11ComputeShader *ApplyConstraintDeltasCS;
 
     // Simulation buffers (ping-pong for positions)
     ID3D11Buffer *PositionBuffer[2];
@@ -189,6 +191,8 @@ private:
     ID3D11UnorderedAccessView *PositionUAV[2];
     ID3D11UnorderedAccessView *VelocityUAV;
     ID3D11UnorderedAccessView *NormalUAV;
+    ID3D11UnorderedAccessView* PositionDeltaUAV = nullptr;
+    ID3D11UnorderedAccessView* PositionWeightUAV = nullptr;
 
     // SRVs (Shader Resource Views) for compute shader read
     ID3D11ShaderResourceView *PositionSRV[2];
@@ -200,6 +204,8 @@ private:
     // Constant buffers
     ID3D11Buffer *ClothSimConstantBuffer;
     ID3D11Buffer *NormalUpdateConstantBuffer;
+    ID3D11Buffer* PositionDeltaBuffer = nullptr;
+    ID3D11Buffer* PositionWeightBuffer = nullptr;
 
     // Simulation state
     FClothSimulationData SimData;

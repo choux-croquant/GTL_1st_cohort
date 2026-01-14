@@ -1,11 +1,8 @@
-// 입력: 이전 step 위치
-StructuredBuffer<FClothParticle> PositionRead : register(t0);
+#include "ClothCommon.hlsli"  
 
-// 제약 패스에서 쌓인 누적값
+StructuredBuffer<FClothParticle> PositionRead : register(t0);
 RWStructuredBuffer<float3> PositionDelta  : register(u0);
 RWStructuredBuffer<float>  PositionWeight : register(u1);
-
-// 출력: 새 위치
 RWStructuredBuffer<FClothParticle> PositionWrite : register(u2);
 
 [numthreads(64, 1, 1)]

@@ -203,6 +203,11 @@ void FClothSolver::Release()
     SAFE_RELEASE(ClothSimConstantBuffer);
     SAFE_RELEASE(NormalUpdateConstantBuffer);
 
+    SAFE_RELEASE(PositionDeltaBuffer);
+    SAFE_RELEASE(PositionDeltaUAV);
+    SAFE_RELEASE(PositionWeightBuffer);
+    SAFE_RELEASE(PositionWeightUAV);
+
     bInitialized = false;
 
     UE_LOG(ELogLevel::Display, TEXT("ClothSolver: Released resources"));
@@ -231,6 +236,7 @@ void FClothSolver::Simulate(float InDeltaTime)
     for (int32 i = 0; i < Config.NumIterations; ++i)
     {
         DispatchConstraintSolver(i);
+        DispatchApplyConstraintDeltas();
     }
 
     // 3. Update normals for rendering
@@ -353,6 +359,21 @@ bool FClothSolver::LoadComputeShaders()
     else
     {
         ConstraintSolverCS = ShaderManager->GetComputeShaderByKey(L"ClothConstraintSolverCS");
+    }
+
+    // Load apply delta shaders
+    hr = ShaderManager->AddComputeShader(
+        L"ClothApplyConstraintDeltasCS",
+        L"Shaders/Cloth/ClothApplyDelta.hlsl",
+        "ApplyConstraintDeltasCS");
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("Failed to compile ClothApplyConstraintDeltas shader"));
+        bSuccess = false;
+    }
+    else
+    {
+        ApplyConstraintDeltasCS = ShaderManager->GetComputeShaderByKey(L"ClothApplyConstraintDeltasCS");
     }
 
     // Load normal update shaders
@@ -505,6 +526,36 @@ bool FClothSolver::CreateBuffers()
         return false;
     }
 
+    // Create PositionDelta buffer (float3 per particle)
+    bufferDesc = {};
+    bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+    bufferDesc.ByteWidth = sizeof(FVector) * NumParticles;          // float3
+    bufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
+    bufferDesc.StructureByteStride = sizeof(FVector);
+    bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+
+    hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &PositionDeltaBuffer);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("Failed to create PositionDelta buffer"));
+        return false;
+    }
+
+    // Create PositionWeight buffer (float per particle)
+    bufferDesc = {};
+    bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+    bufferDesc.ByteWidth = sizeof(float) * NumParticles;
+    bufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
+    bufferDesc.StructureByteStride = sizeof(float);
+    bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+
+    hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &PositionWeightBuffer);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("Failed to create PositionWeight buffer"));
+        return false;
+    }
+
     return true;
 }
 
@@ -611,6 +662,40 @@ bool FClothSolver::CreateViews()
     {
         UE_LOG(ELogLevel::Error, TEXT("Failed to create normal SRV"));
         return false;
+    }
+
+    // PositionDelta UAV
+    if (PositionDeltaBuffer)
+    {
+        D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+        uavDesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+        uavDesc.Format = DXGI_FORMAT_UNKNOWN;
+        uavDesc.Buffer.FirstElement = 0;
+        uavDesc.Buffer.NumElements = NumParticles;
+
+        hr = Graphics->Device->CreateUnorderedAccessView(PositionDeltaBuffer, &uavDesc, &PositionDeltaUAV);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("Failed to create PositionDelta UAV"));
+            return false;
+        }
+    }
+
+    // PositionWeight UAV
+    if (PositionWeightBuffer)
+    {
+        D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+        uavDesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+        uavDesc.Format = DXGI_FORMAT_UNKNOWN;
+        uavDesc.Buffer.FirstElement = 0;
+        uavDesc.Buffer.NumElements = NumParticles;
+
+        hr = Graphics->Device->CreateUnorderedAccessView(PositionWeightBuffer, &uavDesc, &PositionWeightUAV);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("Failed to create PositionWeight UAV"));
+            return false;
+        }
     }
 
     return true;
@@ -769,38 +854,77 @@ void FClothSolver::DispatchConstraintSolver(int32 Iteration)
     // Bind constant buffer
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &ClothSimConstantBuffer);
 
-    // t0: ParticlesRead
+    // t0: ParticlesRead (현재 step의 읽기 버퍼)
     ID3D11ShaderResourceView* srvs[] =
     {
-        PositionSRV[1u - CurrentBufferIndex],  // t0
-        ConstraintSRV            // t1
+        PositionSRV[CurrentBufferIndex], // t0
+        ConstraintSRV                    // t1
     };
     Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
 
-    // u0: ParticlesWrite
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &PositionUAV[CurrentBufferIndex], nullptr);
+    // u0: PositionDelta, u1: PositionWeight
+    ID3D11UnorderedAccessView* uavs[] =
+    {
+        PositionDeltaUAV,   // u0
+        PositionWeightUAV   // u1
+    };
+    UINT initialCounts[2] = { 0, 0 };
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, initialCounts);
 
-    // Bind UAV for positions
-    //Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &PositionUAV[CurrentBufferIndex], nullptr);
-
-    // Bind SRV for constraints
-    //Graphics->DeviceContext->CSSetShaderResources(0, 1, &ConstraintSRV);
-
-    // Bind shader
+    // Bind shader (SolveDistanceConstraintsCS: delta 누적용으로 수정된 버전)
     Graphics->DeviceContext->CSSetShader(ConstraintSolverCS, nullptr, 0);
 
-    // Dispatch
+    // Dispatch (제약 개수 기준)
     uint32 dispatchCount = GetDispatchCount(NumConstraints);
     Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
 
     // Unbind
-    ID3D11UnorderedAccessView *nullUAV = nullptr;
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
-    ID3D11ShaderResourceView *nullSRV = nullptr;
+    ID3D11UnorderedAccessView* nullUAVs[2] = { nullptr, nullptr };
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
+    ID3D11ShaderResourceView* nullSRVs[2] = { nullptr, nullptr };
+    Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
+}
+
+void FClothSolver::DispatchApplyConstraintDeltas()
+{
+    if (!Graphics || !Graphics->DeviceContext || !ApplyConstraintDeltasCS)
+        return;
+
+    // t0: PositionRead = 현재 읽기 버퍼
+    ID3D11ShaderResourceView* srvs[] =
+    {
+        PositionSRV[1u - CurrentBufferIndex] // t0
+    };
+    Graphics->DeviceContext->CSSetShaderResources(0, 1, srvs);
+
+    // u0: PositionDelta, u1: PositionWeight, u2: PositionWrite
+    ID3D11UnorderedAccessView* uavs[] =
+    {
+        PositionDeltaUAV,                  // u0
+        PositionWeightUAV,                 // u1
+        PositionUAV[CurrentBufferIndex] // u2: 다음 버퍼에 결과 기록
+    };
+    UINT initialCounts[3] = { 0, 0, 0 };
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 3, uavs, initialCounts);
+
+    // Bind constants
+    Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &ClothSimConstantBuffer);
+
+    // Bind shader
+    Graphics->DeviceContext->CSSetShader(ApplyConstraintDeltasCS, nullptr, 0);
+
+    // Dispatch (파티클 개수 기준)
+    uint32 dispatchCount = GetDispatchCount(NumParticles);
+    Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
+
+    // Unbind
+    ID3D11UnorderedAccessView* nullUAVs[3] = { nullptr, nullptr, nullptr };
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 3, nullUAVs, nullptr);
+    ID3D11ShaderResourceView* nullSRV = nullptr;
     Graphics->DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
-    
-    // Swap
-    CurrentBufferIndex = 1 - CurrentBufferIndex;
+
+    // ping-pong 스왑: 이제 write 버퍼가 새 Current가 됨
+    CurrentBufferIndex = 1u - CurrentBufferIndex;
 }
 
 void FClothSolver::DispatchNormalUpdate()

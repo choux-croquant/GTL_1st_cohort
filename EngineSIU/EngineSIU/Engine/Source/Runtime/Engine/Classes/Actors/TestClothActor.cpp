@@ -139,8 +139,8 @@ void ATestClothActor::CreateTestCloth()
     // Configure simulation parameters
     FClothConfig config;
     config.Mass = 1.0f;
-    config.Damping = 0.9f;          // Lower damping for more dynamic motion
-    config.StretchStiffness = 0.98f; // High stiffness for structural integrity
+    config.Damping = 0.2f;          // Lower damping for more dynamic motion
+    config.StretchStiffness = 0.9f; // High stiffness for structural integrity
     config.NumIterations = 5;        // Increase iterations for better convergence
     config.TimeStep = 0.016f;
     config.bUseXPBD = false;
