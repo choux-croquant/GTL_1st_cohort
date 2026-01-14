@@ -7,10 +7,10 @@
 #include "ClothCommon.hlsli"
 
 // Input/Output buffers
-RWStructuredBuffer<FClothParticle> PositionBuffer : register(u0);
-RWStructuredBuffer<FClothVelocity> VelocityBuffer : register(u1);
 //RWStructuredBuffer<FDistanceConstraint> ConstraintBufferRW : register(u2);
-StructuredBuffer<FDistanceConstraint> ConstraintBuffer : register(t0);
+StructuredBuffer<FClothParticle>  PositionRead  : register(t0); // read-only
+StructuredBuffer<FDistanceConstraint> ConstraintBuffer : register(t1);
+RWStructuredBuffer<FClothParticle> PositionWrite : register(u0);
 
 /**
  * Solve distance constraints using PBD/XPBD
@@ -30,8 +30,8 @@ void SolveDistanceConstraintsCS(uint3 DTid : SV_DispatchThreadID)
     FDistanceConstraint constraint = ConstraintBuffer[idx];
 
     // Load particle data
-    FClothParticle pA = PositionBuffer[constraint.ParticleA];
-    FClothParticle pB = PositionBuffer[constraint.ParticleB];
+    FClothParticle pA = PositionRead[constraint.ParticleA];
+    FClothParticle pB = PositionRead[constraint.ParticleB];
 
     // Calculate constraint error
     float3 delta = pB.Position - pA.Position;
@@ -102,13 +102,8 @@ void SolveDistanceConstraintsCS(uint3 DTid : SV_DispatchThreadID)
     pA.Position += correctionA;
     pB.Position += correctionB;
 
-    // Write back particle positions
-    // NOTE: Do NOT update velocities here!
-    // In PBD, velocities are implicitly updated in the integration step:
-    // v_new = (p_new - p_old) / dt
-    // Adding velocity corrections here adds artificial energy and causes explosions
-    PositionBuffer[constraint.ParticleA] = pA;
-    PositionBuffer[constraint.ParticleB] = pB;
+    PositionWrite[constraint.ParticleA] = pA;
+    PositionWrite[constraint.ParticleB] = pB;
 }
 
 /**

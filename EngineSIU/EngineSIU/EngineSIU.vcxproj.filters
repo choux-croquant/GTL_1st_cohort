@@ -1881,5 +1881,6 @@
     <None Include="Shaders\Cloth\ClothUpdateNormals.hlsl" />
     <None Include="Shaders\ClothVertexShader.hlsl" />
     <None Include="Shaders\ClothPixelShader.hlsl" />
+    <None Include="Shaders\Cloth\ClothApplyDelta.hlsl" />
   </ItemGroup>
 </Project>

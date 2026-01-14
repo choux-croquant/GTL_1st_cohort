@@ -214,8 +214,8 @@ void FClothSolver::Simulate(float InDeltaTime)
         return;
 
     // Clamp delta time to prevent instability
-    // float DeltaTime = FMath::Clamp(InDeltaTime, 0.0001f, 0.033f); // 0.1ms to 33ms
-    float DeltaTime = 0.016f;
+     float DeltaTime = FMath::Clamp(InDeltaTime, 0.0001f, 0.033f); // 0.1ms to 33ms
+    //float DeltaTime = 0.016f;
     // Swap ping-pong buffers BEFORE simulation
     // This ensures CurrentBufferIndex points to the buffer we're about to write
     // and GetPositionBufferSRV() returns the correct (just-updated) buffer for rendering
@@ -739,8 +739,15 @@ void FClothSolver::DispatchIntegration(float DeltaTime)
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &ClothSimConstantBuffer);
 
     // Bind UAVs
-    ID3D11UnorderedAccessView *uavs[] = {PositionUAV[CurrentBufferIndex], VelocityUAV};
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, nullptr);
+    ID3D11UnorderedAccessView* uavs[] =
+    {
+        PositionUAV[CurrentBufferIndex],   // u0: ParticlesRead
+        PositionUAV[1u - CurrentBufferIndex],  // u1: ParticlesWrite
+        VelocityUAV               // u2: VelocityBuffer (in-place)
+    };
+
+    UINT initialCounts[3] = { 0, 0, 0 };
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 3, uavs, initialCounts);
 
     // Bind shader
     Graphics->DeviceContext->CSSetShader(IntegrateCS, nullptr, 0);
@@ -762,11 +769,22 @@ void FClothSolver::DispatchConstraintSolver(int32 Iteration)
     // Bind constant buffer
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &ClothSimConstantBuffer);
 
-    // Bind UAV for positions
+    // t0: ParticlesRead
+    ID3D11ShaderResourceView* srvs[] =
+    {
+        PositionSRV[1u - CurrentBufferIndex],  // t0
+        ConstraintSRV            // t1
+    };
+    Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
+
+    // u0: ParticlesWrite
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &PositionUAV[CurrentBufferIndex], nullptr);
 
+    // Bind UAV for positions
+    //Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &PositionUAV[CurrentBufferIndex], nullptr);
+
     // Bind SRV for constraints
-    Graphics->DeviceContext->CSSetShaderResources(0, 1, &ConstraintSRV);
+    //Graphics->DeviceContext->CSSetShaderResources(0, 1, &ConstraintSRV);
 
     // Bind shader
     Graphics->DeviceContext->CSSetShader(ConstraintSolverCS, nullptr, 0);
@@ -780,6 +798,9 @@ void FClothSolver::DispatchConstraintSolver(int32 Iteration)
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
     ID3D11ShaderResourceView *nullSRV = nullptr;
     Graphics->DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
+    
+    // Swap
+    CurrentBufferIndex = 1 - CurrentBufferIndex;
 }
 
 void FClothSolver::DispatchNormalUpdate()
