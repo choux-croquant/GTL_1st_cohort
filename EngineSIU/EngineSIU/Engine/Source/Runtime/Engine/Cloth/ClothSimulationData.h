@@ -1,11 +1,11 @@
 #pragma once
 
+#include "HAL/PlatformType.h"
 #include "Container/Array.h"
 #include "Math/Vector.h"
 #include "Math/Matrix.h"
 #include "Math/Transform.h"
 #include "Math/Quat.h"
-#include "HAL/PlatformType.h"
 #include "CoreUObject/UObject/NameTypes.h"
 
 /**

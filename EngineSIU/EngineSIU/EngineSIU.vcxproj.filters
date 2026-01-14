@@ -1667,6 +1667,7 @@
     <ClCompile Include="Engine\Source\Runtime\Renderer\ClothRenderPass.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothPhysicsManager.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\TestClothActor.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\CUDA\CUDADXInterop.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="EngineSIU.natvis" />
@@ -1843,6 +1844,9 @@
     <ClInclude Include="Engine\Source\Runtime\Renderer\ClothRenderPass.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothPhysicsManager.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\TestClothActor.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothGPUStructs.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\CUDA\CUDADXInterop.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\CUDA\ClothCUDAKernels.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\CompositingShader.hlsl" />
@@ -1882,5 +1886,9 @@
     <None Include="Shaders\ClothVertexShader.hlsl" />
     <None Include="Shaders\ClothPixelShader.hlsl" />
     <None Include="Shaders\Cloth\ClothApplyDelta.hlsl" />
+    <None Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothIntegrate.cu" />
+    <None Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothApplyDelta.cu" />
+    <None Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothConstraintSolver.cu" />
+    <None Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothUpdateNormals.cu" />
   </ItemGroup>
 </Project>

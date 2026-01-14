@@ -61,7 +61,7 @@ void SolveDistanceConstraintsCS(uint3 DTid : SV_DispatchThreadID)
     uint iA = constraint.ParticleA;
     uint iB = constraint.ParticleB;
 
-    InterlockedAdd(PositionDelta[iA].x, correctionA.x);
+    /*InterlockedAdd(PositionDelta[iA].x, correctionA.x);
     InterlockedAdd(PositionDelta[iA].y, correctionA.y);
     InterlockedAdd(PositionDelta[iA].z, correctionA.z);
     InterlockedAdd(PositionWeight[iA], 1.0f);
@@ -69,5 +69,5 @@ void SolveDistanceConstraintsCS(uint3 DTid : SV_DispatchThreadID)
     InterlockedAdd(PositionDelta[iB].x, correctionB.x);
     InterlockedAdd(PositionDelta[iB].y, correctionB.y);
     InterlockedAdd(PositionDelta[iB].z, correctionB.z);
-    InterlockedAdd(PositionWeight[iB], 1.0f);
+    InterlockedAdd(PositionWeight[iB], 1.0f);*/
 }

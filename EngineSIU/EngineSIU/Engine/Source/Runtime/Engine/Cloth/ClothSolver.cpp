@@ -44,6 +44,29 @@ FClothSolver::FClothSolver()
     ConstraintSRV = nullptr;
     IndexSRV = nullptr;
     NormalSRV = nullptr;
+
+#ifdef CUDA_ENABLED
+    // Initialize CUDA members
+    CudaInterop = nullptr;
+
+    PositionCudaResource[0] = nullptr;
+    PositionCudaResource[1] = nullptr;
+    VelocityCudaResource = nullptr;
+    NormalCudaResource = nullptr;
+
+    PositionDevicePtr[0] = nullptr;
+    PositionDevicePtr[1] = nullptr;
+    VelocityDevicePtr = nullptr;
+    NormalDevicePtr = nullptr;
+
+    PositionDeltasDevice = nullptr;
+    PositionWeightsDevice = nullptr;
+    ConstraintDevicePtr = nullptr;
+    IndicesDevicePtr = nullptr;
+    ConstantsDevicePtr = nullptr;
+
+    bUseCUDA = false;
+#endif
 }
 
 FClothSolver::~FClothSolver()
@@ -63,11 +86,37 @@ void FClothSolver::Initialize(FGraphicsDevice *InGraphics, FDXDBufferManager *In
         return;
     }
 
-    // Load compute shaders
+#ifdef CUDA_ENABLED
+    // Try to initialize CUDA interop
+    CudaInterop = new FCUDADXInterop();
+    if (CudaInterop->Initialize(Graphics->Device))
+    {
+        bUseCUDA = true;
+        UE_LOG(ELogLevel::Display, TEXT("ClothSolver: CUDA-DX11 interop initialized successfully"));
+        UE_LOG(ELogLevel::Display, TEXT("ClothSolver: Using CUDA backend for cloth simulation"));
+    }
+    else
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("ClothSolver: Failed to initialize CUDA interop, falling back to DX11 compute"));
+        delete CudaInterop;
+        CudaInterop = nullptr;
+        bUseCUDA = false;
+    }
+#endif
+
+    // Load compute shaders (for DX11 fallback path)
     if (!LoadComputeShaders())
     {
         UE_LOG(ELogLevel::Error, TEXT("ClothSolver: Failed to load compute shaders"));
+#ifdef CUDA_ENABLED
+        if (!bUseCUDA)
+        {
+            // No fallback available
+            return;
+        }
+#else
         return;
+#endif
     }
 
     UE_LOG(ELogLevel::Display, TEXT("ClothSolver: Initialized successfully"));
@@ -158,6 +207,72 @@ bool FClothSolver::SetupFromAsset(UClothAsset *InAsset, const FClothConfig &InCo
         return false;
     }
 
+#ifdef CUDA_ENABLED
+    // Setup CUDA resources if CUDA is enabled
+    if (bUseCUDA && CudaInterop)
+    {
+        // Register D3D11 buffers with CUDA for zero-copy interop
+        if (!CudaInterop->RegisterD3DBuffer(PositionBuffer[0], &PositionCudaResource[0]))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothSolver: Failed to register position buffer 0 with CUDA"));
+            bUseCUDA = false;
+        }
+        if (!CudaInterop->RegisterD3DBuffer(PositionBuffer[1], &PositionCudaResource[1]))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothSolver: Failed to register position buffer 1 with CUDA"));
+            bUseCUDA = false;
+        }
+        if (!CudaInterop->RegisterD3DBuffer(VelocityBuffer, &VelocityCudaResource))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothSolver: Failed to register velocity buffer with CUDA"));
+            bUseCUDA = false;
+        }
+        if (!CudaInterop->RegisterD3DBuffer(NormalBuffer, &NormalCudaResource))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothSolver: Failed to register normal buffer with CUDA"));
+            bUseCUDA = false;
+        }
+
+        if (bUseCUDA)
+        {
+            // Allocate CUDA-only buffers (not shared with D3D11)
+            cudaMalloc(&PositionDeltasDevice, sizeof(FVector) * NumParticles);
+            cudaMalloc(&PositionWeightsDevice, sizeof(float) * NumParticles);
+            cudaMalloc(&ConstraintDevicePtr, sizeof(FClothConstraintGPU) * NumConstraints);
+            cudaMalloc(&IndicesDevicePtr, sizeof(uint32) * NumTriangles * 3);
+            cudaMalloc(&ConstantsDevicePtr, sizeof(FClothSimConstants));
+
+            // Initialize delta buffers to zero
+            cudaMemset(PositionDeltasDevice, 0, sizeof(FVector) * NumParticles);
+            cudaMemset(PositionWeightsDevice, 0, sizeof(float) * NumParticles);
+
+            // Upload constraints to CUDA device memory (one-time upload)
+            TArray<FClothConstraintGPU> constraintsGPU;
+            constraintsGPU.SetNum(Constraints.Num());
+            for (int32 i = 0; i < Constraints.Num(); ++i)
+            {
+                constraintsGPU[i].ParticleA = Constraints[i].ParticleA;
+                constraintsGPU[i].ParticleB = Constraints[i].ParticleB;
+                constraintsGPU[i].RestLength = Constraints[i].RestLength;
+                constraintsGPU[i].Stiffness = Constraints[i].Stiffness;
+                constraintsGPU[i].Compliance = Constraints[i].Compliance;
+                constraintsGPU[i].Lambda = Constraints[i].Lambda;
+                constraintsGPU[i].Padding0 = 0.0f;
+                constraintsGPU[i].Padding1 = 0.0f;
+            }
+            cudaMemcpy(ConstraintDevicePtr, constraintsGPU.GetData(),
+                       sizeof(FClothConstraintGPU) * NumConstraints, cudaMemcpyHostToDevice);
+
+            // Upload triangle indices to CUDA device memory (one-time upload)
+            cudaMemcpy(IndicesDevicePtr, Indices.GetData(),
+                       sizeof(uint32) * NumTriangles * 3, cudaMemcpyHostToDevice);
+
+            UE_LOG(ELogLevel::Display, TEXT("ClothSolver: CUDA resources initialized - %d particles, %d constraints"),
+                   NumParticles, NumConstraints);
+        }
+    }
+#endif
+
     bInitialized = true;
 
     return true;
@@ -167,6 +282,63 @@ void FClothSolver::Release()
 {
     if (!bInitialized)
         return;
+
+#ifdef CUDA_ENABLED
+    // Release CUDA resources first (before D3D11 buffers)
+    if (bUseCUDA && CudaInterop)
+    {
+        // Unregister CUDA graphics resources
+        if (PositionCudaResource[0])
+            CudaInterop->UnregisterResource(PositionCudaResource[0]);
+        if (PositionCudaResource[1])
+            CudaInterop->UnregisterResource(PositionCudaResource[1]);
+        if (VelocityCudaResource)
+            CudaInterop->UnregisterResource(VelocityCudaResource);
+        if (NormalCudaResource)
+            CudaInterop->UnregisterResource(NormalCudaResource);
+
+        PositionCudaResource[0] = nullptr;
+        PositionCudaResource[1] = nullptr;
+        VelocityCudaResource = nullptr;
+        NormalCudaResource = nullptr;
+
+        // Free CUDA-only device buffers
+        if (PositionDeltasDevice)
+        {
+            cudaFree(PositionDeltasDevice);
+            PositionDeltasDevice = nullptr;
+        }
+        if (PositionWeightsDevice)
+        {
+            cudaFree(PositionWeightsDevice);
+            PositionWeightsDevice = nullptr;
+        }
+        if (ConstraintDevicePtr)
+        {
+            cudaFree(ConstraintDevicePtr);
+            ConstraintDevicePtr = nullptr;
+        }
+        if (IndicesDevicePtr)
+        {
+            cudaFree(IndicesDevicePtr);
+            IndicesDevicePtr = nullptr;
+        }
+        if (ConstantsDevicePtr)
+        {
+            cudaFree(ConstantsDevicePtr);
+            ConstantsDevicePtr = nullptr;
+        }
+
+        // Release interop manager
+        CudaInterop->Release();
+        delete CudaInterop;
+        CudaInterop = nullptr;
+
+        bUseCUDA = false;
+
+        UE_LOG(ELogLevel::Display, TEXT("ClothSolver: Released CUDA resources"));
+    }
+#endif
 
     // Release compute shaders (managed by shader manager)
     // We just null out our pointers
@@ -215,15 +387,40 @@ void FClothSolver::Release()
 
 void FClothSolver::Simulate(float InDeltaTime)
 {
-    if (!bInitialized || !Graphics || !Graphics->DeviceContext)
+    if (!bInitialized)
         return;
 
     // Clamp delta time to prevent instability
-     float DeltaTime = FMath::Clamp(InDeltaTime, 0.0001f, 0.033f); // 0.1ms to 33ms
-    //float DeltaTime = 0.016f;
+    float DeltaTime = FMath::Clamp(InDeltaTime, 0.0001f, 0.033f); // 0.1ms to 33ms
+
+#ifdef CUDA_ENABLED
+    // Use CUDA path if available, otherwise fall back to DX11
+    if (bUseCUDA && CudaInterop)
+    {
+        SimulateCUDA(DeltaTime);
+    }
+    else
+    {
+        SimulateDX11(DeltaTime);
+    }
+#else
+    // CUDA not enabled - use DX11 path
+    SimulateDX11(DeltaTime);
+#endif
+
+    // Update simulation time
+    SimData.CurrentTime += DeltaTime;
+
+    // Reset external force accumulator
+    ExternalForceAccum = FVector::ZeroVector;
+}
+
+void FClothSolver::SimulateDX11(float DeltaTime)
+{
+    if (!Graphics || !Graphics->DeviceContext)
+        return;
+
     // Swap ping-pong buffers BEFORE simulation
-    // This ensures CurrentBufferIndex points to the buffer we're about to write
-    // and GetPositionBufferSRV() returns the correct (just-updated) buffer for rendering
     CurrentBufferIndex = 1 - CurrentBufferIndex;
 
     // Update constant buffer
@@ -241,12 +438,6 @@ void FClothSolver::Simulate(float InDeltaTime)
 
     // 3. Update normals for rendering
     DispatchNormalUpdate();
-
-    // Update simulation time
-    SimData.CurrentTime += DeltaTime;
-
-    // Reset external force accumulator
-    ExternalForceAccum = FVector::ZeroVector;
 }
 
 void FClothSolver::ResetSimulation()
@@ -430,6 +621,7 @@ bool FClothSolver::CreateBuffers()
     HRESULT hr;
 
     // Create position buffers (ping-pong)
+    // Add SHARED flag for CUDA interop
     for (int32 i = 0; i < 2; ++i)
     {
         D3D11_BUFFER_DESC bufferDesc = {};
@@ -437,7 +629,7 @@ bool FClothSolver::CreateBuffers()
         bufferDesc.ByteWidth = sizeof(FClothParticleGPU) * NumParticles;
         bufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
         bufferDesc.StructureByteStride = sizeof(FClothParticleGPU);
-        bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+        bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED | D3D11_RESOURCE_MISC_SHARED;
 
         hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &PositionBuffer[i]);
         if (FAILED(hr))
@@ -448,12 +640,13 @@ bool FClothSolver::CreateBuffers()
     }
 
     // Create velocity buffer
+    // Add SHARED flag for CUDA interop
     D3D11_BUFFER_DESC bufferDesc = {};
     bufferDesc.Usage = D3D11_USAGE_DEFAULT;
     bufferDesc.ByteWidth = sizeof(FClothVelocityGPU) * NumParticles;
     bufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
     bufferDesc.StructureByteStride = sizeof(FClothVelocityGPU);
-    bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+    bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED | D3D11_RESOURCE_MISC_SHARED;
 
     hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &VelocityBuffer);
     if (FAILED(hr))
@@ -493,9 +686,11 @@ bool FClothSolver::CreateBuffers()
     }
 
     // Create normal buffer
+    // Add SHARED flag for CUDA interop
     bufferDesc.ByteWidth = sizeof(FVector) * NumParticles;
     bufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
     bufferDesc.StructureByteStride = sizeof(FVector);
+    bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED | D3D11_RESOURCE_MISC_SHARED;
 
     hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &NormalBuffer);
     if (FAILED(hr))
@@ -529,7 +724,7 @@ bool FClothSolver::CreateBuffers()
     // Create PositionDelta buffer (float3 per particle)
     bufferDesc = {};
     bufferDesc.Usage = D3D11_USAGE_DEFAULT;
-    bufferDesc.ByteWidth = sizeof(FVector) * NumParticles;          // float3
+    bufferDesc.ByteWidth = sizeof(FVector) * NumParticles; // float3
     bufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
     bufferDesc.StructureByteStride = sizeof(FVector);
     bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
@@ -824,14 +1019,14 @@ void FClothSolver::DispatchIntegration(float DeltaTime)
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &ClothSimConstantBuffer);
 
     // Bind UAVs
-    ID3D11UnorderedAccessView* uavs[] =
-    {
-        PositionUAV[CurrentBufferIndex],   // u0: ParticlesRead
-        PositionUAV[1u - CurrentBufferIndex],  // u1: ParticlesWrite
-        VelocityUAV               // u2: VelocityBuffer (in-place)
-    };
+    ID3D11UnorderedAccessView *uavs[] =
+        {
+            PositionUAV[CurrentBufferIndex],      // u0: ParticlesRead
+            PositionUAV[1u - CurrentBufferIndex], // u1: ParticlesWrite
+            VelocityUAV                           // u2: VelocityBuffer (in-place)
+        };
 
-    UINT initialCounts[3] = { 0, 0, 0 };
+    UINT initialCounts[3] = {0, 0, 0};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 3, uavs, initialCounts);
 
     // Bind shader
@@ -855,20 +1050,20 @@ void FClothSolver::DispatchConstraintSolver(int32 Iteration)
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &ClothSimConstantBuffer);
 
     // t0: ParticlesRead (현재 step의 읽기 버퍼)
-    ID3D11ShaderResourceView* srvs[] =
-    {
-        PositionSRV[CurrentBufferIndex], // t0
-        ConstraintSRV                    // t1
-    };
+    ID3D11ShaderResourceView *srvs[] =
+        {
+            PositionSRV[CurrentBufferIndex], // t0
+            ConstraintSRV                    // t1
+        };
     Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
 
     // u0: PositionDelta, u1: PositionWeight
-    ID3D11UnorderedAccessView* uavs[] =
-    {
-        PositionDeltaUAV,   // u0
-        PositionWeightUAV   // u1
-    };
-    UINT initialCounts[2] = { 0, 0 };
+    ID3D11UnorderedAccessView *uavs[] =
+        {
+            PositionDeltaUAV, // u0
+            PositionWeightUAV // u1
+        };
+    UINT initialCounts[2] = {0, 0};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, initialCounts);
 
     // Bind shader (SolveDistanceConstraintsCS: delta 누적용으로 수정된 버전)
@@ -879,9 +1074,9 @@ void FClothSolver::DispatchConstraintSolver(int32 Iteration)
     Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
 
     // Unbind
-    ID3D11UnorderedAccessView* nullUAVs[2] = { nullptr, nullptr };
+    ID3D11UnorderedAccessView *nullUAVs[2] = {nullptr, nullptr};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
-    ID3D11ShaderResourceView* nullSRVs[2] = { nullptr, nullptr };
+    ID3D11ShaderResourceView *nullSRVs[2] = {nullptr, nullptr};
     Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
 }
 
@@ -891,20 +1086,20 @@ void FClothSolver::DispatchApplyConstraintDeltas()
         return;
 
     // t0: PositionRead = 현재 읽기 버퍼
-    ID3D11ShaderResourceView* srvs[] =
-    {
-        PositionSRV[1u - CurrentBufferIndex] // t0
-    };
+    ID3D11ShaderResourceView *srvs[] =
+        {
+            PositionSRV[1u - CurrentBufferIndex] // t0
+        };
     Graphics->DeviceContext->CSSetShaderResources(0, 1, srvs);
 
     // u0: PositionDelta, u1: PositionWeight, u2: PositionWrite
-    ID3D11UnorderedAccessView* uavs[] =
-    {
-        PositionDeltaUAV,                  // u0
-        PositionWeightUAV,                 // u1
-        PositionUAV[CurrentBufferIndex] // u2: 다음 버퍼에 결과 기록
-    };
-    UINT initialCounts[3] = { 0, 0, 0 };
+    ID3D11UnorderedAccessView *uavs[] =
+        {
+            PositionDeltaUAV,               // u0
+            PositionWeightUAV,              // u1
+            PositionUAV[CurrentBufferIndex] // u2: 다음 버퍼에 결과 기록
+        };
+    UINT initialCounts[3] = {0, 0, 0};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 3, uavs, initialCounts);
 
     // Bind constants
@@ -918,9 +1113,9 @@ void FClothSolver::DispatchApplyConstraintDeltas()
     Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
 
     // Unbind
-    ID3D11UnorderedAccessView* nullUAVs[3] = { nullptr, nullptr, nullptr };
+    ID3D11UnorderedAccessView *nullUAVs[3] = {nullptr, nullptr, nullptr};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 3, nullUAVs, nullptr);
-    ID3D11ShaderResourceView* nullSRV = nullptr;
+    ID3D11ShaderResourceView *nullSRV = nullptr;
     Graphics->DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
 
     // ping-pong 스왑: 이제 write 버퍼가 새 Current가 됨
@@ -978,6 +1173,122 @@ void FClothSolver::DispatchNormalUpdate()
     ID3D11Buffer *nullCB = nullptr;
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &nullCB);
 }
+
+#ifdef CUDA_ENABLED
+void FClothSolver::SimulateCUDA(float DeltaTime)
+{
+    if (!CudaInterop || !bUseCUDA)
+        return;
+
+    cudaStream_t stream = CudaInterop->GetStream();
+
+    // Swap ping-pong buffer index
+    CurrentBufferIndex = 1 - CurrentBufferIndex;
+    int readIdx = 1 - CurrentBufferIndex;
+    int writeIdx = CurrentBufferIndex;
+
+    // Prepare simulation constants
+    FClothSimConstants constants = {};
+    constants.NumParticles = NumParticles;
+    constants.NumConstraints = NumConstraints;
+    constants.DeltaTime = DeltaTime;
+    constants.Damping = Config.Damping;
+    constants.Gravity = SimData.Gravity + ExternalForceAccum;
+    constants.StretchStiffness = Config.StretchStiffness;
+    constants.Wind = SimData.Wind;
+    constants.BendStiffness = Config.BendStiffness;
+    constants.AirDrag = Config.AirDrag;
+    constants.NumIterations = Config.NumIterations;
+    constants.UseXPBD = Config.bUseXPBD ? 1 : 0;
+    constants.WorldMatrix = FMatrix::Identity;
+
+    // Upload constants to device memory
+    cudaMemcpyAsync(ConstantsDevicePtr, &constants, sizeof(FClothSimConstants),
+                    cudaMemcpyHostToDevice, stream);
+
+    // Map D3D11 resources for CUDA access
+    cudaGraphicsResource *resources[] = {
+        PositionCudaResource[0],
+        PositionCudaResource[1],
+        VelocityCudaResource,
+        NormalCudaResource};
+    if (!CudaInterop->MapResources(resources, 4, stream))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("SimulateCUDA: Failed to map resources"));
+        return;
+    }
+
+    // Get device pointers for mapped resources
+    size_t size;
+    CudaInterop->GetMappedPointer(PositionCudaResource[readIdx], &PositionDevicePtr[readIdx], &size);
+    CudaInterop->GetMappedPointer(PositionCudaResource[writeIdx], &PositionDevicePtr[writeIdx], &size);
+    CudaInterop->GetMappedPointer(VelocityCudaResource, &VelocityDevicePtr, &size);
+    CudaInterop->GetMappedPointer(NormalCudaResource, &NormalDevicePtr, &size);
+
+    // ===== CUDA Simulation Pipeline =====
+
+    // 1. Integration - apply forces and update velocities/positions
+    LaunchIntegrateKernel(
+        PositionDevicePtr[readIdx],
+        PositionDevicePtr[writeIdx],
+        VelocityDevicePtr,
+        constants,
+        stream);
+
+    // Swap for constraint solving (integration writes to writeIdx)
+    readIdx = writeIdx;
+    writeIdx = 1 - writeIdx;
+
+    // 2. Constraint solving iterations
+    for (int32 iter = 0; iter < Config.NumIterations; ++iter)
+    {
+        // Clear delta accumulation buffers at start of each iteration
+        cudaMemsetAsync(PositionDeltasDevice, 0, sizeof(FVector) * NumParticles, stream);
+        cudaMemsetAsync(PositionWeightsDevice, 0, sizeof(float) * NumParticles, stream);
+
+        // Solve constraints - accumulate corrections using atomic float ops
+        LaunchConstraintSolverKernel(
+            PositionDevicePtr[readIdx],
+            ConstraintDevicePtr,
+            PositionDeltasDevice,
+            PositionWeightsDevice,
+            constants,
+            stream);
+
+        // Apply averaged corrections
+        LaunchApplyDeltasKernel(
+            PositionDevicePtr[readIdx],
+            PositionDevicePtr[writeIdx],
+            PositionDeltasDevice,
+            PositionWeightsDevice,
+            constants,
+            stream);
+
+        // Swap buffers for next iteration
+        int temp = readIdx;
+        readIdx = writeIdx;
+        writeIdx = temp;
+    }
+
+    // 3. Update normals for rendering
+    LaunchUpdateNormalsKernel(
+        PositionDevicePtr[readIdx],
+        IndicesDevicePtr,
+        NormalDevicePtr,
+        NumParticles,
+        NumTriangles,
+        stream);
+
+    // Synchronize CUDA stream before unmapping
+    cudaStreamSynchronize(stream);
+
+    // Unmap resources - return control to D3D11 for rendering
+    CudaInterop->UnmapResources(resources, 4, stream);
+
+    // Update current buffer index for rendering
+    CurrentBufferIndex = readIdx;
+}
+#endif // CUDA_ENABLED
 
 uint32 FClothSolver::GetDispatchCount(uint32 ElementCount, uint32 ThreadGroupSize) const
 {
