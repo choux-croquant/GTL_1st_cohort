@@ -79,10 +79,29 @@ void UWorld::BeginPlay()
 {
     // TEST
     ATestClothActor* ClothActor = this->SpawnActor<ATestClothActor>();
-    //ATestClothActor* ClothActor2 = this->SpawnActor<ATestClothActor>();
-    //ClothActor->SetActorLocation(FVector(100, 20, 0));
     ClothActor->SetActorLocation(FVector(100, 0, 0));
-    //ClothActor2->SetActorLocation(FVector(100, -20, 0));
+
+    /*const int32 GridX = 4;
+    const int32 GridY = 4;
+    const float SpacingX = 100.0f;
+    const float SpacingY = 100.0f;
+    const FVector BaseLocation(100.0f, 0.0f, 0.0f);
+
+    for (int32 ix = 0; ix < GridX; ++ix)
+    {
+        for (int32 iy = 0; iy < GridY; ++iy)
+        {
+            ATestClothActor* ClothActor = this->SpawnActor<ATestClothActor>();
+            if (!ClothActor)
+                continue;
+
+            const float OffsetX = ix * SpacingX;
+            const float OffsetY = iy * SpacingY;
+
+            ClothActor->SetActorLocation(
+                BaseLocation + FVector(OffsetX, OffsetY, 0.0f));
+        }
+    }*/
 
     if (!GameMode && this->WorldType == EWorldType::PIE)
     {
@@ -90,7 +109,7 @@ void UWorld::BeginPlay()
         // GameMode->SetActorLabel(TEXT("OBJ_BEHELLA_GAMEMODE"));
         GameMode->SetActorLabel(TEXT("OBJ_GAMEMODE"));
         GameMode->InitializeComponent();
-
+        
         GameMode->InitGame();
     }
 

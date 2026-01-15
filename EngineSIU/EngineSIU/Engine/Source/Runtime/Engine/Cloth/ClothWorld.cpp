@@ -77,7 +77,7 @@ void FClothWorld::Release()
 void FClothWorld::Update(float DeltaTime)
 {
     if (!bIsInitialized || ActiveInstances.Num() == 0) return;
-
+    QUICK_SCOPE_CYCLE_COUNTER(ClothSimulate_Tick)
     UpdateKinematicData(DeltaTime);
 
     SimulateAllInstances(DeltaTime);
