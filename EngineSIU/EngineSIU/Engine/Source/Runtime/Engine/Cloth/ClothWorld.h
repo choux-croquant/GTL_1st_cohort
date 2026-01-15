@@ -6,10 +6,10 @@
 
 #pragma once
 
+#include "HAL/PlatformType.h"
 #include "ClothInstance.h"
 #include "ClothSolver.h"
 #include "Container/Array.h"
-#include "HAL/PlatformType.h"
 
 // Forward declarations
 class FGraphicsDevice;

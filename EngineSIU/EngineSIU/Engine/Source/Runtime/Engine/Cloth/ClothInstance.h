@@ -6,11 +6,11 @@
 
 #pragma once
 
+#include "HAL/PlatformType.h"
 #include "ClothSimulationData.h"
 #include "Container/Array.h"
 #include "Math/Vector.h"
 #include "Math/Matrix.h"
-#include "HAL/PlatformType.h"
 
 // Forward declarations
 class FClothSolver;

@@ -6,9 +6,10 @@
 
 #include "ClothCommon.hlsli"
 
-// Input/Output buffers
-RWStructuredBuffer<FClothParticle> PositionBuffer : register(u0);
-RWStructuredBuffer<FClothVelocity> VelocityBuffer : register(u1);
+ // Input/Output buffers
+RWStructuredBuffer<FClothParticle> PositionRead  : register(u0); // 이번 스텝 입력
+RWStructuredBuffer<FClothParticle> PositionWrite : register(u1); // 이번 스텝 출력
+RWStructuredBuffer<FClothVelocity> VelocityBuffer : register(u2);
 
 /**
  * Main integration kernel
@@ -18,50 +19,55 @@ RWStructuredBuffer<FClothVelocity> VelocityBuffer : register(u1);
 void IntegrateCS(uint3 DTid : SV_DispatchThreadID)
 {
     uint idx = DTid.x;
-    
+
     // Bounds check
     if (idx >= NumParticles)
         return;
-    
-    // Load particle data
-    FClothParticle particle = PositionBuffer[idx];
+
+    // Load particle data (읽기는 항상 PositionRead에서)
+    FClothParticle particle = PositionRead[idx];
     FClothVelocity velocity = VelocityBuffer[idx];
-    
+
     // Skip fixed particles (invMass == 0)
-    if (particle.InvMass == 0.0f) return;
-    
+    if (particle.InvMass == 0.0f)
+    {
+        // 고정점은 위치/속도를 그대로 써 줘야 한다 (ping-pong 시 초기화 보존)
+        PositionWrite[idx] = particle;
+        VelocityBuffer[idx] = velocity;
+        return;
+    }
+
     // Calculate total external force
     float3 force = float3(0, 0, 0);
-    
+
     // Add gravity
     force += Gravity;
-    
+
     // Add wind with air drag
-    // Wind force is proportional to air drag coefficient
     force += Wind * AirDrag;
-    
-    // Calculate acceleration (F = ma, a = F * invMass)
+
+    // Acceleration
     float3 acceleration = force * particle.InvMass;
-    
-    // Semi-implicit Euler integration
-    // Update velocity first
+
+    // Semi-implicit Euler: v_{n+1} = v_n + a * dt
     velocity.Velocity += acceleration * DeltaTime;
-    
-    // Apply velocity damping
+
+    // Velocity damping
     velocity.Velocity *= (1.0f - Damping);
-    
-    // Clamp velocity to prevent instability
+
+    // Clamp velocity
     float maxVelocity = 10000.0f; // cm/s
     float velMagnitude = length(velocity.Velocity);
     if (velMagnitude > maxVelocity)
     {
         velocity.Velocity = (velocity.Velocity / velMagnitude) * maxVelocity;
     }
-    
-    // Predict new position
+
+    // Predict new position: x_{n+1} = x_n + v_{n+1} * dt
     particle.Position += velocity.Velocity * DeltaTime;
-    
-    // Write back results
-    PositionBuffer[idx] = particle;
+    //particle.Position += velocity.Velocity * DeltaTime + 0.5f * acceleration * DeltaTime * DeltaTime;
+
+    // Write back: 항상 PositionWrite에 기록
+    PositionWrite[idx] = particle;
     VelocityBuffer[idx] = velocity;
 }

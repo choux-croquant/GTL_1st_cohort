@@ -24,9 +24,13 @@ void ATestClothActor::BeginPlay()
     ClothMesh->StartSimulation();
 }
 
+void ATestClothActor::Tick(float DeltaTime)
+{
+}
+
 void ATestClothActor::CreateTestCloth()
 {
-    const int32 GridSize = 10;
+    const int32 GridSize = 12;
     const float Spacing = 10.0f; // 10 cm spacing between particles
 
     TArray<FVector> positions;
@@ -116,8 +120,13 @@ void ATestClothActor::CreateTestCloth()
             int32 i0 = y * GridSize + x;
             int32 i3 = (y + 1) * GridSize + (x + 1);
 
-            float restLength = (positions[i3] - positions[i0]).Length();
-            constraints.Add(FClothConstraint(i0, i3, restLength, 1.0f));
+            int32 i1 = y * GridSize + (x + 1);
+            int32 i2 = (y + 1) * GridSize + x;
+
+            float restLength03 = (positions[i3] - positions[i0]).Length();
+            float restLength12 = (positions[i2] - positions[i1]).Length();
+            constraints.Add(FClothConstraint(i0, i3, restLength03, 1.0f));
+            constraints.Add(FClothConstraint(i1, i2, restLength12, 1.0f));
         }
     }
 
@@ -135,8 +144,8 @@ void ATestClothActor::CreateTestCloth()
     FClothConfig config;
     config.Mass = 1.0f;
     config.Damping = 0.5f;          // Lower damping for more dynamic motion
-    config.StretchStiffness = 1.0f; // High stiffness for structural integrity
-    config.NumIterations = 2;        // Increase iterations for better convergence
+    config.StretchStiffness = 0.9f; // High stiffness for structural integrity
+    config.NumIterations = 5;        // Increase iterations for better convergence
     config.TimeStep = 0.016f;
     config.bUseXPBD = false;
 

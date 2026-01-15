@@ -5,14 +5,20 @@
 
 #pragma once
 
-#define _TCHAR_DEFINED
-#include <d3d11.h>
+#include "Core/HAL/PlatformType.h"
+//#include <d3d11.h>
 
 #include "Core/Container/Array.h"
 #include "Core/Math/Vector.h"
 #include "Core/Math/Matrix.h"
-#include "Core/HAL/PlatformType.h"
 #include "ClothSimulationData.h"
+#include "ClothGPUStructs.h"
+
+#ifdef CUDA_ENABLED
+#include "CUDA/CUDADXInterop.h"
+#include "CUDA/ClothCUDAKernels.h"
+#include <cuda_runtime.h>
+#endif
 
 // Forward declarations
 class FGraphicsDevice;
@@ -20,51 +26,12 @@ class FDXDBufferManager;
 class FDXDShaderManager;
 class UClothAsset;
 
-/**
- * GPU constant buffer structure for cloth simulation
- * Must match ClothSimConstants in ClothCommon.hlsli
- */
-
-/**
- * GPU particle structure
- * Must match FClothParticle in ClothCommon.hlsli
- */
-struct FClothParticleGPU
-{
-    FVector Position;
-    float InvMass;
-};
-
-/**
- * GPU velocity structure
- * Must match FClothVelocity in ClothCommon.hlsli
- */
-struct FClothVelocityGPU
-{
-    FVector Velocity;
-    float Padding;
-};
-
-/**
- * GPU constraint structure
- * Must match FDistanceConstraint in ClothCommon.hlsli
- */
-struct FClothConstraintGPU
-{
-    uint32 ParticleA;
-    uint32 ParticleB;
-    float RestLength;
-    float Stiffness;
-
-    float Compliance; // XPBD용
-    float Lambda;     // XPBD용 상태
-    float Padding0;
-    float Padding1;
-};
+// Note: GPU structures (FClothParticleGPU, FClothVelocityGPU, FClothConstraintGPU, FClothSimConstants)
+// are now defined in ClothGPUStructs.h for sharing between C++, CUDA, and HLSL
 
 /**
  * Main cloth solver class
- * Handles GPU compute shader simulation
+ * Handles GPU compute shader simulation (DX11 or CUDA)
  */
 class FClothSolver
 {
@@ -156,12 +123,23 @@ private:
      */
     void DispatchIntegration(float DeltaTime);
     void DispatchConstraintSolver(int32 Iteration);
+    void DispatchApplyConstraintDeltas();
     void DispatchNormalUpdate();
 
     /**
      * Helper to calculate dispatch thread group count
      */
     uint32 GetDispatchCount(uint32 ElementCount, uint32 ThreadGroupSize = 64) const;
+
+    /**
+     * CUDA simulation loop (when CUDA is enabled)
+     */
+    void SimulateCUDA(float DeltaTime);
+
+    /**
+     * DX11 simulation loop (fallback or when CUDA disabled)
+     */
+    void SimulateDX11(float DeltaTime);
 
 private:
     // Engine references
@@ -175,6 +153,7 @@ private:
     ID3D11ComputeShader *UpdateNormalsCS;
     ID3D11ComputeShader *ClearNormalsCS;
     ID3D11ComputeShader *NormalizeNormalsCS;
+    ID3D11ComputeShader *ApplyConstraintDeltasCS;
 
     // Simulation buffers (ping-pong for positions)
     ID3D11Buffer *PositionBuffer[2];
@@ -188,6 +167,8 @@ private:
     ID3D11UnorderedAccessView *PositionUAV[2];
     ID3D11UnorderedAccessView *VelocityUAV;
     ID3D11UnorderedAccessView *NormalUAV;
+    ID3D11UnorderedAccessView *PositionDeltaUAV = nullptr;
+    ID3D11UnorderedAccessView *PositionWeightUAV = nullptr;
 
     // SRVs (Shader Resource Views) for compute shader read
     ID3D11ShaderResourceView *PositionSRV[2];
@@ -199,6 +180,8 @@ private:
     // Constant buffers
     ID3D11Buffer *ClothSimConstantBuffer;
     ID3D11Buffer *NormalUpdateConstantBuffer;
+    ID3D11Buffer *PositionDeltaBuffer = nullptr;
+    ID3D11Buffer *PositionWeightBuffer = nullptr;
 
     // Simulation state
     FClothSimulationData SimData;
@@ -221,4 +204,31 @@ private:
     FVector ExternalForceAccum;
 
     static constexpr uint32 THREAD_GROUP_SIZE = 64;
+
+#ifdef CUDA_ENABLED
+    // ===== CUDA Interop and Resources =====
+
+    // CUDA-DX11 interop manager
+    FCUDADXInterop *CudaInterop;
+
+    // CUDA resource handles for D3D11 buffers
+    cudaGraphicsResource *PositionCudaResource[2];
+    cudaGraphicsResource *VelocityCudaResource;
+    cudaGraphicsResource *NormalCudaResource;
+
+    // Mapped CUDA device pointers (valid only when mapped)
+    void *PositionDevicePtr[2];
+    void *VelocityDevicePtr;
+    void *NormalDevicePtr;
+
+    // CUDA-only buffers (not shared with D3D11)
+    void *PositionDeltasDevice;  // Delta accumulation buffer
+    void *PositionWeightsDevice; // Weight accumulation buffer
+    void *ConstraintDevicePtr;   // Constraints uploaded to GPU once
+    void *IndicesDevicePtr;      // Triangle indices uploaded once
+    void *ConstantsDevicePtr;    // Simulation constants
+
+    // Runtime switches
+    bool bUseCUDA; // True if CUDA is available and initialized
+#endif
 };
