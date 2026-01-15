@@ -24,6 +24,10 @@ void ATestClothActor::BeginPlay()
     ClothMesh->StartSimulation();
 }
 
+void ATestClothActor::Tick(float DeltaTime)
+{
+}
+
 void ATestClothActor::CreateTestCloth()
 {
     const int32 GridSize = 12;

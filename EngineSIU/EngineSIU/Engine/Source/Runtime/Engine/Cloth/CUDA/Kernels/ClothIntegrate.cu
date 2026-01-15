@@ -2,23 +2,13 @@
  * Cloth Integration CUDA Kernel
  * Performs semi-implicit Euler integration for cloth particles
  * Applies external forces (gravity, wind, drag) and predicts new positions
- *
- * Ported from: Shaders/Cloth/ClothIntegrate.hlsl
  */
 #include <windows.h>
 #include <cstdio>
 #include <cuda_runtime.h>
 #include "Cloth/ClothGPUStructs.h"
 
-/**
- * Integration kernel - one thread per particle
- *
- * Implements semi-implicit Euler integration:
- * 1. Calculate acceleration from forces
- * 2. Update velocity: v_{n+1} = v_n + a * dt
- * 3. Apply damping
- * 4. Update position: x_{n+1} = x_n + v_{n+1} * dt
- */
+
 __global__ void IntegrateKernel(
     FClothParticleGPU *PositionRead,
     FClothParticleGPU *PositionWrite,
@@ -28,17 +18,15 @@ __global__ void IntegrateKernel(
     uint32 idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     // Bounds check
-    if (idx >= Constants.NumParticles)
-        return;
+    if (idx >= Constants.NumParticles) return;
 
     // Load particle data
     FClothParticleGPU particle = PositionRead[idx];
     FClothVelocityGPU velocity = Velocities[idx];
 
-    // Skip fixed particles (invMass == 0)
+    // Skip fixed particles
     if (particle.InvMass == 0.0f)
     {
-        // Fixed particles don't move - preserve their state
         PositionWrite[idx] = particle;
         Velocities[idx] = velocity;
         return;
@@ -57,13 +45,13 @@ __global__ void IntegrateKernel(
     force.Y += Constants.Wind.Y * Constants.AirDrag;
     force.Z += Constants.Wind.Z * Constants.AirDrag;
 
-    // Calculate acceleration: F = ma, a = F/m = F * invMass
+    // Calculate acceleration
     FVector acceleration;
     acceleration.X = force.X * particle.InvMass;
     acceleration.Y = force.Y * particle.InvMass;
     acceleration.Z = force.Z * particle.InvMass;
 
-    // Semi-implicit Euler: v_{n+1} = v_n + a * dt
+    // Semi-implicit Euler
     velocity.Velocity.X += acceleration.X * Constants.DeltaTime;
     velocity.Velocity.Y += acceleration.Y * Constants.DeltaTime;
     velocity.Velocity.Z += acceleration.Z * Constants.DeltaTime;
@@ -75,7 +63,7 @@ __global__ void IntegrateKernel(
     velocity.Velocity.Z *= dampFactor;
 
     // Clamp velocity to prevent instability
-    const float maxVelocity = 10000.0f; // cm/s
+    const float maxVelocity = 10000.0f;
     float velMag = sqrtf(velocity.Velocity.X * velocity.Velocity.X +
                          velocity.Velocity.Y * velocity.Velocity.Y +
                          velocity.Velocity.Z * velocity.Velocity.Z);
@@ -88,7 +76,7 @@ __global__ void IntegrateKernel(
         velocity.Velocity.Z *= scale;
     }
 
-    // Predict new position: x_{n+1} = x_n + v_{n+1} * dt
+    // Predict new position
     particle.Position.X += velocity.Velocity.X * Constants.DeltaTime;
     particle.Position.Y += velocity.Velocity.Y * Constants.DeltaTime;
     particle.Position.Z += velocity.Velocity.Z * Constants.DeltaTime;

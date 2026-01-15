@@ -376,6 +376,8 @@ void FClothSolver::Simulate(float InDeltaTime)
 
     // Clamp delta time
     float DeltaTime = FMath::Clamp(InDeltaTime, 0.0001f, 0.033f);
+    // Test for runtime wind change
+    //Config.AirDrag = sin(SimData.CurrentTime) * 10.f;
 
 #ifdef CUDA_ENABLED
     // Use CUDA path if available, otherwise fall back to DX11

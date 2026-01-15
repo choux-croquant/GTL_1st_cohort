@@ -34,7 +34,7 @@ struct FClothConfig
     bool bUseXPBD = false;   // Use XPBD instead of PBD
 
     // Wind and drag
-    float AirDrag = 0.01f;
+    float AirDrag = 1.0f;
     float WindStrength = 1.0f;
 
     // Collision
@@ -111,9 +111,9 @@ struct FClothSimulationData
     TArray<FVector> CurrentVelocities;
 
     // External forces
-    FVector Gravity = FVector(400.0f, 0.0f, -900.0f); // cm/s^2
+    FVector Gravity = FVector(0.0f, 0.0f, -900.0f); // cm/s^2
     //FVector Gravity = FVector(0.0f, 0.0f, 0.0f); // cm/s^2
-    FVector Wind = FVector(0.0f, 0.0f, 0.0f);
+    FVector Wind = FVector(300.0f, 0.0f, 0.0f);
     FVector ExternalForce = FVector(0.0f, 0.0f, 0.0f);
 
     // Timing
@@ -121,7 +121,7 @@ struct FClothSimulationData
     float AccumulatedTime = 0.0f;
 
     FClothSimulationData()
-        : NumParticles(0), NumConstraints(0), Gravity(400.0f, 0.0f, -900.0f), Wind(0.0f, 0.0f, 0.0f), ExternalForce(0.0f, 0.0f, 0.0f), CurrentTime(0.0f), AccumulatedTime(0.0f)
+        : NumParticles(0), NumConstraints(0), Gravity(0.0f, 0.0f, -900.0f), Wind(300.0f, 0.0f, 0.0f), ExternalForce(0.0f, 0.0f, 0.0f), CurrentTime(0.0f), AccumulatedTime(0.0f)
         //: NumParticles(0), NumConstraints(0), Gravity(0.0f, 0.0f, 0.0f), Wind(0.0f, 0.0f, 0.0f), ExternalForce(0.0f, 0.0f, 0.0f), CurrentTime(0.0f), AccumulatedTime(0.0f)
     {
     }

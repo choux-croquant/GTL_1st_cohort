@@ -1,12 +1,6 @@
 /**
  * Cloth Apply Delta CUDA Kernel
  * Applies accumulated constraint corrections to particle positions
- *
- * This kernel averages the accumulated deltas (from multiple constraints)
- * and applies them to particle positions, then clears the delta buffers
- * for the next iteration.
- *
- * Ported from: Shaders/Cloth/ClothApplyDelta.hlsl
  */
 
 #include <windows.h>
@@ -14,16 +8,7 @@
 #include <cuda_runtime.h>
 #include "Cloth/ClothGPUStructs.h"
 
-/**
- * Apply constraint deltas kernel - one thread per particle
- *
- * Process:
- * 1. Read accumulated delta and weight for this particle
- * 2. If weight > 0 (constraints affected this particle):
- *    - Average delta by dividing by weight
- *    - Apply averaged delta to position
- * 3. Clear delta and weight for next iteration
- */
+
 __global__ void ApplyConstraintDeltasKernel(
     const FClothParticleGPU *__restrict__ PositionRead,
     FClothParticleGPU *__restrict__ PositionWrite,
@@ -34,8 +19,7 @@ __global__ void ApplyConstraintDeltasKernel(
     uint32 idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     // Bounds check
-    if (idx >= Constants.NumParticles)
-        return;
+    if (idx >= Constants.NumParticles) return;
 
     // Load particle
     FClothParticleGPU particle = PositionRead[idx];
@@ -61,7 +45,7 @@ __global__ void ApplyConstraintDeltasKernel(
         particle.Position.Y += PositionDeltas[idx].Y * invWeight;
         particle.Position.Z += PositionDeltas[idx].Z * invWeight;
 
-        // Clear for next iteration (important!)
+        // Clear for next iteration
         PositionDeltas[idx] = FVector(0, 0, 0);
         PositionWeights[idx] = 0.0f;
     }

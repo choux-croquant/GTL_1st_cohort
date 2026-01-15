@@ -90,9 +90,8 @@ typedef int int32;
  */
 struct FClothParticleGPU
 {
-    FVector Position; // 12 bytes
-    float InvMass;    // 4 bytes (0 = fixed particle)
-    // Total: 16 bytes
+    FVector Position;
+    float InvMass;
 };
 
 /**
@@ -101,9 +100,8 @@ struct FClothParticleGPU
  */
 struct FClothVelocityGPU
 {
-    FVector Velocity; // 12 bytes
-    float Padding;    // 4 bytes (alignment)
-    // Total: 16 bytes
+    FVector Velocity;
+    float Padding;
 };
 
 /**
