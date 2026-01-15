@@ -5,7 +5,8 @@
  *
  * Ported from: Shaders/Cloth/ClothIntegrate.hlsl
  */
-
+#include <windows.h>
+#include <cstdio>
 #include <cuda_runtime.h>
 #include "Cloth/ClothGPUStructs.h"
 
@@ -116,4 +117,19 @@ extern "C" void LaunchIntegrateKernel(
         (FClothParticleGPU *)posWrite,
         (FClothVelocityGPU *)velocities,
         constants);
+
+    /*cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        char buf[512];
+        snprintf(buf, sizeof(buf), "[CUDA] IntegrateKernel launch failed: %s (code=%d)\n", cudaGetErrorString(err), (int)err);
+        OutputDebugStringA(buf);
+        return;
+    }
+
+    err = cudaStreamSynchronize(stream);
+    if (err != cudaSuccess) {
+        char buf[512];
+        snprintf(buf, sizeof(buf), "[CUDA] IntegrateKernel execution failed: %s (code=%d)\n", cudaGetErrorString(err), (int)err);
+        OutputDebugStringA(buf);
+    }*/
 }

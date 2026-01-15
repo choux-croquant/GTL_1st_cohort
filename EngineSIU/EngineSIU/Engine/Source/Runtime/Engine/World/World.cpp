@@ -80,8 +80,9 @@ void UWorld::BeginPlay()
     // TEST
     ATestClothActor* ClothActor = this->SpawnActor<ATestClothActor>();
     //ATestClothActor* ClothActor2 = this->SpawnActor<ATestClothActor>();
+    //ClothActor->SetActorLocation(FVector(100, 20, 0));
     ClothActor->SetActorLocation(FVector(100, 0, 0));
-    //ClothActor2->SetActorLocation(FVector(30, 0, 0));
+    //ClothActor2->SetActorLocation(FVector(100, -20, 0));
 
     if (!GameMode && this->WorldType == EWorldType::PIE)
     {

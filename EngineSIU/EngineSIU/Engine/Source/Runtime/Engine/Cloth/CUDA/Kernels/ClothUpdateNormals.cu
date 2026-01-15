@@ -10,6 +10,8 @@
  * Ported from: Shaders/Cloth/ClothUpdateNormals.hlsl
  */
 
+#include <windows.h>
+#include <cstdio>
 #include <cuda_runtime.h>
 #include "Cloth/ClothGPUStructs.h"
 

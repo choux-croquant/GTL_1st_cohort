@@ -9,6 +9,8 @@
  * Ported from: Shaders/Cloth/ClothConstraintSolver.hlsl
  */
 
+#include <windows.h>
+#include <cstdio>
 #include <cuda_runtime.h>
 #include "Cloth/ClothGPUStructs.h"
 

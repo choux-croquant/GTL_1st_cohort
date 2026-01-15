@@ -26,7 +26,7 @@ void ATestClothActor::BeginPlay()
 
 void ATestClothActor::CreateTestCloth()
 {
-    const int32 GridSize = 3;
+    const int32 GridSize = 12;
     const float Spacing = 10.0f; // 10 cm spacing between particles
 
     TArray<FVector> positions;
@@ -47,14 +47,14 @@ void ATestClothActor::CreateTestCloth()
             positions.Add(pos);
 
             // Top row is fixed (pinned)
-            float invMass = (y == 0) ? 0.0f : 1.0f;
-            invMasses.Add(invMass);
-            /*bool bIsTopRow = (y == 0);
+           /* float invMass = (y == 0) ? 0.0f : 1.0f;
+            invMasses.Add(invMass);*/
+            bool bIsTopRow = (y == 0);
             bool bIsLeftCorner = (x == 0);
             bool bIsRightCorner = (x == GridSize - 1);
 
             float invMass = (bIsTopRow && (bIsLeftCorner || bIsRightCorner)) ? 0.0f : 1.0f;
-            invMasses.Add(invMass);*/
+            invMasses.Add(invMass);
         }
     }
 
@@ -139,7 +139,7 @@ void ATestClothActor::CreateTestCloth()
     // Configure simulation parameters
     FClothConfig config;
     config.Mass = 1.0f;
-    config.Damping = 0.2f;          // Lower damping for more dynamic motion
+    config.Damping = 0.5f;          // Lower damping for more dynamic motion
     config.StretchStiffness = 0.9f; // High stiffness for structural integrity
     config.NumIterations = 5;        // Increase iterations for better convergence
     config.TimeStep = 0.016f;

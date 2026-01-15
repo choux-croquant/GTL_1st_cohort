@@ -46,7 +46,7 @@ FClothSolver::FClothSolver()
     NormalSRV = nullptr;
 
 #ifdef CUDA_ENABLED
-    // Initialize CUDA members
+    // CUDA members
     CudaInterop = nullptr;
 
     PositionCudaResource[0] = nullptr;
@@ -87,7 +87,6 @@ void FClothSolver::Initialize(FGraphicsDevice *InGraphics, FDXDBufferManager *In
     }
 
 #ifdef CUDA_ENABLED
-    // Try to initialize CUDA interop
     CudaInterop = new FCUDADXInterop();
     if (CudaInterop->Initialize(Graphics->Device))
     {
@@ -104,7 +103,7 @@ void FClothSolver::Initialize(FGraphicsDevice *InGraphics, FDXDBufferManager *In
     }
 #endif
 
-    // Load compute shaders (for DX11 fallback path)
+    // Load compute shaders (DX11 fallback path)
     if (!LoadComputeShaders())
     {
         UE_LOG(ELogLevel::Error, TEXT("ClothSolver: Failed to load compute shaders"));
@@ -118,7 +117,6 @@ void FClothSolver::Initialize(FGraphicsDevice *InGraphics, FDXDBufferManager *In
         return;
 #endif
     }
-
     UE_LOG(ELogLevel::Display, TEXT("ClothSolver: Initialized successfully"));
 }
 
@@ -133,10 +131,8 @@ bool FClothSolver::SetupFromAsset(UClothAsset *InAsset, const FClothConfig &InCo
     // Release existing resources
     Release();
 
-    // Store configuration
     Config = InConfig;
 
-    // Validate asset data
     if (!InAsset->IsValid())
     {
         UE_LOG(ELogLevel::Error, TEXT("ClothSolver: Cloth asset is not valid"));
@@ -151,21 +147,17 @@ bool FClothSolver::SetupFromAsset(UClothAsset *InAsset, const FClothConfig &InCo
     const TArray<FClothConstraint> &AssetDistConstraints = InAsset->GetDistanceConstraints();
     const TArray<FClothConstraint> &AssetBendConstraints = InAsset->GetBendConstraints();
 
-    // 기본 포지션/질량/인덱스 복사
     RestPositions = AssetRestPositions;
     Indices = AssetIndices;
     InvMasses = AssetInvMasses;
 
-    // 제약 조건 복사 - Combine distance and bend constraints
     Constraints.Empty();
     Constraints.Append(AssetDistConstraints);
     Constraints.Append(AssetBendConstraints);
 
-    // 필요시 Attachment, VertexPaint도 가져온다 (나중에 사용 가능)
+    // TODO : Attachment, VertexPaint
     // AttachmentIndices = InAsset->GetAttachmentIndices();
     // VertexPaintData = InAsset->GetVertexPaintData();
-
-    // ===== 여기까지 Asset → Solver 데이터 세팅 =====
 
     NumParticles = RestPositions.Num();
     NumConstraints = AssetDistConstraints.Num() + AssetBendConstraints.Num();
@@ -177,14 +169,12 @@ bool FClothSolver::SetupFromAsset(UClothAsset *InAsset, const FClothConfig &InCo
         return false;
     }
 
-    // Initialize simulation data
     SimData.NumParticles = NumParticles;
     SimData.NumConstraints = NumConstraints;
 
     SimData.CurrentPositions.SetNum(NumParticles);
     SimData.CurrentVelocities.SetNum(NumParticles);
 
-    // 초기 상태: 휴식 위치를 현재 위치로 복사, 속도 0
     for (int32 i = 0; i < NumParticles; ++i)
     {
         SimData.CurrentPositions[i] = RestPositions[i];
@@ -208,10 +198,10 @@ bool FClothSolver::SetupFromAsset(UClothAsset *InAsset, const FClothConfig &InCo
     }
 
 #ifdef CUDA_ENABLED
-    // Setup CUDA resources if CUDA is enabled
+    // Setup CUDA resources
     if (bUseCUDA && CudaInterop)
     {
-        // Register D3D11 buffers with CUDA for zero-copy interop
+        // Register D3D11 buffers with CUDA
         if (!CudaInterop->RegisterD3DBuffer(PositionBuffer[0], &PositionCudaResource[0]))
         {
             UE_LOG(ELogLevel::Error, TEXT("ClothSolver: Failed to register position buffer 0 with CUDA"));
@@ -246,7 +236,7 @@ bool FClothSolver::SetupFromAsset(UClothAsset *InAsset, const FClothConfig &InCo
             cudaMemset(PositionDeltasDevice, 0, sizeof(FVector) * NumParticles);
             cudaMemset(PositionWeightsDevice, 0, sizeof(float) * NumParticles);
 
-            // Upload constraints to CUDA device memory (one-time upload)
+            // Upload constraints to CUDA device memory
             TArray<FClothConstraintGPU> constraintsGPU;
             constraintsGPU.SetNum(Constraints.Num());
             for (int32 i = 0; i < Constraints.Num(); ++i)
@@ -260,15 +250,11 @@ bool FClothSolver::SetupFromAsset(UClothAsset *InAsset, const FClothConfig &InCo
                 constraintsGPU[i].Padding0 = 0.0f;
                 constraintsGPU[i].Padding1 = 0.0f;
             }
-            cudaMemcpy(ConstraintDevicePtr, constraintsGPU.GetData(),
-                       sizeof(FClothConstraintGPU) * NumConstraints, cudaMemcpyHostToDevice);
+            cudaMemcpy(ConstraintDevicePtr, constraintsGPU.GetData(), sizeof(FClothConstraintGPU) * NumConstraints, cudaMemcpyHostToDevice);
+            // Upload triangle indices to CUDA device memory
+            cudaMemcpy(IndicesDevicePtr, Indices.GetData(), sizeof(uint32) * NumTriangles * 3, cudaMemcpyHostToDevice);
 
-            // Upload triangle indices to CUDA device memory (one-time upload)
-            cudaMemcpy(IndicesDevicePtr, Indices.GetData(),
-                       sizeof(uint32) * NumTriangles * 3, cudaMemcpyHostToDevice);
-
-            UE_LOG(ELogLevel::Display, TEXT("ClothSolver: CUDA resources initialized - %d particles, %d constraints"),
-                   NumParticles, NumConstraints);
+            UE_LOG(ELogLevel::Display, TEXT("ClothSolver: CUDA resources initialized - %d particles, %d constraints"), NumParticles, NumConstraints);
         }
     }
 #endif
@@ -280,8 +266,7 @@ bool FClothSolver::SetupFromAsset(UClothAsset *InAsset, const FClothConfig &InCo
 
 void FClothSolver::Release()
 {
-    if (!bInitialized)
-        return;
+    if (!bInitialized) return;
 
 #ifdef CUDA_ENABLED
     // Release CUDA resources first (before D3D11 buffers)
@@ -340,7 +325,7 @@ void FClothSolver::Release()
     }
 #endif
 
-    // Release compute shaders (managed by shader manager)
+    // Release compute shaders
     // We just null out our pointers
     IntegrateCS = nullptr;
     ConstraintSolverCS = nullptr;
@@ -387,11 +372,10 @@ void FClothSolver::Release()
 
 void FClothSolver::Simulate(float InDeltaTime)
 {
-    if (!bInitialized)
-        return;
+    if (!bInitialized) return;
 
-    // Clamp delta time to prevent instability
-    float DeltaTime = FMath::Clamp(InDeltaTime, 0.0001f, 0.033f); // 0.1ms to 33ms
+    // Clamp delta time
+    float DeltaTime = FMath::Clamp(InDeltaTime, 0.0001f, 0.033f);
 
 #ifdef CUDA_ENABLED
     // Use CUDA path if available, otherwise fall back to DX11
@@ -1177,15 +1161,13 @@ void FClothSolver::DispatchNormalUpdate()
 #ifdef CUDA_ENABLED
 void FClothSolver::SimulateCUDA(float DeltaTime)
 {
-    if (!CudaInterop || !bUseCUDA)
-        return;
+    if (!CudaInterop || !bUseCUDA) return;
 
     cudaStream_t stream = CudaInterop->GetStream();
 
-    // Swap ping-pong buffer index
-    CurrentBufferIndex = 1 - CurrentBufferIndex;
-    int readIdx = 1 - CurrentBufferIndex;
-    int writeIdx = CurrentBufferIndex;
+    // ping-pong buffer index
+    int readIdx = CurrentBufferIndex;
+    int writeIdx = 1- CurrentBufferIndex;
 
     // Prepare simulation constants
     FClothSimConstants constants = {};
@@ -1203,15 +1185,16 @@ void FClothSolver::SimulateCUDA(float DeltaTime)
     constants.WorldMatrix = FMatrix::Identity;
 
     // Upload constants to device memory
-    cudaMemcpyAsync(ConstantsDevicePtr, &constants, sizeof(FClothSimConstants),
-                    cudaMemcpyHostToDevice, stream);
+    cudaMemcpyAsync(ConstantsDevicePtr, &constants, sizeof(FClothSimConstants), cudaMemcpyHostToDevice, stream);
 
     // Map D3D11 resources for CUDA access
     cudaGraphicsResource *resources[] = {
         PositionCudaResource[0],
         PositionCudaResource[1],
         VelocityCudaResource,
-        NormalCudaResource};
+        NormalCudaResource
+    };
+
     if (!CudaInterop->MapResources(resources, 4, stream))
     {
         UE_LOG(ELogLevel::Error, TEXT("SimulateCUDA: Failed to map resources"));
@@ -1227,7 +1210,7 @@ void FClothSolver::SimulateCUDA(float DeltaTime)
 
     // ===== CUDA Simulation Pipeline =====
 
-    // 1. Integration - apply forces and update velocities/positions
+    // Apply forces and update velocities/positions
     LaunchIntegrateKernel(
         PositionDevicePtr[readIdx],
         PositionDevicePtr[writeIdx],
@@ -1235,11 +1218,11 @@ void FClothSolver::SimulateCUDA(float DeltaTime)
         constants,
         stream);
 
-    // Swap for constraint solving (integration writes to writeIdx)
+    // Swap buffer index for next step
     readIdx = writeIdx;
     writeIdx = 1 - writeIdx;
 
-    // 2. Constraint solving iterations
+    // Constraint solving iterations
     for (int32 iter = 0; iter < Config.NumIterations; ++iter)
     {
         // Clear delta accumulation buffers at start of each iteration
@@ -1265,12 +1248,11 @@ void FClothSolver::SimulateCUDA(float DeltaTime)
             stream);
 
         // Swap buffers for next iteration
-        int temp = readIdx;
         readIdx = writeIdx;
-        writeIdx = temp;
+        writeIdx = 1 - writeIdx;
     }
 
-    // 3. Update normals for rendering
+    // Update normals for lighting
     LaunchUpdateNormalsKernel(
         PositionDevicePtr[readIdx],
         IndicesDevicePtr,
@@ -1286,7 +1268,7 @@ void FClothSolver::SimulateCUDA(float DeltaTime)
     CudaInterop->UnmapResources(resources, 4, stream);
 
     // Update current buffer index for rendering
-    CurrentBufferIndex = readIdx;
+    CurrentBufferIndex = 1 - CurrentBufferIndex;
 }
 #endif // CUDA_ENABLED
 

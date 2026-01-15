@@ -485,9 +485,6 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <None Include="Shaders\DepthOfFieldShader.hlsl" />
     <None Include="Shaders\FullScreenQuadVertexShader.hlsl" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothPhysicsManager.cpp" />
-    <CudaCompile Include="Engine\Source\Runtime\Engine\Cloth\CUDA\CUDATest.cu">
-      <FileType>Document</FileType>
-    </CudaCompile>
     <CudaCompile Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothIntegrate.cu">
       <FileType>Document</FileType>
     </CudaCompile>

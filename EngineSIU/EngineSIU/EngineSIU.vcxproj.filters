@@ -1886,9 +1886,11 @@
     <None Include="Shaders\ClothVertexShader.hlsl" />
     <None Include="Shaders\ClothPixelShader.hlsl" />
     <None Include="Shaders\Cloth\ClothApplyDelta.hlsl" />
-    <None Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothIntegrate.cu" />
-    <None Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothApplyDelta.cu" />
-    <None Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothConstraintSolver.cu" />
-    <None Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothUpdateNormals.cu" />
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothIntegrate.cu" />
+    <CudaCompile Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothConstraintSolver.cu" />
+    <CudaCompile Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothApplyDelta.cu" />
+    <CudaCompile Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothUpdateNormals.cu" />
   </ItemGroup>
 </Project>
