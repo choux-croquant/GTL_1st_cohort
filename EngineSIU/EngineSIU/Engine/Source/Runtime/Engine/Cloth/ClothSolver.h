@@ -6,7 +6,7 @@
 #pragma once
 
 #include "Core/HAL/PlatformType.h"
-//#include <d3d11.h>
+#include <d3d11.h>
 
 #include "Core/Container/Array.h"
 #include "Core/Math/Vector.h"
@@ -195,6 +195,9 @@ private:
 
     // State tracking
     int32 CurrentBufferIndex;
+    int32 readIdx;
+    int32 writeIdx;
+
     uint32 NumParticles;
     uint32 NumConstraints;
     uint32 NumTriangles;

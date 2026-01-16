@@ -4,8 +4,10 @@
 StructuredBuffer<FClothParticle>  PositionRead        : register(t0);
 StructuredBuffer<FDistanceConstraint> ConstraintBuffer : register(t1);
 
-RWStructuredBuffer<float3> PositionDelta : register(u0);
-RWStructuredBuffer<float>  PositionWeight : register(u1);
+RWStructuredBuffer<int3> PositionDelta : register(u0);
+RWStructuredBuffer<int>  PositionWeight : register(u1);
+
+static const float kScale = 1000.0f;
 
 [numthreads(64, 1, 1)]
 void SolveDistanceConstraintsCS(uint3 DTid : SV_DispatchThreadID)
@@ -61,13 +63,23 @@ void SolveDistanceConstraintsCS(uint3 DTid : SV_DispatchThreadID)
     uint iA = constraint.ParticleA;
     uint iB = constraint.ParticleB;
 
-    /*InterlockedAdd(PositionDelta[iA].x, correctionA.x);
-    InterlockedAdd(PositionDelta[iA].y, correctionA.y);
-    InterlockedAdd(PositionDelta[iA].z, correctionA.z);
-    InterlockedAdd(PositionWeight[iA], 1.0f);
+    int3 deltaAInt = int3(
+        correctionA.x * kScale,
+        correctionA.y * kScale,
+        correctionA.z * kScale);
 
-    InterlockedAdd(PositionDelta[iB].x, correctionB.x);
-    InterlockedAdd(PositionDelta[iB].y, correctionB.y);
-    InterlockedAdd(PositionDelta[iB].z, correctionB.z);
-    InterlockedAdd(PositionWeight[iB], 1.0f);*/
+    int3 deltaBInt = int3(
+        correctionB.x * kScale,
+        correctionB.y * kScale,
+        correctionB.z * kScale);
+
+    InterlockedAdd(PositionDelta[iA].x, deltaAInt.x);
+    InterlockedAdd(PositionDelta[iA].y, deltaAInt.y);
+    InterlockedAdd(PositionDelta[iA].z, deltaAInt.z);
+    InterlockedAdd(PositionWeight[iA], 1);
+
+    InterlockedAdd(PositionDelta[iB].x, deltaBInt.x);
+    InterlockedAdd(PositionDelta[iB].y, deltaBInt.y);
+    InterlockedAdd(PositionDelta[iB].z, deltaBInt.z);
+    InterlockedAdd(PositionWeight[iB], 1);
 }

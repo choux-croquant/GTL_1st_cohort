@@ -45,6 +45,8 @@ FClothSolver::FClothSolver()
     IndexSRV = nullptr;
     NormalSRV = nullptr;
 
+    readIdx = 0;
+    writeIdx = 1;
 #ifdef CUDA_ENABLED
     // CUDA members
     CudaInterop = nullptr;
@@ -407,23 +409,30 @@ void FClothSolver::SimulateDX11(float DeltaTime)
         return;
 
     // Swap ping-pong buffers BEFORE simulation
-    CurrentBufferIndex = 1 - CurrentBufferIndex;
+    readIdx = CurrentBufferIndex;
+    writeIdx = 1 - CurrentBufferIndex;
 
     // Update constant buffer
     UpdateConstantBuffers();
 
     // 1. Integration step - apply forces and predict positions
     DispatchIntegration(DeltaTime);
+    readIdx = writeIdx;
+    writeIdx = 1 - writeIdx;
 
     // 2. Constraint solving iterations
     for (int32 i = 0; i < Config.NumIterations; ++i)
     {
         DispatchConstraintSolver(i);
         DispatchApplyConstraintDeltas();
+        readIdx = writeIdx;
+        writeIdx = 1 - writeIdx;
     }
 
     // 3. Update normals for rendering
-    DispatchNormalUpdate();
+    //DispatchNormalUpdate();
+
+    CurrentBufferIndex = 1 - CurrentBufferIndex;
 }
 
 void FClothSolver::ResetSimulation()
@@ -710,9 +719,9 @@ bool FClothSolver::CreateBuffers()
     // Create PositionDelta buffer (float3 per particle)
     bufferDesc = {};
     bufferDesc.Usage = D3D11_USAGE_DEFAULT;
-    bufferDesc.ByteWidth = sizeof(FVector) * NumParticles; // float3
+    bufferDesc.ByteWidth = sizeof(int32) * 3 * NumParticles; // int3
     bufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
-    bufferDesc.StructureByteStride = sizeof(FVector);
+    bufferDesc.StructureByteStride = sizeof(int32) * 3;
     bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
 
     hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &PositionDeltaBuffer);
@@ -725,9 +734,9 @@ bool FClothSolver::CreateBuffers()
     // Create PositionWeight buffer (float per particle)
     bufferDesc = {};
     bufferDesc.Usage = D3D11_USAGE_DEFAULT;
-    bufferDesc.ByteWidth = sizeof(float) * NumParticles;
+    bufferDesc.ByteWidth = sizeof(int32) * NumParticles;
     bufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
-    bufferDesc.StructureByteStride = sizeof(float);
+    bufferDesc.StructureByteStride = sizeof(int32);
     bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
 
     hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &PositionWeightBuffer);
@@ -1007,8 +1016,8 @@ void FClothSolver::DispatchIntegration(float DeltaTime)
     // Bind UAVs
     ID3D11UnorderedAccessView *uavs[] =
         {
-            PositionUAV[CurrentBufferIndex],      // u0: ParticlesRead
-            PositionUAV[1u - CurrentBufferIndex], // u1: ParticlesWrite
+            PositionUAV[readIdx],      // u0: ParticlesRead
+            PositionUAV[writeIdx], // u1: ParticlesWrite
             VelocityUAV                           // u2: VelocityBuffer (in-place)
         };
 
@@ -1038,7 +1047,7 @@ void FClothSolver::DispatchConstraintSolver(int32 Iteration)
     // t0: ParticlesRead (현재 step의 읽기 버퍼)
     ID3D11ShaderResourceView *srvs[] =
         {
-            PositionSRV[CurrentBufferIndex], // t0
+            PositionSRV[readIdx], // t0
             ConstraintSRV                    // t1
         };
     Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
@@ -1074,7 +1083,7 @@ void FClothSolver::DispatchApplyConstraintDeltas()
     // t0: PositionRead = 현재 읽기 버퍼
     ID3D11ShaderResourceView *srvs[] =
         {
-            PositionSRV[1u - CurrentBufferIndex] // t0
+            PositionSRV[readIdx] // t0
         };
     Graphics->DeviceContext->CSSetShaderResources(0, 1, srvs);
 
@@ -1083,7 +1092,7 @@ void FClothSolver::DispatchApplyConstraintDeltas()
         {
             PositionDeltaUAV,               // u0
             PositionWeightUAV,              // u1
-            PositionUAV[CurrentBufferIndex] // u2: 다음 버퍼에 결과 기록
+            PositionUAV[writeIdx] // u2: 다음 버퍼에 결과 기록
         };
     UINT initialCounts[3] = {0, 0, 0};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 3, uavs, initialCounts);
@@ -1105,7 +1114,6 @@ void FClothSolver::DispatchApplyConstraintDeltas()
     Graphics->DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
 
     // ping-pong 스왑: 이제 write 버퍼가 새 Current가 됨
-    CurrentBufferIndex = 1u - CurrentBufferIndex;
 }
 
 void FClothSolver::DispatchNormalUpdate()
