@@ -268,7 +268,8 @@ bool FClothSolver::SetupFromAsset(UClothAsset *InAsset, const FClothConfig &InCo
 
 void FClothSolver::Release()
 {
-    if (!bInitialized) return;
+    if (!bInitialized)
+        return;
 
 #ifdef CUDA_ENABLED
     // Release CUDA resources first (before D3D11 buffers)
@@ -374,12 +375,13 @@ void FClothSolver::Release()
 
 void FClothSolver::Simulate(float InDeltaTime)
 {
-    if (!bInitialized) return;
+    if (!bInitialized)
+        return;
 
     // Clamp delta time
     float DeltaTime = FMath::Clamp(InDeltaTime, 0.0001f, 0.033f);
     // Test for runtime wind change
-    //Config.AirDrag = sin(SimData.CurrentTime) * 10.f;
+     Config.AirDrag = sin(SimData.CurrentTime) * 10.f;
 
 #ifdef CUDA_ENABLED
     // Use CUDA path if available, otherwise fall back to DX11
@@ -430,7 +432,7 @@ void FClothSolver::SimulateDX11(float DeltaTime)
     }
 
     // 3. Update normals for rendering
-    //DispatchNormalUpdate();
+    // DispatchNormalUpdate();
 
     CurrentBufferIndex = 1 - CurrentBufferIndex;
 }
@@ -972,6 +974,29 @@ bool FClothSolver::UploadInitialData()
         Graphics->DeviceContext->UpdateSubresource(NormalBuffer, 0, nullptr, initialNormals.GetData(), 0, 0);
     }
 
+    // Initialize delta accumulation buffers to zero
+    if (PositionDeltaBuffer)
+    {
+        TArray<int32> initialDeltas;
+        initialDeltas.SetNum(NumParticles * 3); // int3 per particle
+        for (uint32 i = 0; i < NumParticles * 3; ++i)
+        {
+            initialDeltas[i] = 0;
+        }
+        Graphics->DeviceContext->UpdateSubresource(PositionDeltaBuffer, 0, nullptr, initialDeltas.GetData(), 0, 0);
+    }
+
+    if (PositionWeightBuffer)
+    {
+        TArray<int32> initialWeights;
+        initialWeights.SetNum(NumParticles); // int per particle
+        for (uint32 i = 0; i < NumParticles; ++i)
+        {
+            initialWeights[i] = 0;
+        }
+        Graphics->DeviceContext->UpdateSubresource(PositionWeightBuffer, 0, nullptr, initialWeights.GetData(), 0, 0);
+    }
+
     return true;
 }
 
@@ -1016,9 +1041,9 @@ void FClothSolver::DispatchIntegration(float DeltaTime)
     // Bind UAVs
     ID3D11UnorderedAccessView *uavs[] =
         {
-            PositionUAV[readIdx],      // u0: ParticlesRead
+            PositionUAV[readIdx],  // u0: ParticlesRead
             PositionUAV[writeIdx], // u1: ParticlesWrite
-            VelocityUAV                           // u2: VelocityBuffer (in-place)
+            VelocityUAV            // u2: VelocityBuffer (in-place)
         };
 
     UINT initialCounts[3] = {0, 0, 0};
@@ -1041,6 +1066,16 @@ void FClothSolver::DispatchConstraintSolver(int32 Iteration)
     if (!Graphics || !Graphics->DeviceContext || !ConstraintSolverCS || NumConstraints == 0)
         return;
 
+    // Clear delta accumulation buffers at the start of each iteration
+    if (Iteration == 0 || true) // Always clear before constraint solving
+    {
+        UINT clearValues[4] = {0, 0, 0, 0};
+        if (PositionDeltaUAV)
+            Graphics->DeviceContext->ClearUnorderedAccessViewUint(PositionDeltaUAV, clearValues);
+        if (PositionWeightUAV)
+            Graphics->DeviceContext->ClearUnorderedAccessViewUint(PositionWeightUAV, clearValues);
+    }
+
     // Bind constant buffer
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &ClothSimConstantBuffer);
 
@@ -1048,7 +1083,7 @@ void FClothSolver::DispatchConstraintSolver(int32 Iteration)
     ID3D11ShaderResourceView *srvs[] =
         {
             PositionSRV[readIdx], // t0
-            ConstraintSRV                    // t1
+            ConstraintSRV         // t1
         };
     Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
 
@@ -1090,8 +1125,8 @@ void FClothSolver::DispatchApplyConstraintDeltas()
     // u0: PositionDelta, u1: PositionWeight, u2: PositionWrite
     ID3D11UnorderedAccessView *uavs[] =
         {
-            PositionDeltaUAV,               // u0
-            PositionWeightUAV,              // u1
+            PositionDeltaUAV,     // u0
+            PositionWeightUAV,    // u1
             PositionUAV[writeIdx] // u2: 다음 버퍼에 결과 기록
         };
     UINT initialCounts[3] = {0, 0, 0};
@@ -1171,13 +1206,14 @@ void FClothSolver::DispatchNormalUpdate()
 #ifdef CUDA_ENABLED
 void FClothSolver::SimulateCUDA(float DeltaTime)
 {
-    if (!CudaInterop || !bUseCUDA) return;
+    if (!CudaInterop || !bUseCUDA)
+        return;
 
     cudaStream_t stream = CudaInterop->GetStream();
 
     // ping-pong buffer index
     int readIdx = CurrentBufferIndex;
-    int writeIdx = 1- CurrentBufferIndex;
+    int writeIdx = 1 - CurrentBufferIndex;
 
     // Prepare simulation constants
     FClothSimConstants constants = {};
@@ -1202,8 +1238,7 @@ void FClothSolver::SimulateCUDA(float DeltaTime)
         PositionCudaResource[0],
         PositionCudaResource[1],
         VelocityCudaResource,
-        NormalCudaResource
-    };
+        NormalCudaResource};
 
     if (!CudaInterop->MapResources(resources, 4, stream))
     {

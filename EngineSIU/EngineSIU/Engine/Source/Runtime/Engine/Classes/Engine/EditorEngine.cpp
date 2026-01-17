@@ -25,16 +25,19 @@
 #include "Cloth/ClothPhysicsManager.h"
 #include "Components/ClothMeshComponent.h"
 #include "Cloth/ClothWorld.h"
+#include "GameFramework/PIETestGameMode.h"
+#include "GameFramework/PIEFreeFlyPawn.h"
+#include "GameFramework/PIEPlayerController.h"
 
 extern FEngineLoop GEngineLoop;
 
 namespace PrivateEditorSelection
 {
-    static AActor* GActorSelected = nullptr;
-    static AActor* GActorHovered = nullptr;
+    static AActor *GActorSelected = nullptr;
+    static AActor *GActorHovered = nullptr;
 
-    static USceneComponent* GComponentSelected = nullptr;
-    static USceneComponent* GComponentHovered = nullptr;
+    static USceneComponent *GComponentSelected = nullptr;
+    static USceneComponent *GComponentHovered = nullptr;
 }
 
 void UEditorEngine::Init()
@@ -44,7 +47,7 @@ void UEditorEngine::Init()
     // Initialize the engine
     GEngine = this;
 
-    FWorldContext& EditorWorldContext = CreateNewWorldContext(EWorldType::Editor);
+    FWorldContext &EditorWorldContext = CreateNewWorldContext(EWorldType::Editor);
 
     EditorWorld = UWorld::CreateWorld(this, EWorldType::Editor, FString("EditorWorld"));
 
@@ -52,7 +55,7 @@ void UEditorEngine::Init()
     ActiveWorld = EditorWorld;
 
     EditorPlayer = FObjectFactory::ConstructObject<AEditorPlayer>(this);
-    
+
     LoadLevel("Saved/AutoSaves.scene");
 }
 
@@ -74,35 +77,35 @@ void UEditorEngine::Release()
     {
         EndPhysicsAssetViewer();
     }
-    
-    //SaveLevel("Saved/AutoSaves.scene");
-    
-    for (FWorldContext* WorldContext : WorldList)
+
+    // SaveLevel("Saved/AutoSaves.scene");
+
+    for (FWorldContext *WorldContext : WorldList)
     {
         WorldContext->World()->Release();
     }
     WorldList.Empty();
     PhysicsManager->ShutdownPhysX();
-    
+
     Super::Release();
 }
 
 void UEditorEngine::Tick(float DeltaTime)
 {
-    for (FWorldContext* WorldContext : WorldList)
+    for (FWorldContext *WorldContext : WorldList)
     {
         if (WorldContext->WorldType == EWorldType::Editor)
         {
-            if (UWorld* World = WorldContext->World())
+            if (UWorld *World = WorldContext->World())
             {
                 // TODO: World에서 EditorPlayer 제거 후 Tick 호출 제거 필요.
                 World->Tick(DeltaTime);
                 EditorPlayer->Tick(DeltaTime);
-                ULevel* Level = World->GetActiveLevel();
+                ULevel *Level = World->GetActiveLevel();
                 TArray CachedActors = Level->Actors;
                 if (Level)
                 {
-                    for (AActor* Actor : CachedActors)
+                    for (AActor *Actor : CachedActors)
                     {
                         if (!Actor)
                         {
@@ -115,7 +118,7 @@ void UEditorEngine::Tick(float DeltaTime)
                             Actor->Tick(DeltaTime);
                         }
 
-                        for (const auto& Comp : Actor->GetComponents())
+                        for (const auto &Comp : Actor->GetComponents())
                         {
                             // 파티클 컴포넌트는 항상 Tick 호출
                             if (bActorTickInEditor || Comp->IsA<UParticleSystemComponent>() || Comp->IsA<USocketComponent>())
@@ -126,7 +129,7 @@ void UEditorEngine::Tick(float DeltaTime)
 
                         if (bActorTickInEditor)
                         {
-                            for (auto* Comp : Actor->GetComponents())
+                            for (auto *Comp : Actor->GetComponents())
                             {
                                 Comp->EndPhysicsTickComponent(DeltaTime);
                             }
@@ -137,21 +140,21 @@ void UEditorEngine::Tick(float DeltaTime)
         }
         else if (WorldContext->WorldType == EWorldType::PIE)
         {
-            if (UWorld* World = WorldContext->World())
+            if (UWorld *World = WorldContext->World())
             {
                 World->Tick(DeltaTime);
-                ULevel* Level = World->GetActiveLevel();
+                ULevel *Level = World->GetActiveLevel();
                 if (Level)
                 {
                     TArray CachedActors = Level->Actors;
-                    for (AActor* Actor : CachedActors)
+                    for (AActor *Actor : CachedActors)
                     {
                         if (Actor)
                         {
                             Actor->Tick(DeltaTime);
 
                             // 물리기반 시뮬레이션을 위한 TickGroup 처리
-                            for (auto* Comp : Actor->GetComponents())
+                            for (auto *Comp : Actor->GetComponents())
                             {
                                 Comp->TickComponent(DeltaTime);
                             }
@@ -161,49 +164,48 @@ void UEditorEngine::Tick(float DeltaTime)
                     PhysicsManager->Simulate(DeltaTime);
                     ClothPhysicsManager->Simulate(DeltaTime);
 
-                    for (AActor* Actor : CachedActors)
+                    for (AActor *Actor : CachedActors)
                     {
                         if (Actor)
                         {
-                            for (auto* Comp : Actor->GetComponents())
+                            for (auto *Comp : Actor->GetComponents())
                             {
                                 Comp->EndPhysicsTickComponent(DeltaTime);
                             }
                         }
                     }
-                    
                 }
             }
         }
         else if (WorldContext->WorldType == EWorldType::SkeletalViewer)
         {
-            if (UWorld* World = WorldContext->World())
+            if (UWorld *World = WorldContext->World())
             {
                 World->Tick(DeltaTime);
                 EditorPlayer->Tick(DeltaTime);
-                ULevel* Level = World->GetActiveLevel();
+                ULevel *Level = World->GetActiveLevel();
                 TArray CachedActors = Level->Actors;
                 if (Level)
                 {
-                    for (AActor* Actor : CachedActors)
+                    for (AActor *Actor : CachedActors)
                     {
                         if (Actor)
                         {
                             Actor->Tick(DeltaTime);
 
                             // 물리기반 시뮬레이션을 위한 TickGroup 처리
-                            for (auto* Comp : Actor->GetComponents())
+                            for (auto *Comp : Actor->GetComponents())
                             {
                                 Comp->TickComponent(DeltaTime);
                             }
                         }
                     }
 
-                    for (AActor* Actor : CachedActors)
+                    for (AActor *Actor : CachedActors)
                     {
                         if (Actor)
                         {
-                            for (auto* Comp : Actor->GetComponents())
+                            for (auto *Comp : Actor->GetComponents())
                             {
                                 Comp->EndPhysicsTickComponent(DeltaTime);
                             }
@@ -214,33 +216,33 @@ void UEditorEngine::Tick(float DeltaTime)
         }
         else if (WorldContext->WorldType == EWorldType::ParticleViewer)
         {
-            if (UWorld* World = WorldContext->World())
+            if (UWorld *World = WorldContext->World())
             {
                 World->Tick(DeltaTime);
                 EditorPlayer->Tick(DeltaTime);
-                ULevel* Level = World->GetActiveLevel();
+                ULevel *Level = World->GetActiveLevel();
                 TArray CachedActors = Level->Actors;
                 if (Level)
                 {
-                    for (AActor* Actor : CachedActors)
+                    for (AActor *Actor : CachedActors)
                     {
                         if (Actor)
                         {
                             Actor->Tick(DeltaTime);
 
                             // 물리기반 시뮬레이션을 위한 TickGroup 처리
-                            for (auto* Comp : Actor->GetComponents())
+                            for (auto *Comp : Actor->GetComponents())
                             {
                                 Comp->TickComponent(DeltaTime);
                             }
                         }
                     }
 
-                    for (AActor* Actor : CachedActors)
+                    for (AActor *Actor : CachedActors)
                     {
                         if (Actor)
                         {
-                            for (auto* Comp : Actor->GetComponents())
+                            for (auto *Comp : Actor->GetComponents())
                             {
                                 Comp->EndPhysicsTickComponent(DeltaTime);
                             }
@@ -261,15 +263,15 @@ void UEditorEngine::StartPIE()
     }
 
     ViewerType = EViewerType::EVT_PIE;
-    
+
     ClearActorSelection(); // Editor World 기준 Select Actor 해제
     ClearComponentSelection();
-    
-    FSlateAppMessageHandler* Handler = GEngineLoop.GetAppMessageHandler();
+
+    FSlateAppMessageHandler *Handler = GEngineLoop.GetAppMessageHandler();
 
     Handler->OnPIEModeStart();
 
-    FWorldContext& PIEWorldContext = CreateNewWorldContext(EWorldType::PIE);
+    FWorldContext &PIEWorldContext = CreateNewWorldContext(EWorldType::PIE);
 
     PIEWorld = Cast<UWorld>(EditorWorld->Duplicate(this));
     PIEWorld->WorldType = EWorldType::PIE;
@@ -280,14 +282,14 @@ void UEditorEngine::StartPIE()
     SetPhysXScene(PIEWorld);
     SetClothWorld(PIEWorld);
     BindEssentialObjects();
-    
+
     PIEWorld->BeginPlay();
 
     // 여기서 Actor들의 BeginPlay를 해줄지 안에서 해줄 지 고민.
     // WorldList.Add(GetWorldContextFromWorld(PIEWorld));
 }
 
-void UEditorEngine::StartSkeletalMeshViewer(FName SkeletalMeshName, UAnimationAsset* AnimAsset)
+void UEditorEngine::StartSkeletalMeshViewer(FName SkeletalMeshName, UAnimationAsset *AnimAsset)
 {
     if (SkeletalMeshName == "")
     {
@@ -300,9 +302,9 @@ void UEditorEngine::StartSkeletalMeshViewer(FName SkeletalMeshName, UAnimationAs
     }
 
     ViewerType = EViewerType::EVT_SkeletalMeshViewer;
-    
-    FWorldContext& WorldContext = CreateNewWorldContext(EWorldType::SkeletalViewer);
-    
+
+    FWorldContext &WorldContext = CreateNewWorldContext(EWorldType::SkeletalViewer);
+
     SkeletalMeshViewerWorld = USkeletalViewerWorld::CreateWorld(this, EWorldType::SkeletalViewer, FString("SkeletalMeshViewerWorld"));
 
     WorldContext.SetCurrentWorld(SkeletalMeshViewerWorld);
@@ -310,10 +312,10 @@ void UEditorEngine::StartSkeletalMeshViewer(FName SkeletalMeshName, UAnimationAs
     SkeletalMeshViewerWorld->WorldType = EWorldType::SkeletalViewer;
 
     // 스켈레탈 액터 스폰
-    ASkeletalMeshActor* SkeletalActor = SkeletalMeshViewerWorld->SpawnActor<ASkeletalMeshActor>();
+    ASkeletalMeshActor *SkeletalActor = SkeletalMeshViewerWorld->SpawnActor<ASkeletalMeshActor>();
     SkeletalActor->SetActorTickInEditor(true);
-    
-    USkeletalMeshComponent* MeshComp = SkeletalActor->AddComponent<USkeletalMeshComponent>();
+
+    USkeletalMeshComponent *MeshComp = SkeletalActor->AddComponent<USkeletalMeshComponent>();
     SkeletalActor->SetRootComponent(MeshComp);
     SkeletalActor->SetActorLabel(TEXT("OBJ_SKELETALMESH"));
     MeshComp->SetSkeletalMeshAsset(UAssetManager::Get().GetSkeletalMesh(SkeletalMeshName.ToString()));
@@ -323,17 +325,17 @@ void UEditorEngine::StartSkeletalMeshViewer(FName SkeletalMeshName, UAnimationAs
     MeshComp->PlayAnimation(AnimAsset, true);
     MeshComp->DEBUG_SetAnimationEnabled(true);
     MeshComp->SetPlaying(true);
-    
-    ADirectionalLight* DirectionalLight = SkeletalMeshViewerWorld->SpawnActor<ADirectionalLight>();
+
+    ADirectionalLight *DirectionalLight = SkeletalMeshViewerWorld->SpawnActor<ADirectionalLight>();
     DirectionalLight->SetActorRotation(FRotator(45.f, 45.f, 0.f));
     DirectionalLight->GetComponentByClass<UDirectionalLightComponent>()->SetIntensity(4.0f);
 
-    FViewportCamera& Camera = *GEngineLoop.GetLevelEditor()->GetActiveViewportClient()->GetPerspectiveCamera();
+    FViewportCamera &Camera = *GEngineLoop.GetLevelEditor()->GetActiveViewportClient()->GetPerspectiveCamera();
     CameraLocation = Camera.GetLocation();
     CameraRotation = Camera.GetRotation();
-    
+
     Camera.SetRotation(FVector(0.0f, 30, 180));
-    if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(MeshComp))
+    if (UPrimitiveComponent *Primitive = Cast<UPrimitiveComponent>(MeshComp))
     {
         float FOV = GEngineLoop.GetLevelEditor()->GetActiveViewportClient()->GetCameraFOV();
 
@@ -342,7 +344,7 @@ void UEditorEngine::StartSkeletalMeshViewer(FName SkeletalMeshName, UAnimationAs
         FVector LocalCenter = (Box.MinLocation + Box.MaxLocation) * 0.5f;
         FVector LocalExtents = (Box.MaxLocation - Box.MinLocation) * 0.5f;
         float Radius = LocalExtents.Length();
-        
+
         FMatrix ComponentToWorld = Primitive->GetWorldMatrix();
         FVector WorldCenter = ComponentToWorld.TransformPosition(LocalCenter);
 
@@ -354,13 +356,13 @@ void UEditorEngine::StartSkeletalMeshViewer(FName SkeletalMeshName, UAnimationAs
         Camera.SetLocation(WorldCenter - Camera.GetForwardVector() * Distance);
     }
 
-    if (AEditorPlayer* Player = GetEditorPlayer())
+    if (AEditorPlayer *Player = GetEditorPlayer())
     {
         Player->SetCoordMode(ECoordMode::CDM_LOCAL);
     }
 }
 
-void UEditorEngine::StartParticleViewer(UParticleSystem* ParticleSystemAsset)
+void UEditorEngine::StartParticleViewer(UParticleSystem *ParticleSystemAsset)
 {
     if (!ParticleSystemAsset)
     {
@@ -371,33 +373,33 @@ void UEditorEngine::StartParticleViewer(UParticleSystem* ParticleSystemAsset)
 
     ClearActorSelection();
     ClearComponentSelection();
-    
+
     if (ParticleViewerWorld)
     {
         UE_LOG(ELogLevel::Warning, TEXT("SkeletalMeshViewerWorld already exists!"));
         const auto Actors = ParticleViewerWorld->GetActiveLevel()->Actors;
-        for (const auto& Actor : Actors)
+        for (const auto &Actor : Actors)
         {
             Actor->Destroy();
         }
     }
     else
     {
-        FWorldContext& WorldContext = CreateNewWorldContext(EWorldType::ParticleViewer);
+        FWorldContext &WorldContext = CreateNewWorldContext(EWorldType::ParticleViewer);
         ParticleViewerWorld = UParticleViewerWorld::CreateWorld(this);
         WorldContext.SetCurrentWorld(ParticleViewerWorld);
     }
-    
+
     ActiveWorld = ParticleViewerWorld;
     ParticleViewerWorld->WorldType = EWorldType::ParticleViewer;
-    
+
     // 파티클 스폰
-    AActor* ParticleActor = ParticleViewerWorld->SpawnActor<AActor>();
+    AActor *ParticleActor = ParticleViewerWorld->SpawnActor<AActor>();
     ParticleActor->SetActorTickInEditor(true);
-    
-    UParticleSystemComponent* ParticleSystemComponent = ParticleActor->AddComponent<UParticleSystemComponent>();
+
+    UParticleSystemComponent *ParticleSystemComponent = ParticleActor->AddComponent<UParticleSystemComponent>();
     ParticleSystemComponent->SetParticleSystem(ParticleSystemAsset);
-    
+
     ParticleActor->SetRootComponent(ParticleSystemComponent);
     ParticleActor->SetActorLabel(TEXT("OBJ_PARTICLE"));
 
@@ -405,7 +407,7 @@ void UEditorEngine::StartParticleViewer(UParticleSystem* ParticleSystemAsset)
     ParticleViewerWorld->SetParticleSystem(ParticleSystemComponent);
     auto EditorPanel = GEngineLoop.GetUnrealEditor()->GetEditorPanel("ParticleViewerPanel");
     auto ParticlePanel = std::dynamic_pointer_cast<ParticleViewerPanel>(EditorPanel);
-    ParticleViewerPanel* ParticleViewerPanel = ParticlePanel.get();
+    ParticleViewerPanel *ParticleViewerPanel = ParticlePanel.get();
     ParticleViewerPanel->SetParticleSystemComponent(ParticleSystemComponent);
     ParticleViewerPanel->SetParticleSystem(ParticleSystemAsset);
 
@@ -413,22 +415,22 @@ void UEditorEngine::StartParticleViewer(UParticleSystem* ParticleSystemAsset)
     Cast<UEditorEngine>(GEngine)->SelectActor(ParticleActor);
     Cast<UEditorEngine>(GEngine)->SelectComponent(ParticleSystemComponent);
 
-    FViewportCamera& Camera = *GEngineLoop.GetLevelEditor()->GetActiveViewportClient()->GetPerspectiveCamera();
+    FViewportCamera &Camera = *GEngineLoop.GetLevelEditor()->GetActiveViewportClient()->GetPerspectiveCamera();
 
     CameraLocation = Camera.GetLocation();
     CameraRotation = Camera.GetRotation();
-    
-    FVector NewCameraLocation = FVector(8, 8 , 8);
+
+    FVector NewCameraLocation = FVector(8, 8, 8);
 
     FVector Delta = (FVector(0.f, 0.f, 5.f) - NewCameraLocation).GetSafeNormal();
     float Pitch = FMath::RadiansToDegrees(FMath::Asin(Delta.Z));
     float Yaw = FMath::RadiansToDegrees(FMath::Atan2(Delta.Y, Delta.X));
-    FVector NewCameraRotation = FVector(0, -Pitch,  Yaw);
-    
+    FVector NewCameraRotation = FVector(0, -Pitch, Yaw);
+
     Camera.SetLocation(NewCameraLocation);
     Camera.SetRotation(NewCameraRotation);
 
-    if (AEditorPlayer* Player = GetEditorPlayer())
+    if (AEditorPlayer *Player = GetEditorPlayer())
     {
         Player->SetCoordMode(ECoordMode::CDM_LOCAL);
     }
@@ -453,14 +455,14 @@ void UEditorEngine::StartPhysicsAssetViewer(FName PreviewMeshKey, FName PhysicsA
     {
         UE_LOG(ELogLevel::Warning, TEXT("PhysicsAssetViewerWorld already exists!"));
         const auto Actors = PhysicsAssetViewerWorld->GetActiveLevel()->Actors;
-        for (const auto& Actor : Actors)
+        for (const auto &Actor : Actors)
         {
             Actor->Destroy();
         }
     }
     else
     {
-        FWorldContext& WorldContext = CreateNewWorldContext(EWorldType::PhysicsAssetViewer);
+        FWorldContext &WorldContext = CreateNewWorldContext(EWorldType::PhysicsAssetViewer);
         PhysicsAssetViewerWorld = UPhysicsAssetViewerWorld::CreateWorld(this);
         WorldContext.SetCurrentWorld(PhysicsAssetViewerWorld);
     }
@@ -471,23 +473,23 @@ void UEditorEngine::StartPhysicsAssetViewer(FName PreviewMeshKey, FName PhysicsA
     PhysicsManager->SetCurrentScene(ActiveWorld);
 
     // 스켈레탈 액터 스폰
-    ASkeletalMeshActor* SkeletalActor = PhysicsAssetViewerWorld->SpawnActor<ASkeletalMeshActor>();
+    ASkeletalMeshActor *SkeletalActor = PhysicsAssetViewerWorld->SpawnActor<ASkeletalMeshActor>();
     SkeletalActor->SetActorTickInEditor(true);
 
-    USkeletalMeshComponent* MeshComp = SkeletalActor->AddComponent<USkeletalMeshComponent>();
+    USkeletalMeshComponent *MeshComp = SkeletalActor->AddComponent<USkeletalMeshComponent>();
     SkeletalActor->SetRootComponent(MeshComp);
     SkeletalActor->SetActorLabel(TEXT("OBJ_SKELETALMESH"));
 
-    USkeletalMesh* PreviewMesh = Cast<USkeletalMesh>(UAssetManager::Get().GetAsset(EAssetType::SkeletalMesh, PreviewMeshKey.ToString()));
+    USkeletalMesh *PreviewMesh = Cast<USkeletalMesh>(UAssetManager::Get().GetAsset(EAssetType::SkeletalMesh, PreviewMeshKey.ToString()));
     MeshComp->SetSkeletalMeshAsset(PreviewMesh);
 
     // Set Physics Asset
-    UPhysicsAsset* PhysicsAsset = Cast<UPhysicsAsset>(UAssetManager::Get().GetAsset(EAssetType::PhysicsAsset, PhysicsAssetName.ToString()));
+    UPhysicsAsset *PhysicsAsset = Cast<UPhysicsAsset>(UAssetManager::Get().GetAsset(EAssetType::PhysicsAsset, PhysicsAssetName.ToString()));
     if (!PhysicsAsset)
     {
         PhysicsAsset = FObjectFactory::ConstructObject<UPhysicsAsset>(nullptr);
         PhysicsAsset->SetPreviewMesh(PreviewMesh);
-        
+
         FAssetInfo Info;
         Info.AssetName = PhysicsAsset->GetName();
         Info.PackagePath = TEXT("Contents/PhysicsAsset");
@@ -498,7 +500,7 @@ void UEditorEngine::StartPhysicsAssetViewer(FName PreviewMeshKey, FName PhysicsA
         UAssetManager::Get().AddAsset(Info.GetFullPath(), PhysicsAsset);
     }
     PreviewMesh->SetPhysicsAsset(PhysicsAsset);
-    
+
     if (PhysicsAssetViewerWorld) // PhysicsAssetViewerWorld가 유효한지 다시 확인하는 것이 좋습니다.
     {
         PhysicsAssetViewerWorld->SetSkeletalMeshComponent(MeshComp);
@@ -508,16 +510,16 @@ void UEditorEngine::StartPhysicsAssetViewer(FName PreviewMeshKey, FName PhysicsA
         UE_LOG(ELogLevel::Error, TEXT("PhysicsAssetViewerWorld is null after creation attempt in StartPhysicsAssetViewer."));
     }
 
-    ADirectionalLight* DirectionalLight = PhysicsAssetViewerWorld->SpawnActor<ADirectionalLight>();
+    ADirectionalLight *DirectionalLight = PhysicsAssetViewerWorld->SpawnActor<ADirectionalLight>();
     DirectionalLight->SetActorRotation(FRotator(45.f, 45.f, 0.f));
     DirectionalLight->GetComponentByClass<UDirectionalLightComponent>()->SetIntensity(4.0f);
 
-    FViewportCamera& Camera = *GEngineLoop.GetLevelEditor()->GetActiveViewportClient()->GetPerspectiveCamera();
+    FViewportCamera &Camera = *GEngineLoop.GetLevelEditor()->GetActiveViewportClient()->GetPerspectiveCamera();
     CameraLocation = Camera.GetLocation();
     CameraRotation = Camera.GetRotation();
 
     Camera.SetRotation(FVector(0.0f, 30, 180));
-    if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(MeshComp))
+    if (UPrimitiveComponent *Primitive = Cast<UPrimitiveComponent>(MeshComp))
     {
         float FOV = GEngineLoop.GetLevelEditor()->GetActiveViewportClient()->GetCameraFOV();
 
@@ -538,7 +540,7 @@ void UEditorEngine::StartPhysicsAssetViewer(FName PreviewMeshKey, FName PhysicsA
         Camera.SetLocation(WorldCenter - Camera.GetForwardVector() * Distance);
     }
 
-    if (AEditorPlayer* Player = GetEditorPlayer())
+    if (AEditorPlayer *Player = GetEditorPlayer())
     {
         Player->SetCoordMode(ECoordMode::CDM_LOCAL);
     }
@@ -546,42 +548,55 @@ void UEditorEngine::StartPhysicsAssetViewer(FName PreviewMeshKey, FName PhysicsA
 
 void UEditorEngine::BindEssentialObjects()
 {
-    for (const auto Iter: TObjectRange<APlayer>())
+    // Spawn PIE Test GameMode
+    APieTestGameMode *GameMode = ActiveWorld->SpawnActor<APieTestGameMode>();
+    if (GameMode)
     {
-        if (Iter->GetWorld() == ActiveWorld)
-        {
-            ActiveWorld->SetMainPlayer(Iter);
-            break;
-        }
+        GameMode->SetActorLabel(TEXT("PIETestGameMode"));
+        GameMode->SetActorTickInEditor(false);
+        // Note: GameMode is spawned but not set on World (no SetGameMode method)
+        // The GameMode exists in the level and can be queried via GetGameMode()
+        UE_LOG(ELogLevel::Display, TEXT("EditorEngine: PIETestGameMode spawned"));
     }
-    
-    //실수로 안만들면 넣어주기
-    if (ActiveWorld->GetMainPlayer() == nullptr)
+
+    // Spawn PIE Free-Fly Pawn
+    APieFreeFlyPawn *FreeFlyPawn = ActiveWorld->SpawnActor<APieFreeFlyPawn>();
+    if (FreeFlyPawn)
     {
-        APlayer* TempPlayer = ActiveWorld->SpawnActor<APlayer>();
-        TempPlayer->SetActorLabel(TEXT("OBJ_PLAYER"));
-        TempPlayer->SetActorTickInEditor(false);
-        ActiveWorld->SetMainPlayer(TempPlayer);
+        FreeFlyPawn->SetActorLabel(TEXT("PIE_FreeFlyPawn"));
+        FreeFlyPawn->SetActorTickInEditor(false);
+        UE_LOG(ELogLevel::Display, TEXT("EditorEngine: PIEFreeFlyPawn spawned"));
     }
-    
-    //무조건 PIE들어갈때 만들어주기
-    APlayerController* PlayerController = ActiveWorld->SpawnActor<APlayerController>();
-    PlayerController->SetActorLabel(TEXT("OBJ_PLAYER_CONTROLLER"));
-    PlayerController->SetActorTickInEditor(false);
-    ActiveWorld->SetPlayerController(PlayerController);
-    
-    ActiveWorld->GetPlayerController()->Possess(ActiveWorld->GetMainPlayer());
+
+    // Spawn PIE Player Controller with custom input bindings
+    APiePlayerController *PlayerController = ActiveWorld->SpawnActor<APiePlayerController>();
+    if (PlayerController)
+    {
+        PlayerController->SetActorLabel(TEXT("PIE_PlayerController"));
+        PlayerController->SetActorTickInEditor(false);
+        ActiveWorld->SetPlayerController(PlayerController);
+        UE_LOG(ELogLevel::Display, TEXT("EditorEngine: PIEPlayerController spawned"));
+    }
+
+    // Possess the free-fly pawn
+    if (PlayerController && FreeFlyPawn)
+    {
+        PlayerController->Possess(FreeFlyPawn);
+        UE_LOG(ELogLevel::Display, TEXT("EditorEngine: PIE Test Environment Ready"));
+        UE_LOG(ELogLevel::Display, TEXT("  Controls: WASD (move), QE (up/down), Mouse (look), Shift (speed boost)"));
+        UE_LOG(ELogLevel::Display, TEXT("  Debug: F1/F2/F3 (extensible debug actions)"));
+    }
 }
 
-void UEditorEngine::SetPhysXScene(UWorld* World)
+void UEditorEngine::SetPhysXScene(UWorld *World)
 {
     PhysicsManager->CreateScene(PIEWorld);
     PhysicsManager->SetCurrentScene(PIEWorld);
 
-    for (const auto& Actor : World->GetActiveLevel()->Actors)
+    for (const auto &Actor : World->GetActiveLevel()->Actors)
     {
-        UPrimitiveComponent* Prim = Actor->GetComponentByClass<UPrimitiveComponent>();
-        //USkeletalMeshComponent* Prim = Actor->GetComponentByClass<USkeletalMeshComponent>();
+        UPrimitiveComponent *Prim = Actor->GetComponentByClass<UPrimitiveComponent>();
+        // USkeletalMeshComponent* Prim = Actor->GetComponentByClass<USkeletalMeshComponent>();
         if (Prim && Prim->bSimulate)
         {
             Prim->CreatePhysXGameObject();
@@ -589,17 +604,17 @@ void UEditorEngine::SetPhysXScene(UWorld* World)
     }
 }
 
-void UEditorEngine::SetClothWorld(UWorld* World)
+void UEditorEngine::SetClothWorld(UWorld *World)
 {
     ClothPhysicsManager->CreateClothWorld(PIEWorld);
     ClothPhysicsManager->SetCurrentWorld(PIEWorld);
 
-    for (const auto& Actor : World->GetActiveLevel()->Actors)
+    for (const auto &Actor : World->GetActiveLevel()->Actors)
     {
-        UClothMeshComponent* Cloth = Actor->GetComponentByClass<UClothMeshComponent>();
+        UClothMeshComponent *Cloth = Actor->GetComponentByClass<UClothMeshComponent>();
         if (Cloth && Cloth->bSimulate)
         {
-            //ClothPhysicsManager->GetCurrentClothWorld()->RegisterClothInstance();
+            // ClothPhysicsManager->GetCurrentClothWorld()->RegisterClothInstance();
         }
     }
 }
@@ -607,10 +622,10 @@ void UEditorEngine::SetClothWorld(UWorld* World)
 void UEditorEngine::EndPIE()
 {
     ViewerType = EViewerType::EVT_Editor;
-    
+
     if (PIEWorld)
     {
-        this->ClearActorSelection(); // PIE World 기준 Select Actor 해제 
+        this->ClearActorSelection(); // PIE World 기준 Select Actor 해제
         WorldList.Remove(GetWorldContextFromWorld(PIEWorld));
         PIEWorld->Release();
         GUObjectArray.MarkRemoveObject(PIEWorld);
@@ -624,7 +639,7 @@ void UEditorEngine::EndPIE()
         LuaUIManager::Get().ClearLuaUI();
     }
 
-    FSlateAppMessageHandler* Handler = GEngineLoop.GetAppMessageHandler();
+    FSlateAppMessageHandler *Handler = GEngineLoop.GetAppMessageHandler();
 
     Handler->OnPIEModeEnd();
     // 다시 EditorWorld로 돌아옴.
@@ -634,7 +649,7 @@ void UEditorEngine::EndPIE()
 void UEditorEngine::EndSkeletalMeshViewer()
 {
     ViewerType = EViewerType::EVT_Editor;
-    
+
     if (SkeletalMeshViewerWorld)
     {
         this->ClearActorSelection();
@@ -642,17 +657,17 @@ void UEditorEngine::EndSkeletalMeshViewer()
         SkeletalMeshViewerWorld->Release();
         GUObjectArray.MarkRemoveObject(SkeletalMeshViewerWorld);
         SkeletalMeshViewerWorld = nullptr;
-        
-        FViewportCamera& Camera = *GEngineLoop.GetLevelEditor()->GetActiveViewportClient()->GetPerspectiveCamera();
+
+        FViewportCamera &Camera = *GEngineLoop.GetLevelEditor()->GetActiveViewportClient()->GetPerspectiveCamera();
         Camera.SetLocation(CameraLocation);
         Camera.SetRotation(CameraRotation);
-        
+
         ClearActorSelection();
         ClearComponentSelection();
     }
     ActiveWorld = EditorWorld;
 
-    if (AEditorPlayer* Player = GetEditorPlayer())
+    if (AEditorPlayer *Player = GetEditorPlayer())
     {
         Player->SetCoordMode(ECoordMode::CDM_WORLD);
     }
@@ -661,7 +676,7 @@ void UEditorEngine::EndSkeletalMeshViewer()
 void UEditorEngine::EndParticleViewer()
 {
     ViewerType = EViewerType::EVT_Editor;
-    
+
     if (ParticleViewerWorld)
     {
         this->ClearActorSelection();
@@ -669,17 +684,17 @@ void UEditorEngine::EndParticleViewer()
         ParticleViewerWorld->Release();
         GUObjectArray.MarkRemoveObject(ParticleViewerWorld);
         ParticleViewerWorld = nullptr;
-        
-        FViewportCamera& Camera = *GEngineLoop.GetLevelEditor()->GetActiveViewportClient()->GetPerspectiveCamera();
+
+        FViewportCamera &Camera = *GEngineLoop.GetLevelEditor()->GetActiveViewportClient()->GetPerspectiveCamera();
         Camera.SetLocation(CameraLocation);
         Camera.SetRotation(CameraRotation);
-        
+
         ClearActorSelection();
         ClearComponentSelection();
     }
     ActiveWorld = EditorWorld;
 
-    if (AEditorPlayer* Player = GetEditorPlayer())
+    if (AEditorPlayer *Player = GetEditorPlayer())
     {
         Player->SetCoordMode(ECoordMode::CDM_WORLD);
     }
@@ -688,7 +703,7 @@ void UEditorEngine::EndParticleViewer()
 void UEditorEngine::EndPhysicsAssetViewer()
 {
     ViewerType = EViewerType::EVT_Editor;
-    
+
     if (PhysicsAssetViewerWorld)
     {
         this->ClearActorSelection();
@@ -697,7 +712,7 @@ void UEditorEngine::EndPhysicsAssetViewer()
         GUObjectArray.MarkRemoveObject(PhysicsAssetViewerWorld);
         PhysicsAssetViewerWorld = nullptr;
 
-        FViewportCamera& Camera = *GEngineLoop.GetLevelEditor()->GetActiveViewportClient()->GetPerspectiveCamera();
+        FViewportCamera &Camera = *GEngineLoop.GetLevelEditor()->GetActiveViewportClient()->GetPerspectiveCamera();
         Camera.SetLocation(CameraLocation);
         Camera.SetRotation(CameraRotation);
 
@@ -706,15 +721,15 @@ void UEditorEngine::EndPhysicsAssetViewer()
     }
     ActiveWorld = EditorWorld;
 
-    if (AEditorPlayer* Player = GetEditorPlayer())
+    if (AEditorPlayer *Player = GetEditorPlayer())
     {
         Player->SetCoordMode(ECoordMode::CDM_WORLD);
     }
 }
 
-FWorldContext& UEditorEngine::GetEditorWorldContext(/*bool bEnsureIsGWorld*/)
+FWorldContext &UEditorEngine::GetEditorWorldContext(/*bool bEnsureIsGWorld*/)
 {
-    for (FWorldContext* WorldContext : WorldList)
+    for (FWorldContext *WorldContext : WorldList)
     {
         if (WorldContext->WorldType == EWorldType::Editor)
         {
@@ -724,9 +739,9 @@ FWorldContext& UEditorEngine::GetEditorWorldContext(/*bool bEnsureIsGWorld*/)
     return CreateNewWorldContext(EWorldType::Editor);
 }
 
-FWorldContext* UEditorEngine::GetPIEWorldContext(/*int32 WorldPIEInstance*/)
+FWorldContext *UEditorEngine::GetPIEWorldContext(/*int32 WorldPIEInstance*/)
 {
-    for (FWorldContext* WorldContext : WorldList)
+    for (FWorldContext *WorldContext : WorldList)
     {
         if (WorldContext->WorldType == EWorldType::PIE)
         {
@@ -736,7 +751,7 @@ FWorldContext* UEditorEngine::GetPIEWorldContext(/*int32 WorldPIEInstance*/)
     return nullptr;
 }
 
-void UEditorEngine::SelectActor(AActor* InActor)
+void UEditorEngine::SelectActor(AActor *InActor)
 {
     if (InActor && CanSelectActor(InActor))
     {
@@ -745,7 +760,7 @@ void UEditorEngine::SelectActor(AActor* InActor)
     }
 }
 
-void UEditorEngine::DeselectActor(AActor* InActor)
+void UEditorEngine::DeselectActor(AActor *InActor)
 {
     if (PrivateEditorSelection::GActorSelected == InActor && InActor)
     {
@@ -761,17 +776,17 @@ void UEditorEngine::ClearActorSelection()
     PrivateEditorSelection::GActorSelected = nullptr;
 }
 
-bool UEditorEngine::CanSelectActor(const AActor* InActor) const
+bool UEditorEngine::CanSelectActor(const AActor *InActor) const
 {
     return InActor != nullptr && InActor->GetWorld() == ActiveWorld && !InActor->IsActorBeingDestroyed();
 }
 
-AActor* UEditorEngine::GetSelectedActor() const
+AActor *UEditorEngine::GetSelectedActor() const
 {
     return PrivateEditorSelection::GActorSelected;
 }
 
-void UEditorEngine::HoverActor(AActor* InActor)
+void UEditorEngine::HoverActor(AActor *InActor)
 {
     if (InActor)
     {
@@ -790,7 +805,7 @@ void UEditorEngine::NewLevel()
     }
 }
 
-void UEditorEngine::SelectComponent(USceneComponent* InComponent) const
+void UEditorEngine::SelectComponent(USceneComponent *InComponent) const
 {
     if (InComponent && CanSelectComponent(InComponent))
     {
@@ -799,7 +814,7 @@ void UEditorEngine::SelectComponent(USceneComponent* InComponent) const
     }
 }
 
-void UEditorEngine::DeselectComponent(USceneComponent* InComponent)
+void UEditorEngine::DeselectComponent(USceneComponent *InComponent)
 {
     // 전달된 InComponent가 현재 선택된 컴포넌트와 같다면 선택 해제
     if (PrivateEditorSelection::GComponentSelected == InComponent && InComponent != nullptr)
@@ -815,17 +830,17 @@ void UEditorEngine::ClearComponentSelection()
     PrivateEditorSelection::GComponentSelected = nullptr;
 }
 
-bool UEditorEngine::CanSelectComponent(const USceneComponent* InComponent) const
+bool UEditorEngine::CanSelectComponent(const USceneComponent *InComponent) const
 {
     return InComponent != nullptr && InComponent->GetOwner() && InComponent->GetOwner()->GetWorld() == ActiveWorld && !InComponent->GetOwner()->IsActorBeingDestroyed();
 }
 
-USceneComponent* UEditorEngine::GetSelectedComponent() const
+USceneComponent *UEditorEngine::GetSelectedComponent() const
 {
     return PrivateEditorSelection::GComponentSelected;
 }
 
-void UEditorEngine::HoverComponent(USceneComponent* InComponent)
+void UEditorEngine::HoverComponent(USceneComponent *InComponent)
 {
     if (InComponent)
     {
@@ -833,7 +848,7 @@ void UEditorEngine::HoverComponent(USceneComponent* InComponent)
     }
 }
 
-AEditorPlayer* UEditorEngine::GetEditorPlayer() const
+AEditorPlayer *UEditorEngine::GetEditorPlayer() const
 {
     return EditorPlayer;
 }

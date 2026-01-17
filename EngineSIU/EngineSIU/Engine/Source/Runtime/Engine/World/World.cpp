@@ -78,11 +78,11 @@ void UWorld::Tick(float DeltaTime)
 void UWorld::BeginPlay()
 {
     // TEST
-    ATestClothActor* ClothActor = this->SpawnActor<ATestClothActor>();
-    ClothActor->SetActorLocation(FVector(100, 0, 0));
+    /*ATestClothActor* ClothActor = this->SpawnActor<ATestClothActor>();
+    ClothActor->SetActorLocation(FVector(100, 0, 0));*/
 
-    /*const int32 GridX = 4;
-    const int32 GridY = 4;
+    const int32 GridX = 6;
+    const int32 GridY = 6;
     const float SpacingX = 100.0f;
     const float SpacingY = 100.0f;
     const FVector BaseLocation(100.0f, 0.0f, 0.0f);
@@ -101,7 +101,7 @@ void UWorld::BeginPlay()
             ClothActor->SetActorLocation(
                 BaseLocation + FVector(OffsetX, OffsetY, 0.0f));
         }
-    }*/
+    }
 
     if (!GameMode && this->WorldType == EWorldType::PIE)
     {

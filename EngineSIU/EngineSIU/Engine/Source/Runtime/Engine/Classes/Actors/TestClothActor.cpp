@@ -30,8 +30,8 @@ void ATestClothActor::Tick(float DeltaTime)
 
 void ATestClothActor::CreateTestCloth()
 {
-    const int32 GridSize = 12;
-    const float Spacing = 10.0f; // 10 cm spacing between particles
+    const int32 GridSize = 24;
+    const float Spacing = 5.0f; // 10 cm spacing between particles
 
     TArray<FVector> positions;
     TArray<uint32> indices;
@@ -51,14 +51,14 @@ void ATestClothActor::CreateTestCloth()
             positions.Add(pos);
 
             // Top row is fixed (pinned)
-           /* float invMass = (y == 0) ? 0.0f : 1.0f;
-            invMasses.Add(invMass);*/
-            bool bIsTopRow = (y == 0);
+            float invMass = (y == 0) ? 0.0f : 1.0f;
+            invMasses.Add(invMass);
+            /*bool bIsTopRow = (y == 0);
             bool bIsLeftCorner = (x == 0);
             bool bIsRightCorner = (x == GridSize - 1);
 
             float invMass = (bIsTopRow && (bIsLeftCorner || bIsRightCorner)) ? 0.0f : 1.0f;
-            invMasses.Add(invMass);
+            invMasses.Add(invMass);*/
         }
     }
 
