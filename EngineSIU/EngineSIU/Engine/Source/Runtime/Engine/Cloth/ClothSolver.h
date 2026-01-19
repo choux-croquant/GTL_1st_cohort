@@ -14,24 +14,15 @@
 #include "ClothSimulationData.h"
 #include "ClothGPUStructs.h"
 
-#ifdef CUDA_ENABLED
-#include "CUDA/CUDADXInterop.h"
-#include "CUDA/ClothCUDAKernels.h"
-#include <cuda_runtime.h>
-#endif
-
 // Forward declarations
 class FGraphicsDevice;
 class FDXDBufferManager;
 class FDXDShaderManager;
 class UClothAsset;
 
-// Note: GPU structures (FClothParticleGPU, FClothVelocityGPU, FClothConstraintGPU, FClothSimConstants)
-// are now defined in ClothGPUStructs.h for sharing between C++, CUDA, and HLSL
-
 /**
  * Main cloth solver class
- * Handles GPU compute shader simulation (DX11 or CUDA)
+ * Handles GPU compute shader simulation
  */
 class FClothSolver
 {
@@ -132,14 +123,9 @@ private:
     uint32 GetDispatchCount(uint32 ElementCount, uint32 ThreadGroupSize = 64) const;
 
     /**
-     * CUDA simulation loop (when CUDA is enabled)
+     * DX11 simulation loop
      */
-    void SimulateCUDA(float DeltaTime);
-
-    /**
-     * DX11 simulation loop (fallback or when CUDA disabled)
-     */
-    void SimulateDX11(float DeltaTime);
+    void SimulateCS(float DeltaTime);
 
 private:
     // Engine references
@@ -207,31 +193,4 @@ private:
     FVector ExternalForceAccum;
 
     static constexpr uint32 THREAD_GROUP_SIZE = 64;
-
-#ifdef CUDA_ENABLED
-    // ===== CUDA Interop and Resources =====
-
-    // CUDA-DX11 interop manager
-    FCUDADXInterop *CudaInterop;
-
-    // CUDA resource handles for D3D11 buffers
-    cudaGraphicsResource *PositionCudaResource[2];
-    cudaGraphicsResource *VelocityCudaResource;
-    cudaGraphicsResource *NormalCudaResource;
-
-    // Mapped CUDA device pointers (valid only when mapped)
-    void *PositionDevicePtr[2];
-    void *VelocityDevicePtr;
-    void *NormalDevicePtr;
-
-    // CUDA-only buffers (not shared with D3D11)
-    void *PositionDeltasDevice;  // Delta accumulation buffer
-    void *PositionWeightsDevice; // Weight accumulation buffer
-    void *ConstraintDevicePtr;   // Constraints uploaded to GPU once
-    void *IndicesDevicePtr;      // Triangle indices uploaded once
-    void *ConstantsDevicePtr;    // Simulation constants
-
-    // Runtime switches
-    bool bUseCUDA; // True if CUDA is available and initialized
-#endif
 };

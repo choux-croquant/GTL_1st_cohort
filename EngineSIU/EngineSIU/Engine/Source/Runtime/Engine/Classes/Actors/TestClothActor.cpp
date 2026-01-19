@@ -30,7 +30,7 @@ void ATestClothActor::Tick(float DeltaTime)
 
 void ATestClothActor::CreateTestCloth()
 {
-    const int32 GridSize = 24;
+    const int32 GridSize = 20;
     const float Spacing = 5.0f; // 10 cm spacing between particles
 
     TArray<FVector> positions;

@@ -13,6 +13,9 @@
 #include "Engine/Classes/Actors/BehellaGameMode.h"
 #include "Classes/Components/TextComponent.h"
 #include "Actors/TestClothActor.h"
+#include "GameFramework/PIETestGameMode.h"
+#include "GameFramework/PIEFreeFlyPawn.h"
+#include "GameFramework/PIEPlayerController.h"
 
 class UEditorEngine;
 
@@ -105,12 +108,36 @@ void UWorld::BeginPlay()
 
     if (!GameMode && this->WorldType == EWorldType::PIE)
     {
-        GameMode = this->SpawnActor<AGameMode>();
-        // GameMode->SetActorLabel(TEXT("OBJ_BEHELLA_GAMEMODE"));
-        GameMode->SetActorLabel(TEXT("OBJ_GAMEMODE"));
-        GameMode->InitializeComponent();
-        
-        GameMode->InitGame();
+        GameMode = this->SpawnActor<APieTestGameMode>();
+        if (GameMode)
+        {
+            GameMode->SetActorLabel(TEXT("PIETestGameMode"));
+            GameMode->SetActorTickInEditor(false);
+            UE_LOG(ELogLevel::Display, TEXT("EditorEngine: PIETestGameMode spawned"));
+        }
+
+        APieFreeFlyPawn* FreeFlyPawn = this->SpawnActor<APieFreeFlyPawn>();
+        if (FreeFlyPawn)
+        {
+            FreeFlyPawn->SetActorLabel(TEXT("PIE_FreeFlyPawn"));
+            FreeFlyPawn->SetActorTickInEditor(false);
+            UE_LOG(ELogLevel::Display, TEXT("EditorEngine: PIEFreeFlyPawn spawned"));
+        }
+
+        APiePlayerController* PlayerController = this->SpawnActor<APiePlayerController>();
+        if (PlayerController)
+        {
+            PlayerController->SetActorLabel(TEXT("PIE_PlayerController"));
+            PlayerController->SetActorTickInEditor(false);
+            this->SetPlayerController(PlayerController);
+            UE_LOG(ELogLevel::Display, TEXT("EditorEngine: PIEPlayerController spawned"));
+        }
+
+        // Possess the free-fly pawn
+        if (PlayerController && FreeFlyPawn)
+        {
+            PlayerController->Possess(FreeFlyPawn);
+        }
     }
 
     for (AActor *Actor : ActiveLevel->Actors)

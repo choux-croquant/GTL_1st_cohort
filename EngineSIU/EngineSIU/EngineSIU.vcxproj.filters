@@ -1667,7 +1667,9 @@
     <ClCompile Include="Engine\Source\Runtime\Renderer\ClothRenderPass.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothPhysicsManager.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\TestClothActor.cpp" />
-    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\CUDA\CUDADXInterop.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIEFreeFlyPawn.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIEPlayerController.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIETestGameMode.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="EngineSIU.natvis" />
@@ -1845,8 +1847,9 @@
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothPhysicsManager.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\TestClothActor.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothGPUStructs.h" />
-    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\CUDA\CUDADXInterop.h" />
-    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\CUDA\ClothCUDAKernels.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIEFreeFlyPawn.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIEPlayerController.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIETestGameMode.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\CompositingShader.hlsl" />
@@ -1886,11 +1889,5 @@
     <None Include="Shaders\ClothVertexShader.hlsl" />
     <None Include="Shaders\ClothPixelShader.hlsl" />
     <None Include="Shaders\Cloth\ClothApplyDelta.hlsl" />
-  </ItemGroup>
-  <ItemGroup>
-    <CudaCompile Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothIntegrate.cu" />
-    <CudaCompile Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothConstraintSolver.cu" />
-    <CudaCompile Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothApplyDelta.cu" />
-    <CudaCompile Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothUpdateNormals.cu" />
   </ItemGroup>
 </Project>

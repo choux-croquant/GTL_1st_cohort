@@ -25,9 +25,6 @@
 #include "Cloth/ClothPhysicsManager.h"
 #include "Components/ClothMeshComponent.h"
 #include "Cloth/ClothWorld.h"
-#include "GameFramework/PIETestGameMode.h"
-#include "GameFramework/PIEFreeFlyPawn.h"
-#include "GameFramework/PIEPlayerController.h"
 
 extern FEngineLoop GEngineLoop;
 
@@ -281,7 +278,6 @@ void UEditorEngine::StartPIE()
 
     SetPhysXScene(PIEWorld);
     SetClothWorld(PIEWorld);
-    BindEssentialObjects();
 
     PIEWorld->BeginPlay();
 
@@ -543,48 +539,6 @@ void UEditorEngine::StartPhysicsAssetViewer(FName PreviewMeshKey, FName PhysicsA
     if (AEditorPlayer *Player = GetEditorPlayer())
     {
         Player->SetCoordMode(ECoordMode::CDM_LOCAL);
-    }
-}
-
-void UEditorEngine::BindEssentialObjects()
-{
-    // Spawn PIE Test GameMode
-    APieTestGameMode *GameMode = ActiveWorld->SpawnActor<APieTestGameMode>();
-    if (GameMode)
-    {
-        GameMode->SetActorLabel(TEXT("PIETestGameMode"));
-        GameMode->SetActorTickInEditor(false);
-        // Note: GameMode is spawned but not set on World (no SetGameMode method)
-        // The GameMode exists in the level and can be queried via GetGameMode()
-        UE_LOG(ELogLevel::Display, TEXT("EditorEngine: PIETestGameMode spawned"));
-    }
-
-    // Spawn PIE Free-Fly Pawn
-    APieFreeFlyPawn *FreeFlyPawn = ActiveWorld->SpawnActor<APieFreeFlyPawn>();
-    if (FreeFlyPawn)
-    {
-        FreeFlyPawn->SetActorLabel(TEXT("PIE_FreeFlyPawn"));
-        FreeFlyPawn->SetActorTickInEditor(false);
-        UE_LOG(ELogLevel::Display, TEXT("EditorEngine: PIEFreeFlyPawn spawned"));
-    }
-
-    // Spawn PIE Player Controller with custom input bindings
-    APiePlayerController *PlayerController = ActiveWorld->SpawnActor<APiePlayerController>();
-    if (PlayerController)
-    {
-        PlayerController->SetActorLabel(TEXT("PIE_PlayerController"));
-        PlayerController->SetActorTickInEditor(false);
-        ActiveWorld->SetPlayerController(PlayerController);
-        UE_LOG(ELogLevel::Display, TEXT("EditorEngine: PIEPlayerController spawned"));
-    }
-
-    // Possess the free-fly pawn
-    if (PlayerController && FreeFlyPawn)
-    {
-        PlayerController->Possess(FreeFlyPawn);
-        UE_LOG(ELogLevel::Display, TEXT("EditorEngine: PIE Test Environment Ready"));
-        UE_LOG(ELogLevel::Display, TEXT("  Controls: WASD (move), QE (up/down), Mouse (look), Shift (speed boost)"));
-        UE_LOG(ELogLevel::Display, TEXT("  Debug: F1/F2/F3 (extensible debug actions)"));
     }
 }
 

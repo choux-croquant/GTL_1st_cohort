@@ -400,7 +400,6 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothSolver.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothInstance.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothWorld.cpp" />
-    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\CUDA\CUDADXInterop.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Engine\ClothAsset.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Components\ClothComponent.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Components\ClothMeshComponent.cpp" />
@@ -488,18 +487,6 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <None Include="Shaders\DepthOfFieldShader.hlsl" />
     <None Include="Shaders\FullScreenQuadVertexShader.hlsl" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothPhysicsManager.cpp" />
-    <CudaCompile Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothIntegrate.cu">
-      <FileType>Document</FileType>
-    </CudaCompile>
-    <CudaCompile Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothConstraintSolver.cu">
-      <FileType>Document</FileType>
-    </CudaCompile>
-    <CudaCompile Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothApplyDelta.cu">
-      <FileType>Document</FileType>
-    </CudaCompile>
-    <CudaCompile Include="Engine\Source\Runtime\Engine\Cloth\CUDA\Kernels\ClothUpdateNormals.cu">
-      <FileType>Document</FileType>
-    </CudaCompile>
     <ClCompile Include="LuaScripts\LuaUIBind.cpp" />
     <ClCompile Include="LuaScripts\LuaUIManager.cpp" />
     <ClCompile Include="SoundManager.cpp" />
@@ -829,8 +816,6 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothSolver.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothInstance.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothWorld.h" />
-    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\CUDA\CUDADXInterop.h" />
-    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\CUDA\ClothCUDAKernels.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Engine\ClothAsset.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Components\ClothComponent.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Components\ClothMeshComponent.h" />
