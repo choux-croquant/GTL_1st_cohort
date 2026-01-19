@@ -7,7 +7,7 @@
 
 #include "UObject/Object.h"
 #include "UObject/ObjectMacros.h"
-#include "../../Cloth/ClothSimulationData.h"
+#include "Cloth/ClothSimulationData.h"
 
 class UStaticMesh;
 
@@ -35,8 +35,8 @@ public:
     const TArray<FVector> &GetRestPositions() const { return RestPositions; }
     const TArray<uint32> &GetIndices() const { return Indices; }
     const TArray<float> &GetInvMasses() const { return InvMasses; }
-    const TArray<FClothConstraint> &GetDistanceConstraints() const { return DistanceConstraints; }
-    const TArray<FClothConstraint> &GetBendConstraints() const { return BendConstraints; }
+    const TArray<FClothDistanceConstraint> &GetDistanceConstraints() const { return DistanceConstraints; }
+    const TArray<FClothBendConstraint> &GetBendConstraints() const { return BendConstraints; }
     const TArray<uint32> &GetAttachmentIndices() const { return AttachmentIndices; }
     const TArray<FClothVertexPaintData> &GetVertexPaintData() const { return VertexPaintData; }
 
@@ -44,8 +44,8 @@ public:
     void SetRestPositions(const TArray<FVector> &InPositions) { RestPositions = InPositions; }
     void SetIndices(const TArray<uint32> &InIndices) { Indices = InIndices; }
     void SetInvMasses(const TArray<float> &InInvMasses) { InvMasses = InInvMasses; }
-    void AddDistanceConstraint(const FClothConstraint &Constraint) { DistanceConstraints.Add(Constraint); }
-    void AddBendConstraint(const FClothConstraint &Constraint) { BendConstraints.Add(Constraint); }
+    void AddDistanceConstraint(const FClothDistanceConstraint &Constraint) { DistanceConstraints.Add(Constraint); }
+    void AddBendConstraint(const FClothBendConstraint &Constraint) { BendConstraints.Add(Constraint); }
     void AddAttachmentIndex(uint32 VertexIndex) { AttachmentIndices.Add(VertexIndex); }
 
     // Serialization
@@ -71,9 +71,9 @@ public:
     TArray<float> InvMasses;
 
     // Constraints
-    TArray<FClothConstraint> DistanceConstraints;
+    TArray<FClothDistanceConstraint> DistanceConstraints;
 
-    TArray<FClothConstraint> BendConstraints;
+    TArray<FClothBendConstraint> BendConstraints;
 
     TArray<uint32> AttachmentIndices;
 

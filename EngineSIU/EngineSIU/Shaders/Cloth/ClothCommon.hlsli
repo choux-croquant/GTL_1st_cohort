@@ -11,20 +11,23 @@ cbuffer ClothSimConstants : register(b0)
 {
     uint NumParticles;
     uint NumConstraints;
+    uint NumBendConstraints;
     float DeltaTime;
+
     float Damping;
-    
     float3 Gravity;
+
     float StretchStiffness;
-    
     float3 Wind;
+
     float BendStiffness;
-    
     float AirDrag;
     uint NumIterations;
     uint CurrentIteration;
-    uint UseXPBD;
     
+    uint UseXPBD;
+    float3 TempPadding;
+
     float4x4 WorldMatrix;
 };
 
@@ -73,8 +76,13 @@ struct FBendConstraint
 {
     uint ParticleA;
     uint ParticleB;
+    uint ParticleC;
+    uint ParticleD;
+
     float RestAngle;
     float Stiffness;
+    float Compliance; // XPBD
+    float Lambda;     // XPBD
 };
 
 /**

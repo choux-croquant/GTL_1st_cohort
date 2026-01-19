@@ -261,21 +261,24 @@ struct FDepthOfFieldConstant
 /// Must match ClothSimConstants in ClothCommon.hlsli
 struct alignas(16) FClothSimConstants
 {
-    alignas(16) uint32 NumParticles;
+    uint32 NumParticles;
     uint32 NumConstraints;
+    uint32 NumBendConstraints;
     float DeltaTime;
+    
     float Damping;
-
-    alignas(16) FVector Gravity;
+    FVector Gravity;
+    
     float StretchStiffness;
-
-    alignas(16) FVector Wind;
+    FVector Wind;
+    
     float BendStiffness;
-
-    alignas(16) float AirDrag;
+    float AirDrag;
     uint32 NumIterations;
     uint32 CurrentIteration;
+
     uint32 UseXPBD;
+    FVector Padding;
 
     alignas(16) FMatrix WorldMatrix;
 };

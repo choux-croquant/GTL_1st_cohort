@@ -22,9 +22,9 @@ graph TB
     Instance2 --> Solver2[ClothSolver]
     InstanceN --> SolverN[ClothSolver]
     
-    Solver1 --> GPU1[GPU Resources<br/>DX11/CUDA]
-    Solver2 --> GPU2[GPU Resources<br/>DX11/CUDA]
-    SolverN --> GPUN[GPU Resources<br/>DX11/CUDA]
+    Solver1 --> GPU1[GPU Resources<br/>DX11]
+    Solver2 --> GPU2[GPU Resources<br/>DX11]
+    SolverN --> GPUN[GPU Resources<br/>DX11]
     
     Asset[ClothAsset] -.->|Initialization| Instance1
     Asset -.->|Initialization| Instance2
@@ -57,10 +57,10 @@ graph TB
 #### ClothSolver
 - **Purpose**: GPU-based PBD solver
 - **Responsibilities**:
-  - Manages GPU buffers (DX11 + CUDA interop)
+  - Manages GPU buffers (DX11)
   - Executes simulation pipeline (Integration → Constraints → Normals)
   - Uploads/downloads data between CPU/GPU
-- **Dual Backend**: DX11 Compute Shaders OR CUDA kernels
+- **Dual Backend**: DX11 Compute Shaders
 - **Current Limitations**:
   - Only distance constraints implemented
   - No kinematic constraint handling
@@ -380,10 +380,6 @@ class FClothSolver {
     TArray<FClothBendConstraint> BendConstraints;
     uint32 NumBendConstraints;
     
-#ifdef CUDA_ENABLED
-    void* BendConstraintDevicePtr;
-#endif
-    
     // New method
     void DispatchBendConstraintSolver(int32 Iteration);
 };
@@ -391,7 +387,7 @@ class FClothSolver {
 
 #### Modified Simulation Loop
 ```cpp
-void FClothSolver::SimulateDX11(float DeltaTime) {
+void FClothSolver::SimulateCS(float DeltaTime) {
     // 1. Integration
     DispatchIntegration(DeltaTime);
     readIdx = writeIdx;
@@ -639,7 +635,7 @@ void FClothInstance::UpdateKinematicData(float DeltaTime) {
 ### 3.7 Modified Simulation Pipeline
 
 ```cpp
-void FClothSolver::SimulateDX11(float DeltaTime) {
+void FClothSolver::SimulateCS(float DeltaTime) {
     readIdx = CurrentBufferIndex;
     writeIdx = 1 - CurrentBufferIndex;
     
@@ -658,15 +654,9 @@ void FClothSolver::SimulateDX11(float DeltaTime) {
     // 2. Constraint iterations
     for (int32 i = 0; i < Config.NumIterations; ++i) {
         DispatchConstraintSolver(i);
-        if (NumBendConstraints > 0) {
-            DispatchBendConstraintSolver(i);
-        }
+        DispatchBendConstraintSolver(i);
         DispatchApplyConstraintDeltas();
-        
-        // 2d. NEW: Reapply kinematic targets after constraints
-        if (NumKinematicTargets > 0) {
-            DispatchApplyKinematicTargets();
-        }
+        DispatchApplyKinematicTargets();
         
         readIdx = writeIdx;
         writeIdx = 1 - writeIdx;
@@ -1069,10 +1059,7 @@ struct FClothSimConstants {
 
 **1.5 Simulation Integration**
 - [ ] Implement `ClothSolver::DispatchBendConstraintSolver()`
-- [ ] Update `ClothSolver::SimulateDX11()` to call bend solver
-- [ ] Update `ClothSolver::SimulateCUDA()` for CUDA path
-  - Create CUDA kernel for bend constraints
-  - Integrate into CUDA pipeline
+- [ ] Update `ClothSolver::SimulateCS()` to call bend solver
 
 **1.6 Testing**
 - [ ] Create test cloth asset with bend constraints
@@ -1118,10 +1105,9 @@ struct FClothSimConstants {
 
 **2.6 Simulation Integration**
 - [ ] Implement `ClothSolver::DispatchApplyKinematicTargets()`
-- [ ] Update `ClothSolver::SimulateDX11()`:
+- [ ] Update `ClothSolver::SimulateCS()`:
   - Call after integration
   - Call after constraint iterations (to enforce)
-- [ ] Update CUDA path similarly
 
 **2.7 Testing**
 - [ ] Create test scene with flag on moving pole
@@ -1166,27 +1152,6 @@ struct FClothSimConstants {
 - [ ] Set global wind and verify all instances respond
 - [ ] Trigger explosion and verify radial force
 - [ ] Test local vs global gravity interaction
-
----
-
-### Phase 4: CUDA Support
-
-**4.1 Bend Constraints CUDA**
-- [ ] Create `ClothBendConstraintSolver.cu`
-- [ ] Implement `LaunchBendConstraintSolverKernel()`
-- [ ] Allocate device memory for bend constraints
-- [ ] Integrate into `ClothSolver::SimulateCUDA()`
-
-**4.2 Kinematic Targets CUDA**
-- [ ] Create `ClothApplyKinematicTargets.cu`
-- [ ] Implement `LaunchApplyKinematicTargetsKernel()`
-- [ ] Allocate device memory for kinematic targets
-- [ ] Update kinematic targets before each frame
-- [ ] Integrate into CUDA pipeline
-
-**4.3 Testing**
-- [ ] Verify CUDA and DX11 paths produce same results
-- [ ] Performance comparison
 
 ---
 
@@ -1259,15 +1224,6 @@ struct FClothSimConstants {
 - Pack data tightly
 - Use LOD to reduce constraint counts
 
-### 7.7 CUDA Synchronization
-
-**Problem**: Adding new kernels increases synchronization points.
-
-**Solutions**:
-- Use async CUDA streams where possible
-- Launch multiple kernels in same stream without sync
-- Only sync when mapping/unmapping D3D11 resources
-
 ### 7.8 World Transform Handling
 
 **Problem**: If cloth instances have non-identity transforms, forces need careful handling.
@@ -1322,11 +1278,10 @@ struct FClothSimConstants {
 - [ ] Measure frame time with/without bend constraints
 - [ ] Measure impact of kinematic target count
 - [ ] Profile GPU time for each shader dispatch
-- [ ] Compare DX11 vs CUDA performance
 
 ### 8.4 Visual Tests
 
-- [ ] Flag waving in wind (kinematic + global wind)
+- [ ] Flag waving in wind (kinematic + global wind) - (Priority High)
 - [ ] Tablecloth settling (bend constraints prevent unrealistic folding)
 - [ ] Cape animation (skeletal attachments + gravity)
 - [ ] Explosion affecting multiple cloth pieces
@@ -1354,7 +1309,6 @@ struct FClothSimConstants {
 
 **Keep clean separation**:
 - One shader file per constraint type
-- One kernel file per constraint type (CUDA)
 - Clear naming: `DistanceConstraint`, `BendConstraint`, `KinematicTarget`
 
 **Document transforms**:
@@ -1422,7 +1376,6 @@ This architecture provides:
 - Separate constraint types with dedicated buffers and shaders
 - Reuse delta accumulation buffers for all constraint types
 - Clean separation between global (world) and local (instance) forces
-- Maintain dual DX11/CUDA backend support
 - Preserve existing PBD pipeline structure
 
 The implementation can proceed incrementally, with each feature buildable and testable independently. All changes maintain backward compatibility with existing cloth assets.

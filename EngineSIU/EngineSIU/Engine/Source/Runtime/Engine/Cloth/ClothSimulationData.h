@@ -25,7 +25,7 @@ struct FClothConfig
 
     // Constraint stiffness (0-1)
     float StretchStiffness = 0.9f;
-    float BendStiffness = 0.1f;
+    float BendStiffness = 0.9f;
     float AttachStiffness = 1.0f;
 
     // Solver settings
@@ -45,7 +45,7 @@ struct FClothConfig
 /**
  * Generic constraint structure for distance and bend constraints
  */
-struct FClothConstraint
+struct FClothDistanceConstraint
 {
     uint32 ParticleA;
     uint32 ParticleB;
@@ -54,12 +54,12 @@ struct FClothConstraint
     float Compliance;  // XPBD용
     float Lambda;      // XPBD용 상태
 
-    FClothConstraint()
+    FClothDistanceConstraint()
         : ParticleA(0), ParticleB(0), RestLength(0.0f), Stiffness(1.0f), Compliance(0.0f), Lambda(0.0f)
     {
     }
 
-    FClothConstraint(uint32 InA, uint32 InB, float InRestLength, float InStiffness = 1.0f)
+    FClothDistanceConstraint(uint32 InA, uint32 InB, float InRestLength, float InStiffness = 1.0f)
         : ParticleA(InA)
         , ParticleB(InB)
         , RestLength(InRestLength)
@@ -70,13 +70,54 @@ struct FClothConstraint
     }
 
     // 선택: XPBD 파라미터를 직접 지정하는 생성자
-    FClothConstraint(uint32 InA, uint32 InB, float InRestLength, float InStiffness, float InCompliance)
+    FClothDistanceConstraint(uint32 InA, uint32 InB, float InRestLength, float InStiffness, float InCompliance)
         : ParticleA(InA)
         , ParticleB(InB)
         , RestLength(InRestLength)
         , Stiffness(InStiffness)
         , Compliance(InCompliance)
         , Lambda(0.0f)  // 누적값은 항상 0으로 시작
+    {
+    }
+};
+
+struct FClothBendConstraint {
+    uint32 ParticleA;      // Shared edge vertex 1
+    uint32 ParticleB;      // Shared edge vertex 2
+    uint32 ParticleC;      // Triangle 1 opposite vertex
+    uint32 ParticleD;      // Triangle 2 opposite vertex
+    float RestAngle;       // Dihedral angle at rest (radians)
+    float Stiffness;       // Bend stiffness [0-1]
+    float Compliance;      // XPBD compliance
+    float Lambda;          // XPBD lambda (warm start)
+
+    FClothBendConstraint()
+        : ParticleA(0), ParticleB(0), ParticleC(0), ParticleD(0), RestAngle(0.0f), Stiffness(1.0f), Compliance(0.0f), Lambda(0.0f)
+    {
+    }
+
+    FClothBendConstraint(uint32 InA, uint32 InB, uint32 InC, uint32 InD, float InRestAngle, float InStiffness = 1.0f)
+        : ParticleA(InA)
+        , ParticleB(InB)
+        , ParticleC(InC)
+        , ParticleD(InD)
+        , RestAngle(InRestAngle)
+        , Stiffness(InStiffness)
+        , Compliance(0.0f)
+        , Lambda(0.0f)
+    {
+    }
+
+    // 선택: XPBD 파라미터를 직접 지정하는 생성자
+    FClothBendConstraint(uint32 InA, uint32 InB, uint32 InC, uint32 InD, float InRestAngle, float InStiffness, float InCompliance)
+        : ParticleA(InA)
+        , ParticleB(InB)
+        , ParticleC(InC)
+        , ParticleD(InD)
+        , RestAngle(InRestAngle)
+        , Stiffness(InStiffness)
+        , Compliance(InCompliance)
+        , Lambda(0.0f)
     {
     }
 };
@@ -105,6 +146,7 @@ struct FClothSimulationData
 {
     uint32 NumParticles = 0;
     uint32 NumConstraints = 0;
+    uint32 NumBendConstraints = 0;
 
     // CPU-side copies (for debugging and readback)
     TArray<FVector> CurrentPositions;
@@ -121,7 +163,7 @@ struct FClothSimulationData
     float AccumulatedTime = 0.0f;
 
     FClothSimulationData()
-        : NumParticles(0), NumConstraints(0), Gravity(0.0f, 0.0f, -900.0f), Wind(300.0f, 0.0f, 0.0f), ExternalForce(0.0f, 0.0f, 0.0f), CurrentTime(0.0f), AccumulatedTime(0.0f)
+        : NumParticles(0), NumConstraints(0), NumBendConstraints(0), Gravity(0.0f, 0.0f, -900.0f), Wind(300.0f, 0.0f, 0.0f), ExternalForce(0.0f, 0.0f, 0.0f), CurrentTime(0.0f), AccumulatedTime(0.0f)
         //: NumParticles(0), NumConstraints(0), Gravity(0.0f, 0.0f, 0.0f), Wind(0.0f, 0.0f, 0.0f), ExternalForce(0.0f, 0.0f, 0.0f), CurrentTime(0.0f), AccumulatedTime(0.0f)
     {
     }
@@ -279,12 +321,30 @@ inline FArchive& operator<<(FArchive& Ar, FClothConfig& Cfg)
     return Ar;
 }
 
-inline FArchive& operator<<(FArchive& Ar, FClothConstraint& C)
+inline FArchive& operator<<(FArchive& Ar, FClothDistanceConstraint& C)
 {
     Ar << C.ParticleA;
     Ar << C.ParticleB;
     Ar << C.RestLength;
     Ar << C.Stiffness;
+    Ar << C.Compliance;
+    Ar << C.Lambda;
+
+    return Ar;
+}
+
+inline FArchive& operator<<(FArchive& Ar, FClothBendConstraint& C)
+{
+    Ar << C.ParticleA;
+    Ar << C.ParticleB;
+    Ar << C.ParticleC;
+    Ar << C.ParticleD;
+
+    Ar << C.RestAngle;
+    Ar << C.Stiffness;
+    Ar << C.Compliance;
+    Ar << C.Lambda;
+
     return Ar;
 }
 
@@ -302,6 +362,7 @@ inline FArchive& operator<<(FArchive& Ar, FClothSimulationData& Sim)
 {
     Ar << Sim.NumParticles;
     Ar << Sim.NumConstraints;
+    Ar << Sim.NumBendConstraints;
 
     Ar << Sim.CurrentPositions;
     Ar << Sim.CurrentVelocities;

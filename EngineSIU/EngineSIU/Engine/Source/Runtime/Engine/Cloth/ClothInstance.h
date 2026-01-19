@@ -94,7 +94,7 @@ public:
     uint32 GetNumConstraints() const { return NumConstraints; }
     const TArray<FVector> &GetRestPositions() const { return RestPositions; }
     const TArray<float> &GetInvMasses() const { return InvMasses; }
-    const TArray<FClothConstraint> &GetConstraints() const { return Constraints; }
+    const TArray<FClothDistanceConstraint> &GetConstraints() const { return Constraints; }
     const TArray<uint32> &GetIndices() const { return Indices; }
     
     FClothSolver* GetSolver() const { return Solver; }
@@ -110,7 +110,7 @@ private:
     // Asset data
     TArray<FVector> RestPositions;
     TArray<float> InvMasses;
-    TArray<FClothConstraint> Constraints;
+    TArray<FClothDistanceConstraint> Constraints;
     TArray<uint32> Indices;
 
     // Runtime data

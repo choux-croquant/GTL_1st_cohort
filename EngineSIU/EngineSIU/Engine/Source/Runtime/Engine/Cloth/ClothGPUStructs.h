@@ -43,7 +43,7 @@ struct FClothVelocityGPU
  * GPU constraint structure (32 bytes, aligned)
  * Must match FDistanceConstraint in ClothCommon.hlsli
  */
-struct FClothConstraintGPU
+struct FClothDistanceConstraintGPU
 {
     uint32 ParticleA; // 4 bytes
     uint32 ParticleB; // 4 bytes
@@ -55,6 +55,18 @@ struct FClothConstraintGPU
     float Padding0;   // 4 bytes
     float Padding1;   // 4 bytes
     // Total: 32 bytes
+};
+
+struct FClothBendConstraintGPU {
+    uint32 ParticleA;      // Shared edge vertex 1
+    uint32 ParticleB;      // Shared edge vertex 2
+    uint32 ParticleC;      // Triangle 1 opposite vertex
+    uint32 ParticleD;      // Triangle 2 opposite vertex
+    float RestAngle;       // Dihedral angle at rest (radians)
+    float Stiffness;       // Bend stiffness [0-1]
+    float Compliance;      // XPBD compliance
+    float Lambda;          // XPBD lambda (warm start)
+    // Total: 32bytes
 };
 
 /**
@@ -82,11 +94,11 @@ struct FClothCollisionCapsuleGPU
 // Static assertions to verify structure sizes (C++ only)
 static_assert(sizeof(FClothParticleGPU) == 16, "FClothParticleGPU must be 16 bytes");
 static_assert(sizeof(FClothVelocityGPU) == 16, "FClothVelocityGPU must be 16 bytes");
-static_assert(sizeof(FClothConstraintGPU) == 32, "FClothConstraintGPU must be 32 bytes");
+static_assert(sizeof(FClothDistanceConstraintGPU) == 32, "FClothConstraintGPU must be 32 bytes");
 static_assert(sizeof(FClothCollisionSphereGPU) == 16, "FClothCollisionSphereGPU must be 16 bytes");
 static_assert(sizeof(FClothCollisionCapsuleGPU) == 32, "FClothCollisionCapsuleGPU must be 32 bytes");
 
 // Verify alignment
 static_assert(alignof(FClothParticleGPU) == 4, "FClothParticleGPU alignment");
 static_assert(alignof(FClothVelocityGPU) == 4, "FClothVelocityGPU alignment");
-static_assert(alignof(FClothConstraintGPU) == 4, "FClothConstraintGPU alignment");
+static_assert(alignof(FClothDistanceConstraintGPU) == 4, "FClothConstraintGPU alignment");

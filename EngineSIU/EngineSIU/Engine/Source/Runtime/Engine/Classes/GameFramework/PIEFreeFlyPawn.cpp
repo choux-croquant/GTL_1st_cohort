@@ -58,8 +58,8 @@ void APieFreeFlyPawn::Tick(float DeltaTime)
     // Apply rotation
     if (YawInput != 0.0f || PitchInput != 0.0f)
     {
-        CurrentYaw += YawInput * RotationSpeed;
-        CurrentPitch = FMath::Clamp(CurrentPitch + PitchInput * RotationSpeed, -89.0f, 89.0f);
+        CurrentPitch += PitchInput * RotationSpeed;
+        CurrentYaw = FMath::Clamp(CurrentYaw + YawInput * RotationSpeed, -89.0f, 89.0f);
 
         // Update actor rotation
         SetActorRotation(FRotator(CurrentYaw, CurrentPitch, 0.0f));
@@ -141,6 +141,4 @@ void APieFreeFlyPawn::AdjustMoveSpeed(float Delta)
 
     // Clamp to min/max
     MoveSpeed = FMath::Clamp(MoveSpeed, MinMoveSpeed, MaxMoveSpeed);
-
-    UE_LOG(ELogLevel::Display, TEXT("PIE Camera Speed: %.0f units/sec"), MoveSpeed);
 }

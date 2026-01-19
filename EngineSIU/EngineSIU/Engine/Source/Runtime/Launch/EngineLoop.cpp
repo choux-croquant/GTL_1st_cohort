@@ -83,7 +83,7 @@ int32 FEngineLoop::Init(HINSTANCE hInstance)
     EngineProfiler.RegisterStatScope(TEXT("|- SkinningPass"), FName(TEXT("SkinningPass_CPU")), FName(TEXT("SkinningPass_GPU")));
     EngineProfiler.RegisterStatScope(TEXT("SlatePass"), FName(TEXT("SlatePass_CPU")), FName(TEXT("SlatePass_GPU")));
     EngineProfiler.RegisterStatScope(TEXT("SimulatePass"), FName(TEXT("SimulatePass_CPU")), FName(TEXT("SimulatePass_GPU")));
-    EngineProfiler.RegisterStatScope(TEXT("ClothSimulate"), FName(TEXT("ClothSimulate_Tick")), FName(TEXT("ClothSimulate_Tick")));
+    EngineProfiler.RegisterStatScope(TEXT("ClothSimulate"), FName(TEXT("ClothSimulate_Tick")), FName(TEXT("ClothSimulate_Tick_GPU")));
 
     BufferManager->Initialize(GraphicDevice.Device, GraphicDevice.DeviceContext);
     Renderer.Initialize(&GraphicDevice, BufferManager, &GPUTimingManager);
@@ -157,10 +157,10 @@ void FEngineLoop::Tick()
     while (bIsExit == false)
     {
         FProfilerStatsManager::BeginFrame();    // Clear previous frame stats
-        //if (GPUTimingManager.IsInitialized())
-        //{
-        //    GPUTimingManager.BeginFrame();      // Start GPU frame timing
-        //}
+        if (GPUTimingManager.IsInitialized())
+        {
+            GPUTimingManager.BeginFrame();      // Start GPU frame timing
+        }
 
         QueryPerformanceCounter(&StartTime);
 
@@ -194,10 +194,10 @@ void FEngineLoop::Tick()
         // Pending 처리된 오브젝트 제거
         GUObjectArray.ProcessPendingDestroyObjects();
 
-        //if (GPUTimingManager.IsInitialized())
-        //{
-        //    GPUTimingManager.EndFrame();        // End GPU frame timing
-        //}
+        if (GPUTimingManager.IsInitialized())
+        {
+            GPUTimingManager.EndFrame();        // End GPU frame timing
+        }
 
         FLuaScriptManager::Get().HotReloadLuaScript();
         FSoundManager::GetInstance().Update();

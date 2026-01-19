@@ -114,6 +114,7 @@ private:
      */
     void DispatchIntegration(float DeltaTime);
     void DispatchConstraintSolver(int32 Iteration);
+    void DispatchBendConstraintSolver(int32 Iteration);
     void DispatchApplyConstraintDeltas();
     void DispatchNormalUpdate();
 
@@ -136,6 +137,7 @@ private:
     // Compute shaders
     ID3D11ComputeShader *IntegrateCS;
     ID3D11ComputeShader *ConstraintSolverCS;
+    ID3D11ComputeShader* BendConstraintSolverCS;
     ID3D11ComputeShader *UpdateNormalsCS;
     ID3D11ComputeShader *ClearNormalsCS;
     ID3D11ComputeShader *NormalizeNormalsCS;
@@ -146,6 +148,7 @@ private:
     ID3D11Buffer *VelocityBuffer;
     ID3D11Buffer *InvMassBuffer;
     ID3D11Buffer *ConstraintBuffer;
+    ID3D11Buffer *BendConstraintBuffer;
     ID3D11Buffer *IndexBuffer;
     ID3D11Buffer *NormalBuffer;
 
@@ -160,6 +163,7 @@ private:
     ID3D11ShaderResourceView *PositionSRV[2];
     ID3D11ShaderResourceView *VelocitySRV;
     ID3D11ShaderResourceView *ConstraintSRV;
+    ID3D11ShaderResourceView *BendConstraintSRV;
     ID3D11ShaderResourceView *IndexSRV;
     ID3D11ShaderResourceView *NormalSRV;
 
@@ -176,7 +180,8 @@ private:
     // CPU-side data (for initialization and debug)
     TArray<FVector> RestPositions;
     TArray<float> InvMasses;
-    TArray<FClothConstraint> Constraints;
+    TArray<FClothDistanceConstraint> Constraints;
+    TArray<FClothBendConstraint> BendConstraints;
     TArray<uint32> Indices;
 
     // State tracking
@@ -186,6 +191,7 @@ private:
 
     uint32 NumParticles;
     uint32 NumConstraints;
+    uint32 NumBendConstraints;
     uint32 NumTriangles;
     bool bInitialized;
 

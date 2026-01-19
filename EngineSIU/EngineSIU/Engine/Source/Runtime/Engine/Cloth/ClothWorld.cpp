@@ -78,6 +78,7 @@ void FClothWorld::Update(float DeltaTime)
 {
     if (!bIsInitialized || ActiveInstances.Num() == 0) return;
     QUICK_SCOPE_CYCLE_COUNTER(ClothSimulate_Tick)
+    QUICK_GPU_SCOPE_CYCLE_COUNTER(ClothSimulate_Tick_GPU, *FEngineLoop::Renderer.GPUTimingManager)
     UpdateKinematicData(DeltaTime);
 
     SimulateAllInstances(DeltaTime);

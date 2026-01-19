@@ -21,7 +21,7 @@
     }
 
 FClothSolver::FClothSolver()
-    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), IntegrateCS(nullptr), ConstraintSolverCS(nullptr), UpdateNormalsCS(nullptr), ClearNormalsCS(nullptr), NormalizeNormalsCS(nullptr), ClothSimConstantBuffer(nullptr), NormalUpdateConstantBuffer(nullptr), CurrentBufferIndex(0), NumParticles(0), NumConstraints(0), NumTriangles(0), bInitialized(false), ExternalForceAccum(FVector::ZeroVector)
+    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), IntegrateCS(nullptr), ConstraintSolverCS(nullptr), BendConstraintSolverCS(nullptr), UpdateNormalsCS(nullptr), ClearNormalsCS(nullptr), NormalizeNormalsCS(nullptr), ClothSimConstantBuffer(nullptr), NormalUpdateConstantBuffer(nullptr), CurrentBufferIndex(0), NumParticles(0), NumConstraints(0), NumTriangles(0), bInitialized(false), ExternalForceAccum(FVector::ZeroVector)
 {
     // Initialize all buffer pointers to nullptr
     for (int32 i = 0; i < 2; ++i)
@@ -34,6 +34,7 @@ FClothSolver::FClothSolver()
     VelocityBuffer = nullptr;
     InvMassBuffer = nullptr;
     ConstraintBuffer = nullptr;
+    BendConstraintBuffer = nullptr;
     IndexBuffer = nullptr;
     NormalBuffer = nullptr;
 
@@ -99,23 +100,25 @@ bool FClothSolver::SetupFromAsset(UClothAsset *InAsset, const FClothConfig &InCo
     const TArray<FVector> &AssetRestPositions = InAsset->GetRestPositions();
     const TArray<uint32> &AssetIndices = InAsset->GetIndices();
     const TArray<float> &AssetInvMasses = InAsset->GetInvMasses();
-    const TArray<FClothConstraint> &AssetDistConstraints = InAsset->GetDistanceConstraints();
-    const TArray<FClothConstraint> &AssetBendConstraints = InAsset->GetBendConstraints();
+    const TArray<FClothDistanceConstraint> &AssetDistConstraints = InAsset->GetDistanceConstraints();
+    const TArray<FClothBendConstraint> &AssetBendConstraints = InAsset->GetBendConstraints();
 
     RestPositions = AssetRestPositions;
     Indices = AssetIndices;
     InvMasses = AssetInvMasses;
 
     Constraints.Empty();
+    BendConstraints.Empty();
     Constraints.Append(AssetDistConstraints);
-    Constraints.Append(AssetBendConstraints);
+    BendConstraints.Append(AssetBendConstraints);
 
     // TODO : Attachment, VertexPaint
     // AttachmentIndices = InAsset->GetAttachmentIndices();
     // VertexPaintData = InAsset->GetVertexPaintData();
 
     NumParticles = RestPositions.Num();
-    NumConstraints = AssetDistConstraints.Num() + AssetBendConstraints.Num();
+    NumConstraints = AssetDistConstraints.Num();
+    NumBendConstraints = AssetBendConstraints.Num();
     NumTriangles = Indices.Num() / 3;
 
     if (NumParticles == 0)
@@ -126,6 +129,7 @@ bool FClothSolver::SetupFromAsset(UClothAsset *InAsset, const FClothConfig &InCo
 
     SimData.NumParticles = NumParticles;
     SimData.NumConstraints = NumConstraints;
+    SimData.NumBendConstraints = NumBendConstraints;
 
     SimData.CurrentPositions.SetNum(NumParticles);
     SimData.CurrentVelocities.SetNum(NumParticles);
@@ -166,6 +170,7 @@ void FClothSolver::Release()
     // We just null out our pointers
     IntegrateCS = nullptr;
     ConstraintSolverCS = nullptr;
+    BendConstraintSolverCS = nullptr;
     UpdateNormalsCS = nullptr;
     ClearNormalsCS = nullptr;
     NormalizeNormalsCS = nullptr;
@@ -185,6 +190,7 @@ void FClothSolver::Release()
     SAFE_RELEASE(InvMassBuffer);
 
     SAFE_RELEASE(ConstraintBuffer);
+    SAFE_RELEASE(BendConstraintBuffer);
     SAFE_RELEASE(ConstraintSRV);
 
     SAFE_RELEASE(IndexBuffer);
@@ -215,8 +221,8 @@ void FClothSolver::Simulate(float InDeltaTime)
     // Clamp delta time
     float DeltaTime = FMath::Clamp(InDeltaTime, 0.0001f, 0.033f);
     // Test for runtime wind change
-     Config.AirDrag = sin(SimData.CurrentTime) * 10.f;
-
+    Config.AirDrag = sin(SimData.CurrentTime) * 10.f;
+    //Config.AirDrag = 10.f;
     SimulateCS(DeltaTime);
 
     // Update simulation time
@@ -247,6 +253,7 @@ void FClothSolver::SimulateCS(float DeltaTime)
     for (int32 i = 0; i < Config.NumIterations; ++i)
     {
         DispatchConstraintSolver(i);
+        DispatchBendConstraintSolver(i);
         DispatchApplyConstraintDeltas();
         readIdx = writeIdx;
         writeIdx = 1 - writeIdx;
@@ -370,6 +377,21 @@ bool FClothSolver::LoadComputeShaders()
         ConstraintSolverCS = ShaderManager->GetComputeShaderByKey(L"ClothConstraintSolverCS");
     }
 
+    // Load bend constraint solver shader
+    hr = ShaderManager->AddComputeShader(
+        L"ClothBendConstraintSolverCS",
+        L"Shaders/Cloth/ClothBendConstraintSolver.hlsl",
+        "SolveBendConstraintsCS");
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("Failed to compile ClothConstraintSolver shader"));
+        bSuccess = false;
+    }
+    else
+    {
+        BendConstraintSolverCS = ShaderManager->GetComputeShaderByKey(L"ClothBendConstraintSolverCS");
+    }
+
     // Load apply delta shaders
     hr = ShaderManager->AddComputeShader(
         L"ClothApplyConstraintDeltasCS",
@@ -474,11 +496,26 @@ bool FClothSolver::CreateBuffers()
     // Create constraint buffer (if we have constraints)
     if (NumConstraints > 0)
     {
-        bufferDesc.ByteWidth = sizeof(FClothConstraintGPU) * NumConstraints;
+        bufferDesc.ByteWidth = sizeof(FClothDistanceConstraintGPU) * NumConstraints;
         bufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-        bufferDesc.StructureByteStride = sizeof(FClothConstraintGPU);
+        bufferDesc.StructureByteStride = sizeof(FClothDistanceConstraintGPU);
 
         hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &ConstraintBuffer);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("Failed to create constraint buffer"));
+            return false;
+        }
+    }
+
+    // Create constraint buffer (if we have constraints)
+    if (NumBendConstraints > 0)
+    {
+        bufferDesc.ByteWidth = sizeof(FClothBendConstraintGPU) * NumBendConstraints;
+        bufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        bufferDesc.StructureByteStride = sizeof(FClothBendConstraintGPU);
+
+        hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &BendConstraintBuffer);
         if (FAILED(hr))
         {
             UE_LOG(ELogLevel::Error, TEXT("Failed to create constraint buffer"));
@@ -646,6 +683,18 @@ bool FClothSolver::CreateViews()
         }
     }
 
+    // Create SRV for constraint buffer
+    if (BendConstraintBuffer && NumBendConstraints > 0)
+    {
+        srvDesc.Buffer.NumElements = NumBendConstraints;
+        hr = Graphics->Device->CreateShaderResourceView(BendConstraintBuffer, &srvDesc, &BendConstraintSRV);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("Failed to create constraint SRV"));
+            return false;
+        }
+    }
+
     // Create SRV for index buffer
     if (IndexBuffer && NumTriangles > 0)
     {
@@ -754,7 +803,7 @@ bool FClothSolver::UploadInitialData()
     // Upload constraint data
     if (ConstraintBuffer && Constraints.Num() > 0)
     {
-        TArray<FClothConstraintGPU> constraintsGPU;
+        TArray<FClothDistanceConstraintGPU> constraintsGPU;
         constraintsGPU.SetNum(Constraints.Num());
 
         for (int32 i = 0; i < Constraints.Num(); ++i)
@@ -768,6 +817,27 @@ bool FClothSolver::UploadInitialData()
         Graphics->DeviceContext->UpdateSubresource(ConstraintBuffer, 0, nullptr, constraintsGPU.GetData(), 0, 0);
 
         UE_LOG(ELogLevel::Display, TEXT("ClothSolver: Uploaded %d constraints"), Constraints.Num());
+    }
+
+    // Upload bend constraint data
+    if (BendConstraintBuffer && BendConstraints.Num() > 0)
+    {
+        TArray<FClothBendConstraintGPU> bendConstraintsGPU;
+        bendConstraintsGPU.SetNum(BendConstraints.Num());
+
+        for (int32 i = 0; i < BendConstraints.Num(); ++i)
+        {
+            bendConstraintsGPU[i].ParticleA = BendConstraints[i].ParticleA;
+            bendConstraintsGPU[i].ParticleB = BendConstraints[i].ParticleB;
+            bendConstraintsGPU[i].ParticleC = BendConstraints[i].ParticleC;
+            bendConstraintsGPU[i].ParticleD = BendConstraints[i].ParticleD;
+            bendConstraintsGPU[i].RestAngle = BendConstraints[i].RestAngle;
+            bendConstraintsGPU[i].Stiffness = BendConstraints[i].Stiffness;
+        }
+
+        Graphics->DeviceContext->UpdateSubresource(BendConstraintBuffer, 0, nullptr, bendConstraintsGPU.GetData(), 0, 0);
+
+        UE_LOG(ELogLevel::Display, TEXT("ClothSolver: Uploaded %d bend constraints"), BendConstraints.Num());
     }
 
     // Upload index data
@@ -827,6 +897,7 @@ void FClothSolver::UpdateConstantBuffers()
     FClothSimConstants constants = {};
     constants.NumParticles = NumParticles;
     constants.NumConstraints = NumConstraints;
+    constants.NumBendConstraints = NumBendConstraints;
     constants.DeltaTime = Config.TimeStep;
     constants.Damping = Config.Damping;
     constants.Gravity = SimData.Gravity + ExternalForceAccum;
@@ -925,6 +996,55 @@ void FClothSolver::DispatchConstraintSolver(int32 Iteration)
     ID3D11UnorderedAccessView *nullUAVs[2] = {nullptr, nullptr};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
     ID3D11ShaderResourceView *nullSRVs[2] = {nullptr, nullptr};
+    Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
+}
+
+void FClothSolver::DispatchBendConstraintSolver(int32 Iteration)
+{
+    if (!Graphics || !Graphics->DeviceContext || !BendConstraintSolverCS || NumBendConstraints == 0)
+        return;
+
+    // Clear delta accumulation buffers at the start of each iteration
+    //if (Iteration == 0 || true) // Always clear before constraint solving
+    //{
+    //    UINT clearValues[4] = { 0, 0, 0, 0 };
+    //    if (PositionDeltaUAV)
+    //        Graphics->DeviceContext->ClearUnorderedAccessViewUint(PositionDeltaUAV, clearValues);
+    //    if (PositionWeightUAV)
+    //        Graphics->DeviceContext->ClearUnorderedAccessViewUint(PositionWeightUAV, clearValues);
+    //}
+
+    // Bind constant buffer
+    Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &ClothSimConstantBuffer);
+
+    // t0: ParticlesRead (현재 step의 읽기 버퍼)
+    ID3D11ShaderResourceView* srvs[] =
+    {
+        PositionSRV[readIdx], // t0
+        BendConstraintSRV         // t1
+    };
+    Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
+
+    // u0: PositionDelta, u1: PositionWeight
+    ID3D11UnorderedAccessView* uavs[] =
+    {
+        PositionDeltaUAV, // u0
+        PositionWeightUAV // u1
+    };
+    UINT initialCounts[2] = { 0, 0 };
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, initialCounts);
+
+    // Bind shader (SolveDistanceConstraintsCS: delta 누적용으로 수정된 버전)
+    Graphics->DeviceContext->CSSetShader(BendConstraintSolverCS, nullptr, 0);
+
+    // Dispatch (제약 개수 기준)
+    uint32 dispatchCount = GetDispatchCount(NumBendConstraints);
+    Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
+
+    // Unbind
+    ID3D11UnorderedAccessView* nullUAVs[2] = { nullptr, nullptr };
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
+    ID3D11ShaderResourceView* nullSRVs[2] = { nullptr, nullptr };
     Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
 }
 

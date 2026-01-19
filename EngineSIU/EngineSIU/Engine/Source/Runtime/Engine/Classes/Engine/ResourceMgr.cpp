@@ -1,7 +1,6 @@
 #include "ResourceMgr.h"
 #include <fstream>
 #include <ranges>
-#include <unordered_map>
 #include <wincodec.h>
 #include "Define.h"
 #include "Components/SkySphereComponent.h"
