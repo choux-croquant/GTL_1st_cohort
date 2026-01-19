@@ -21,7 +21,7 @@
     }
 
 FClothSolver::FClothSolver()
-    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), IntegrateCS(nullptr), ConstraintSolverCS(nullptr), BendConstraintSolverCS(nullptr), UpdateNormalsCS(nullptr), ClearNormalsCS(nullptr), NormalizeNormalsCS(nullptr), ClothSimConstantBuffer(nullptr), NormalUpdateConstantBuffer(nullptr), CurrentBufferIndex(0), NumParticles(0), NumConstraints(0), NumTriangles(0), bInitialized(false), ExternalForceAccum(FVector::ZeroVector)
+    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), IntegrateCS(nullptr), ConstraintSolverCS(nullptr), BendConstraintSolverCS(nullptr), ApplyKinematicTargetsCS(nullptr), UpdateNormalsCS(nullptr), ClearNormalsCS(nullptr), NormalizeNormalsCS(nullptr), ClothSimConstantBuffer(nullptr), NormalUpdateConstantBuffer(nullptr), CurrentBufferIndex(0), NumParticles(0), NumConstraints(0), NumBendConstraints(0), NumKinematicTargets(0), NumTriangles(0), bInitialized(false), ExternalForceAccum(FVector::ZeroVector)
 {
     // Initialize all buffer pointers to nullptr
     for (int32 i = 0; i < 2; ++i)
@@ -35,6 +35,7 @@ FClothSolver::FClothSolver()
     InvMassBuffer = nullptr;
     ConstraintBuffer = nullptr;
     BendConstraintBuffer = nullptr;
+    KinematicTargetBuffer = nullptr;
     IndexBuffer = nullptr;
     NormalBuffer = nullptr;
 
@@ -43,6 +44,8 @@ FClothSolver::FClothSolver()
 
     VelocitySRV = nullptr;
     ConstraintSRV = nullptr;
+    BendConstraintSRV = nullptr;
+    KinematicTargetSRV = nullptr;
     IndexSRV = nullptr;
     NormalSRV = nullptr;
 
@@ -191,7 +194,10 @@ void FClothSolver::Release()
 
     SAFE_RELEASE(ConstraintBuffer);
     SAFE_RELEASE(BendConstraintBuffer);
+    SAFE_RELEASE(KinematicTargetBuffer);
     SAFE_RELEASE(ConstraintSRV);
+    SAFE_RELEASE(BendConstraintSRV);
+    SAFE_RELEASE(KinematicTargetSRV);
 
     SAFE_RELEASE(IndexBuffer);
     SAFE_RELEASE(IndexSRV);
@@ -222,7 +228,7 @@ void FClothSolver::Simulate(float InDeltaTime)
     float DeltaTime = FMath::Clamp(InDeltaTime, 0.0001f, 0.033f);
     // Test for runtime wind change
     Config.AirDrag = sin(SimData.CurrentTime) * 10.f;
-    //Config.AirDrag = 10.f;
+    // Config.AirDrag = 10.f;
     SimulateCS(DeltaTime);
 
     // Update simulation time
@@ -249,12 +255,25 @@ void FClothSolver::SimulateCS(float DeltaTime)
     readIdx = writeIdx;
     writeIdx = 1 - writeIdx;
 
+    // Apply kinematic targets after integration (override attached particle positions)
+    if (NumKinematicTargets > 0)
+    {
+        DispatchApplyKinematicTargets();
+    }
+
     // Constraint solving iterations
     for (int32 i = 0; i < Config.NumIterations; ++i)
     {
         DispatchConstraintSolver(i);
         DispatchBendConstraintSolver(i);
         DispatchApplyConstraintDeltas();
+
+        // Reapply kinematic targets after constraints to enforce attachment
+        if (NumKinematicTargets > 0)
+        {
+            DispatchApplyKinematicTargets();
+        }
+
         readIdx = writeIdx;
         writeIdx = 1 - writeIdx;
     }
@@ -314,8 +333,52 @@ void FClothSolver::SetConfig(const FClothConfig &InConfig)
 
 void FClothSolver::UpdateAttachmentConstraints(const TArray<FClothAttachmentData> &Attachments)
 {
-    // TODO: Implement attachment constraint updates
-    // This would involve updating particle positions for attached vertices
+    // Deprecated - use UpdateKinematicTargets instead
+    UpdateKinematicTargets(Attachments);
+}
+
+void FClothSolver::UpdateKinematicTargets(const TArray<FClothAttachmentData> &Attachments)
+{
+    if (!Graphics || !Graphics->DeviceContext || !KinematicTargetBuffer)
+        return;
+
+    if (Attachments.Num() == 0)
+    {
+        NumKinematicTargets = 0;
+        return;
+    }
+
+    // Convert attachments to GPU format
+    KinematicTargets.Empty();
+    KinematicTargets.Reserve(Attachments.Num());
+
+    for (const FClothAttachmentData &attach : Attachments)
+    {
+        FClothKinematicTargetGPU target;
+        target.ParticleIndex = attach.ClothVertexIndex;
+        target.TargetPosition = attach.WorldPosition; // Already transformed to world space
+        target.Stiffness = attach.Stiffness;
+        target.Padding0 = 0.0f;
+        target.Padding1 = 0.0f;
+        target.Padding2 = 0.0f;
+
+        KinematicTargets.Add(target);
+    }
+
+    NumKinematicTargets = KinematicTargets.Num();
+
+    // Upload to GPU (dynamic buffer with MAP_WRITE_DISCARD)
+    if (NumKinematicTargets > 0)
+    {
+        D3D11_MAPPED_SUBRESOURCE msr;
+        HRESULT hr = Graphics->DeviceContext->Map(KinematicTargetBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &msr);
+        if (SUCCEEDED(hr))
+        {
+            uint32 bytesToCopy = sizeof(FClothKinematicTargetGPU) * NumKinematicTargets;
+            memcpy(msr.pData, KinematicTargets.GetData(), bytesToCopy);
+            Graphics->DeviceContext->Unmap(KinematicTargetBuffer, 0);
+        }
+    }
 }
 
 void FClothSolver::SetCollisionBodies(const TArray<FClothCollisionPrimitive> &Primitives)
@@ -450,6 +513,21 @@ bool FClothSolver::LoadComputeShaders()
         NormalizeNormalsCS = ShaderManager->GetComputeShaderByKey(L"ClothNormalizeNormalsCS");
     }
 
+    // Load apply kinematic targets shader
+    hr = ShaderManager->AddComputeShader(
+        L"ClothApplyKinematicTargetsCS",
+        L"Shaders/Cloth/ClothApplyKinematicTargets.hlsl",
+        "ApplyKinematicTargetsCS");
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("Failed to compile ClothApplyKinematicTargets shader (optional feature)"));
+        // Not critical - kinematic targets are optional
+    }
+    else
+    {
+        ApplyKinematicTargetsCS = ShaderManager->GetComputeShaderByKey(L"ClothApplyKinematicTargetsCS");
+    }
+
     return bSuccess;
 }
 
@@ -518,9 +596,26 @@ bool FClothSolver::CreateBuffers()
         hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &BendConstraintBuffer);
         if (FAILED(hr))
         {
-            UE_LOG(ELogLevel::Error, TEXT("Failed to create constraint buffer"));
+            UE_LOG(ELogLevel::Error, TEXT("Failed to create bend constraint buffer"));
             return false;
         }
+    }
+
+    // Create kinematic target buffer (dynamic - updated each frame)
+    // Start with reasonable capacity, will be reallocated if needed
+    uint32 maxKinematicTargets = FMath::Max(NumParticles / 10, 16u); // Reserve 10% of particles or min 16
+    bufferDesc.Usage = D3D11_USAGE_DYNAMIC;
+    bufferDesc.ByteWidth = sizeof(FClothKinematicTargetGPU) * maxKinematicTargets;
+    bufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    bufferDesc.StructureByteStride = sizeof(FClothKinematicTargetGPU);
+    bufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+
+    hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &KinematicTargetBuffer);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("Failed to create kinematic target buffer (optional feature)"));
+        // Not critical - kinematic targets are optional
     }
 
     // Create index buffer (if we have triangles)
@@ -683,15 +778,28 @@ bool FClothSolver::CreateViews()
         }
     }
 
-    // Create SRV for constraint buffer
+    // Create SRV for bend constraint buffer
     if (BendConstraintBuffer && NumBendConstraints > 0)
     {
         srvDesc.Buffer.NumElements = NumBendConstraints;
         hr = Graphics->Device->CreateShaderResourceView(BendConstraintBuffer, &srvDesc, &BendConstraintSRV);
         if (FAILED(hr))
         {
-            UE_LOG(ELogLevel::Error, TEXT("Failed to create constraint SRV"));
+            UE_LOG(ELogLevel::Error, TEXT("Failed to create bend constraint SRV"));
             return false;
+        }
+    }
+
+    // Create SRV for kinematic target buffer (dynamic, will be updated each frame)
+    if (KinematicTargetBuffer)
+    {
+        uint32 maxKinematicTargets = FMath::Max(NumParticles / 10, 16u);
+        srvDesc.Buffer.NumElements = maxKinematicTargets;
+        hr = Graphics->Device->CreateShaderResourceView(KinematicTargetBuffer, &srvDesc, &KinematicTargetSRV);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Warning, TEXT("Failed to create kinematic target SRV (optional feature)"));
+            // Not critical
         }
     }
 
@@ -898,6 +1006,7 @@ void FClothSolver::UpdateConstantBuffers()
     constants.NumParticles = NumParticles;
     constants.NumConstraints = NumConstraints;
     constants.NumBendConstraints = NumBendConstraints;
+    constants.NumKinematicTargets = NumKinematicTargets;
     constants.DeltaTime = Config.TimeStep;
     constants.Damping = Config.Damping;
     constants.Gravity = SimData.Gravity + ExternalForceAccum;
@@ -1005,7 +1114,7 @@ void FClothSolver::DispatchBendConstraintSolver(int32 Iteration)
         return;
 
     // Clear delta accumulation buffers at the start of each iteration
-    //if (Iteration == 0 || true) // Always clear before constraint solving
+    // if (Iteration == 0 || true) // Always clear before constraint solving
     //{
     //    UINT clearValues[4] = { 0, 0, 0, 0 };
     //    if (PositionDeltaUAV)
@@ -1018,20 +1127,20 @@ void FClothSolver::DispatchBendConstraintSolver(int32 Iteration)
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &ClothSimConstantBuffer);
 
     // t0: ParticlesRead (현재 step의 읽기 버퍼)
-    ID3D11ShaderResourceView* srvs[] =
-    {
-        PositionSRV[readIdx], // t0
-        BendConstraintSRV         // t1
-    };
+    ID3D11ShaderResourceView *srvs[] =
+        {
+            PositionSRV[readIdx], // t0
+            BendConstraintSRV     // t1
+        };
     Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
 
     // u0: PositionDelta, u1: PositionWeight
-    ID3D11UnorderedAccessView* uavs[] =
-    {
-        PositionDeltaUAV, // u0
-        PositionWeightUAV // u1
-    };
-    UINT initialCounts[2] = { 0, 0 };
+    ID3D11UnorderedAccessView *uavs[] =
+        {
+            PositionDeltaUAV, // u0
+            PositionWeightUAV // u1
+        };
+    UINT initialCounts[2] = {0, 0};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, initialCounts);
 
     // Bind shader (SolveDistanceConstraintsCS: delta 누적용으로 수정된 버전)
@@ -1042,10 +1151,38 @@ void FClothSolver::DispatchBendConstraintSolver(int32 Iteration)
     Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
 
     // Unbind
-    ID3D11UnorderedAccessView* nullUAVs[2] = { nullptr, nullptr };
+    ID3D11UnorderedAccessView *nullUAVs[2] = {nullptr, nullptr};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
-    ID3D11ShaderResourceView* nullSRVs[2] = { nullptr, nullptr };
+    ID3D11ShaderResourceView *nullSRVs[2] = {nullptr, nullptr};
     Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
+}
+
+void FClothSolver::DispatchApplyKinematicTargets()
+{
+    if (!Graphics || !Graphics->DeviceContext || !ApplyKinematicTargetsCS || NumKinematicTargets == 0)
+        return;
+
+    // Bind constant buffer
+    Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &ClothSimConstantBuffer);
+
+    // Bind kinematic target buffer (t0)
+    Graphics->DeviceContext->CSSetShaderResources(0, 1, &KinematicTargetSRV);
+
+    // Bind position buffer for write (u0) - writeIdx is the current output buffer
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &PositionUAV[writeIdx], nullptr);
+
+    // Set shader
+    Graphics->DeviceContext->CSSetShader(ApplyKinematicTargetsCS, nullptr, 0);
+
+    // Dispatch (one thread per kinematic target)
+    uint32 dispatchCount = GetDispatchCount(NumKinematicTargets);
+    Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
+
+    // Unbind
+    ID3D11UnorderedAccessView *nullUAV = nullptr;
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+    ID3D11ShaderResourceView *nullSRV = nullptr;
+    Graphics->DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
 }
 
 void FClothSolver::DispatchApplyConstraintDeltas()

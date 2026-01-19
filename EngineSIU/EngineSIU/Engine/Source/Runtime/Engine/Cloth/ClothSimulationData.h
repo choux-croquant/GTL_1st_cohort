@@ -51,8 +51,8 @@ struct FClothDistanceConstraint
     uint32 ParticleB;
     float RestLength; // For distance constraints
     float Stiffness;  // Per-constraint stiffness
-    float Compliance;  // XPBD용
-    float Lambda;      // XPBD용 상태
+    float Compliance; // XPBD용
+    float Lambda;     // XPBD용 상태
 
     FClothDistanceConstraint()
         : ParticleA(0), ParticleB(0), RestLength(0.0f), Stiffness(1.0f), Compliance(0.0f), Lambda(0.0f)
@@ -60,36 +60,29 @@ struct FClothDistanceConstraint
     }
 
     FClothDistanceConstraint(uint32 InA, uint32 InB, float InRestLength, float InStiffness = 1.0f)
-        : ParticleA(InA)
-        , ParticleB(InB)
-        , RestLength(InRestLength)
-        , Stiffness(InStiffness)
-        , Compliance(0.0f)  // 기본값: hard constraint
-        , Lambda(0.0f)      // 누적값 초기화
+        : ParticleA(InA), ParticleB(InB), RestLength(InRestLength), Stiffness(InStiffness), Compliance(0.0f) // 기본값: hard constraint
+          ,
+          Lambda(0.0f) // 누적값 초기화
     {
     }
 
     // 선택: XPBD 파라미터를 직접 지정하는 생성자
     FClothDistanceConstraint(uint32 InA, uint32 InB, float InRestLength, float InStiffness, float InCompliance)
-        : ParticleA(InA)
-        , ParticleB(InB)
-        , RestLength(InRestLength)
-        , Stiffness(InStiffness)
-        , Compliance(InCompliance)
-        , Lambda(0.0f)  // 누적값은 항상 0으로 시작
+        : ParticleA(InA), ParticleB(InB), RestLength(InRestLength), Stiffness(InStiffness), Compliance(InCompliance), Lambda(0.0f) // 누적값은 항상 0으로 시작
     {
     }
 };
 
-struct FClothBendConstraint {
-    uint32 ParticleA;      // Shared edge vertex 1
-    uint32 ParticleB;      // Shared edge vertex 2
-    uint32 ParticleC;      // Triangle 1 opposite vertex
-    uint32 ParticleD;      // Triangle 2 opposite vertex
-    float RestAngle;       // Dihedral angle at rest (radians)
-    float Stiffness;       // Bend stiffness [0-1]
-    float Compliance;      // XPBD compliance
-    float Lambda;          // XPBD lambda (warm start)
+struct FClothBendConstraint
+{
+    uint32 ParticleA; // Shared edge vertex 1
+    uint32 ParticleB; // Shared edge vertex 2
+    uint32 ParticleC; // Triangle 1 opposite vertex
+    uint32 ParticleD; // Triangle 2 opposite vertex
+    float RestAngle;  // Dihedral angle at rest (radians)
+    float Stiffness;  // Bend stiffness [0-1]
+    float Compliance; // XPBD compliance
+    float Lambda;     // XPBD lambda (warm start)
 
     FClothBendConstraint()
         : ParticleA(0), ParticleB(0), ParticleC(0), ParticleD(0), RestAngle(0.0f), Stiffness(1.0f), Compliance(0.0f), Lambda(0.0f)
@@ -97,27 +90,13 @@ struct FClothBendConstraint {
     }
 
     FClothBendConstraint(uint32 InA, uint32 InB, uint32 InC, uint32 InD, float InRestAngle, float InStiffness = 1.0f)
-        : ParticleA(InA)
-        , ParticleB(InB)
-        , ParticleC(InC)
-        , ParticleD(InD)
-        , RestAngle(InRestAngle)
-        , Stiffness(InStiffness)
-        , Compliance(0.0f)
-        , Lambda(0.0f)
+        : ParticleA(InA), ParticleB(InB), ParticleC(InC), ParticleD(InD), RestAngle(InRestAngle), Stiffness(InStiffness), Compliance(0.0f), Lambda(0.0f)
     {
     }
 
     // 선택: XPBD 파라미터를 직접 지정하는 생성자
     FClothBendConstraint(uint32 InA, uint32 InB, uint32 InC, uint32 InD, float InRestAngle, float InStiffness, float InCompliance)
-        : ParticleA(InA)
-        , ParticleB(InB)
-        , ParticleC(InC)
-        , ParticleD(InD)
-        , RestAngle(InRestAngle)
-        , Stiffness(InStiffness)
-        , Compliance(InCompliance)
-        , Lambda(0.0f)
+        : ParticleA(InA), ParticleB(InB), ParticleC(InC), ParticleD(InD), RestAngle(InRestAngle), Stiffness(InStiffness), Compliance(InCompliance), Lambda(0.0f)
     {
     }
 };
@@ -154,7 +133,7 @@ struct FClothSimulationData
 
     // External forces
     FVector Gravity = FVector(0.0f, 0.0f, -900.0f); // cm/s^2
-    //FVector Gravity = FVector(0.0f, 0.0f, 0.0f); // cm/s^2
+    // FVector Gravity = FVector(0.0f, 0.0f, 0.0f); // cm/s^2
     FVector Wind = FVector(300.0f, 0.0f, 0.0f);
     FVector ExternalForce = FVector(0.0f, 0.0f, 0.0f);
 
@@ -164,7 +143,7 @@ struct FClothSimulationData
 
     FClothSimulationData()
         : NumParticles(0), NumConstraints(0), NumBendConstraints(0), Gravity(0.0f, 0.0f, -900.0f), Wind(300.0f, 0.0f, 0.0f), ExternalForce(0.0f, 0.0f, 0.0f), CurrentTime(0.0f), AccumulatedTime(0.0f)
-        //: NumParticles(0), NumConstraints(0), Gravity(0.0f, 0.0f, 0.0f), Wind(0.0f, 0.0f, 0.0f), ExternalForce(0.0f, 0.0f, 0.0f), CurrentTime(0.0f), AccumulatedTime(0.0f)
+    //: NumParticles(0), NumConstraints(0), Gravity(0.0f, 0.0f, 0.0f), Wind(0.0f, 0.0f, 0.0f), ExternalForce(0.0f, 0.0f, 0.0f), CurrentTime(0.0f), AccumulatedTime(0.0f)
     {
     }
 };
@@ -193,18 +172,31 @@ struct FClothLODData
 };
 
 /**
+ * Attachment type for kinematic attachments
+ */
+enum class EClothAttachmentType : uint8
+{
+    WorldPosition, // Static world position
+    SkeletalBone,  // Follow bone transform
+    ActorTransform // Follow actor transform
+};
+
+/**
  * Attachment data for connecting cloth to skeletal meshes or static objects
  */
 struct FClothAttachmentData
 {
     uint32 ClothVertexIndex;
 
+    // Attachment type
+    EClothAttachmentType Type = EClothAttachmentType::WorldPosition;
+
     // For skeletal mesh attachment
     FName BoneName;
     int32 BoneIndex;
     FTransform LocalOffset;
 
-    // For static attachment
+    // For world/actor attachment
     FVector WorldPosition;
 
     // Constraint properties
@@ -212,7 +204,7 @@ struct FClothAttachmentData
     bool bIsKinematic = true;
 
     FClothAttachmentData()
-        : ClothVertexIndex(0), BoneName(FName()), BoneIndex(-1), LocalOffset(FTransform::Identity), WorldPosition(FVector::ZeroVector), Stiffness(1.0f), bIsKinematic(true)
+        : ClothVertexIndex(0), Type(EClothAttachmentType::WorldPosition), BoneName(FName()), BoneIndex(-1), LocalOffset(FTransform::Identity), WorldPosition(FVector::ZeroVector), Stiffness(1.0f), bIsKinematic(true)
     {
     }
 };
@@ -297,8 +289,7 @@ struct FClothCollisionPrimitive
     }
 };
 
-
-inline FArchive& operator<<(FArchive& Ar, FClothConfig& Cfg)
+inline FArchive &operator<<(FArchive &Ar, FClothConfig &Cfg)
 {
     Ar << Cfg.Mass;
     Ar << Cfg.Damping;
@@ -321,7 +312,7 @@ inline FArchive& operator<<(FArchive& Ar, FClothConfig& Cfg)
     return Ar;
 }
 
-inline FArchive& operator<<(FArchive& Ar, FClothDistanceConstraint& C)
+inline FArchive &operator<<(FArchive &Ar, FClothDistanceConstraint &C)
 {
     Ar << C.ParticleA;
     Ar << C.ParticleB;
@@ -333,7 +324,7 @@ inline FArchive& operator<<(FArchive& Ar, FClothDistanceConstraint& C)
     return Ar;
 }
 
-inline FArchive& operator<<(FArchive& Ar, FClothBendConstraint& C)
+inline FArchive &operator<<(FArchive &Ar, FClothBendConstraint &C)
 {
     Ar << C.ParticleA;
     Ar << C.ParticleB;
@@ -348,7 +339,7 @@ inline FArchive& operator<<(FArchive& Ar, FClothBendConstraint& C)
     return Ar;
 }
 
-inline FArchive& operator<<(FArchive& Ar, FClothVertexPaintData& V)
+inline FArchive &operator<<(FArchive &Ar, FClothVertexPaintData &V)
 {
     Ar << V.MaxDistance;
     Ar << V.BackstopDistance;
@@ -358,7 +349,7 @@ inline FArchive& operator<<(FArchive& Ar, FClothVertexPaintData& V)
     return Ar;
 }
 
-inline FArchive& operator<<(FArchive& Ar, FClothSimulationData& Sim)
+inline FArchive &operator<<(FArchive &Ar, FClothSimulationData &Sim)
 {
     Ar << Sim.NumParticles;
     Ar << Sim.NumConstraints;
@@ -377,7 +368,7 @@ inline FArchive& operator<<(FArchive& Ar, FClothSimulationData& Sim)
     return Ar;
 }
 
-inline FArchive& operator<<(FArchive& Ar, FClothLODData& LOD)
+inline FArchive &operator<<(FArchive &Ar, FClothLODData &LOD)
 {
     Ar << LOD.SimPositions;
     Ar << LOD.SimIndices;
@@ -391,9 +382,18 @@ inline FArchive& operator<<(FArchive& Ar, FClothLODData& LOD)
     return Ar;
 }
 
-inline FArchive& operator<<(FArchive& Ar, FClothAttachmentData& A)
+inline FArchive &operator<<(FArchive &Ar, FClothAttachmentData &A)
 {
     Ar << A.ClothVertexIndex;
+
+    // Serialize enum as uint8
+    uint8 TypeAsByte = static_cast<uint8>(A.Type);
+    Ar << TypeAsByte;
+    if (Ar.IsLoading())
+    {
+        A.Type = static_cast<EClothAttachmentType>(TypeAsByte);
+    }
+
     Ar << A.BoneName;
     Ar << A.BoneIndex;
     Ar << A.LocalOffset;
@@ -403,14 +403,14 @@ inline FArchive& operator<<(FArchive& Ar, FClothAttachmentData& A)
     return Ar;
 }
 
-inline FArchive& operator<<(FArchive& Ar, FClothCollisionSphere& S)
+inline FArchive &operator<<(FArchive &Ar, FClothCollisionSphere &S)
 {
     Ar << S.Center;
     Ar << S.Radius;
     return Ar;
 }
 
-inline FArchive& operator<<(FArchive& Ar, FClothCollisionCapsule& C)
+inline FArchive &operator<<(FArchive &Ar, FClothCollisionCapsule &C)
 {
     Ar << C.Start;
     Ar << C.End;
@@ -418,7 +418,7 @@ inline FArchive& operator<<(FArchive& Ar, FClothCollisionCapsule& C)
     return Ar;
 }
 
-inline FArchive& operator<<(FArchive& Ar, FClothCollisionBox& B)
+inline FArchive &operator<<(FArchive &Ar, FClothCollisionBox &B)
 {
     Ar << B.Center;
     Ar << B.Extent;
@@ -426,7 +426,7 @@ inline FArchive& operator<<(FArchive& Ar, FClothCollisionBox& B)
     return Ar;
 }
 
-inline FArchive& operator<<(FArchive& Ar, FClothCollisionPrimitive& P)
+inline FArchive &operator<<(FArchive &Ar, FClothCollisionPrimitive &P)
 {
     // enum class → uint8로 직렬화
     uint8 TypeAsByte = static_cast<uint8>(P.Type);

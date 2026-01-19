@@ -12,21 +12,22 @@ cbuffer ClothSimConstants : register(b0)
     uint NumParticles;
     uint NumConstraints;
     uint NumBendConstraints;
-    float DeltaTime;
-
-    float Damping;
-    float3 Gravity;
-
-    float StretchStiffness;
-    float3 Wind;
-
-    float BendStiffness;
-    float AirDrag;
-    uint NumIterations;
-    uint CurrentIteration;
+    uint NumKinematicTargets;
     
+    float DeltaTime;
+    float Damping;
+    float StretchStiffness;
+    float BendStiffness;
+
+    float3 Gravity;
+    float AirDrag;
+
+    float3 Wind;
+    uint NumIterations;
+    
+    uint CurrentIteration;
     uint UseXPBD;
-    float3 TempPadding;
+    float2 TempPadding;
 
     float4x4 WorldMatrix;
 };
@@ -83,6 +84,21 @@ struct FBendConstraint
     float Stiffness;
     float Compliance; // XPBD
     float Lambda;     // XPBD
+};
+
+/**
+ * Kinematic target structure
+ * Used for pinning cloth vertices to kinematic targets (e.g., flag on pole)
+ */
+struct FKinematicTarget
+{
+    uint ParticleIndex;    // Which particle to constrain
+    float Stiffness;       // 1.0 = hard kinematic
+    float Padding0;
+    float Padding1;
+    
+    float3 TargetPosition; // World-space target position
+    float Padding2;
 };
 
 /**

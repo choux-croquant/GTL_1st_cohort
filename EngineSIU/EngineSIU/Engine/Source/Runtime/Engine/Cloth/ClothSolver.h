@@ -71,6 +71,7 @@ public:
 
     // Constraint management
     void UpdateAttachmentConstraints(const TArray<FClothAttachmentData> &Attachments);
+    void UpdateKinematicTargets(const TArray<FClothAttachmentData> &Attachments);
     void SetCollisionBodies(const TArray<FClothCollisionPrimitive> &Primitives);
 
     // Debug
@@ -115,6 +116,7 @@ private:
     void DispatchIntegration(float DeltaTime);
     void DispatchConstraintSolver(int32 Iteration);
     void DispatchBendConstraintSolver(int32 Iteration);
+    void DispatchApplyKinematicTargets();
     void DispatchApplyConstraintDeltas();
     void DispatchNormalUpdate();
 
@@ -137,7 +139,8 @@ private:
     // Compute shaders
     ID3D11ComputeShader *IntegrateCS;
     ID3D11ComputeShader *ConstraintSolverCS;
-    ID3D11ComputeShader* BendConstraintSolverCS;
+    ID3D11ComputeShader *BendConstraintSolverCS;
+    ID3D11ComputeShader *ApplyKinematicTargetsCS;
     ID3D11ComputeShader *UpdateNormalsCS;
     ID3D11ComputeShader *ClearNormalsCS;
     ID3D11ComputeShader *NormalizeNormalsCS;
@@ -149,6 +152,7 @@ private:
     ID3D11Buffer *InvMassBuffer;
     ID3D11Buffer *ConstraintBuffer;
     ID3D11Buffer *BendConstraintBuffer;
+    ID3D11Buffer *KinematicTargetBuffer;
     ID3D11Buffer *IndexBuffer;
     ID3D11Buffer *NormalBuffer;
 
@@ -164,6 +168,7 @@ private:
     ID3D11ShaderResourceView *VelocitySRV;
     ID3D11ShaderResourceView *ConstraintSRV;
     ID3D11ShaderResourceView *BendConstraintSRV;
+    ID3D11ShaderResourceView *KinematicTargetSRV;
     ID3D11ShaderResourceView *IndexSRV;
     ID3D11ShaderResourceView *NormalSRV;
 
@@ -182,6 +187,7 @@ private:
     TArray<float> InvMasses;
     TArray<FClothDistanceConstraint> Constraints;
     TArray<FClothBendConstraint> BendConstraints;
+    TArray<FClothKinematicTargetGPU> KinematicTargets;
     TArray<uint32> Indices;
 
     // State tracking
@@ -192,6 +198,7 @@ private:
     uint32 NumParticles;
     uint32 NumConstraints;
     uint32 NumBendConstraints;
+    uint32 NumKinematicTargets;
     uint32 NumTriangles;
     bool bInitialized;
 

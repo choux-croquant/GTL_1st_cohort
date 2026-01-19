@@ -19,6 +19,43 @@ class UClothComponent;
 class UWorld;
 
 /**
+ * Explosion force - Transient radial force affecting all cloth
+ */
+struct FClothExplosionForce
+{
+    FVector WorldPosition; // Explosion center in world space
+    float Strength;        // Force magnitude
+    float Radius;          // Radius of effect
+    float TimeRemaining;   // Auto-remove when expired
+
+    FClothExplosionForce()
+        : WorldPosition(FVector::ZeroVector), Strength(0.0f), Radius(0.0f), TimeRemaining(0.0f)
+    {
+    }
+
+    FClothExplosionForce(const FVector &InPosition, float InStrength, float InRadius, float InDuration)
+        : WorldPosition(InPosition), Strength(InStrength), Radius(InRadius), TimeRemaining(InDuration)
+    {
+    }
+};
+
+/**
+ * Global forces applied to all cloth instances in world-space coordinates
+ * These forces do not transform with individual cloth instances
+ */
+struct FClothGlobalForces
+{
+    FVector GlobalGravity;                   // World-space gravity (e.g., 0, 0, -980)
+    FVector GlobalWind;                      // World-space wind direction and strength
+    TArray<FClothExplosionForce> Explosions; // Transient explosion forces
+
+    FClothGlobalForces()
+        : GlobalGravity(0.0f, 0.0f, -980.0f), GlobalWind(0.0f, 0.0f, 0.0f)
+    {
+    }
+};
+
+/**
  * Cloth World - Central manager for cloth simulations
  * Per-world singleton that owns and updates all cloth instances
  */
@@ -47,7 +84,7 @@ public:
     /**
      * Registration API for components
      */
-    FClothInstance* RegisterClothInstance(UClothComponent *Component, UClothAsset *Asset, const FClothConfig &Config);
+    FClothInstance *RegisterClothInstance(UClothComponent *Component, UClothAsset *Asset, const FClothConfig &Config);
     void UnregisterClothInstance(FClothInstance *Instance);
 
     /**
@@ -61,6 +98,14 @@ public:
      */
     FClothSolver *GetSolver() { return Solver; }
     const FClothSolver *GetSolver() const { return Solver; }
+
+    /**
+     * Global force API - Forces applied to all cloth instances in world-space
+     */
+    void SetGlobalGravity(const FVector &InGravity);
+    void SetGlobalWind(const FVector &InWind);
+    void AddExplosionForce(const FVector &Position, float Strength, float Radius, float Duration);
+    const FClothGlobalForces &GetGlobalForces() const { return GlobalForces; }
 
 private:
     /**
@@ -85,13 +130,16 @@ private:
     FDXDShaderManager *ShaderManager;
 
     // Shared solver for all instances
-    FClothSolver* Solver;
+    FClothSolver *Solver;
 
     // All active cloth instances
-    TArray<FClothInstance*> ActiveInstances;
+    TArray<FClothInstance *> ActiveInstances;
 
     // Instances pending removal
-    TArray<FClothInstance*> PendingRemoval;
+    TArray<FClothInstance *> PendingRemoval;
+
+    // Global forces applied to all instances
+    FClothGlobalForces GlobalForces;
 
     // State
     bool bIsInitialized;
