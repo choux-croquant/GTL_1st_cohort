@@ -20,6 +20,7 @@
         (p) = nullptr;  \
     }
 
+
 FClothSolver::FClothSolver()
     : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), IntegrateCS(nullptr), ConstraintSolverCS(nullptr), BendConstraintSolverCS(nullptr), ApplyKinematicTargetsCS(nullptr), UpdateNormalsCS(nullptr), ClearNormalsCS(nullptr), NormalizeNormalsCS(nullptr), ClothSimConstantBuffer(nullptr), NormalUpdateConstantBuffer(nullptr), CurrentBufferIndex(0), NumParticles(0), NumConstraints(0), NumBendConstraints(0), NumKinematicTargets(0), NumTriangles(0), bInitialized(false), ExternalForceAccum(FVector::ZeroVector)
 {
