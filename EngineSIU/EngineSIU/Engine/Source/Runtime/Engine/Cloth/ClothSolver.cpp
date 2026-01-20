@@ -228,7 +228,7 @@ void FClothSolver::Simulate(float InDeltaTime)
     // Clamp delta time
     float DeltaTime = FMath::Clamp(InDeltaTime, 0.0001f, 0.033f);
     // Test for runtime wind change
-    Config.AirDrag = sin(SimData.CurrentTime) * 10.f;
+    //Config.AirDrag = sin(SimData.CurrentTime) * 10.f;
     // Config.AirDrag = 10.f;
     SimulateCS(DeltaTime);
 
@@ -602,23 +602,6 @@ bool FClothSolver::CreateBuffers()
         }
     }
 
-    // Create kinematic target buffer (dynamic - updated each frame)
-    // Start with reasonable capacity, will be reallocated if needed
-    uint32 maxKinematicTargets = FMath::Max(NumParticles / 10, 16u); // Reserve 10% of particles or min 16
-    bufferDesc.Usage = D3D11_USAGE_DYNAMIC;
-    bufferDesc.ByteWidth = sizeof(FClothKinematicTargetGPU) * maxKinematicTargets;
-    bufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-    bufferDesc.StructureByteStride = sizeof(FClothKinematicTargetGPU);
-    bufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-    bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
-
-    hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &KinematicTargetBuffer);
-    if (FAILED(hr))
-    {
-        UE_LOG(ELogLevel::Warning, TEXT("Failed to create kinematic target buffer (optional feature)"));
-        // Not critical - kinematic targets are optional
-    }
-
     // Create index buffer (if we have triangles)
     if (NumTriangles > 0)
     {
@@ -643,8 +626,26 @@ bool FClothSolver::CreateBuffers()
     hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &NormalBuffer);
     if (FAILED(hr))
     {
+        // Check
         UE_LOG(ELogLevel::Error, TEXT("Failed to create normal buffer"));
         return false;
+    }
+
+    // Create kinematic target buffer (dynamic - updated each frame)
+    // Start with reasonable capacity, will be reallocated if needed
+    uint32 maxKinematicTargets = FMath::Max(NumParticles / 10, 16u); // Reserve 10% of particles or min 16
+    bufferDesc.Usage = D3D11_USAGE_DYNAMIC;
+    bufferDesc.ByteWidth = sizeof(FClothKinematicTargetGPU) * maxKinematicTargets;
+    bufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    bufferDesc.StructureByteStride = sizeof(FClothKinematicTargetGPU);
+    bufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+
+    hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &KinematicTargetBuffer);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("Failed to create kinematic target buffer (optional feature)"));
+        // Not critical - kinematic targets are optional
     }
 
     // Create constant buffers

@@ -67,7 +67,6 @@ void IntegrateCS(uint3 DTid : SV_DispatchThreadID)
     particle.Position += velocity.Velocity * DeltaTime;
     //particle.Position += velocity.Velocity * DeltaTime + 0.5f * acceleration * DeltaTime * DeltaTime;
 
-    // Write back: 항상 PositionWrite에 기록
     PositionWrite[idx] = particle;
     VelocityBuffer[idx] = velocity;
 }

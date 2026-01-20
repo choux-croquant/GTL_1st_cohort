@@ -122,7 +122,7 @@ void FClothInstance::Simulate(float DeltaTime)
         const FClothGlobalForces &globalForces = ClothWorld->GetGlobalForces();
 
         // Add global forces (always in world space)
-        totalGravity += globalForces.GlobalGravity;
+        //totalGravity += globalForces.GlobalGravity;
         totalWind += globalForces.GlobalWind;
 
         // Evaluate explosion forces for this instance

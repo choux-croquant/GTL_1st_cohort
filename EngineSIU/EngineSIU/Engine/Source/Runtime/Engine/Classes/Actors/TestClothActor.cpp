@@ -67,7 +67,7 @@ void ATestClothActor::Tick(float DeltaTime)
 
 void ATestClothActor::CreateTestCloth()
 {
-    const int32 GridSize = 20;
+    const int32 GridSize = 4;
     const float Spacing = 5.0f; // 10 cm spacing between particles
 
     TArray<FVector> positions;
@@ -247,6 +247,16 @@ void ATestClothActor::CreateTestCloth()
         }
     }
 
+    // Attachment
+    FClothAttachmentData attachment;
+    attachment.Type = EClothAttachmentType::WorldPosition;
+    attachment.ClothVertexIndex = 40;
+    attachment.WorldPosition = FVector(0, 0, 0);
+    attachment.Stiffness = 1.0f;  // Hard kinematic
+
+    TArray<FClothAttachmentData> attachments;
+    attachments.Add(attachment);
+    
     // Set cloth asset data
     ClothAsset->SetRestPositions(positions);
     ClothAsset->SetIndices(indices);
@@ -260,11 +270,14 @@ void ATestClothActor::CreateTestCloth()
     {
         ClothAsset->AddBendConstraint(constraint);
     }
-
+    for (const FClothAttachmentData& data : attachments)
+    {
+        ClothAsset->AddAttachmentData(data);
+    }
     // Configure simulation parameters
     FClothConfig config;
     config.Mass = 1.0f;
-    config.Damping = 0.95f;          // Lower damping for more dynamic motion
+    config.Damping = 0.2f;          // Lower damping for more dynamic motion
     config.StretchStiffness = 0.9f; // High stiffness for structural integrity
     config.BendStiffness = 0.9f;
     config.NumIterations = 2;        // Increase iterations for better convergence
