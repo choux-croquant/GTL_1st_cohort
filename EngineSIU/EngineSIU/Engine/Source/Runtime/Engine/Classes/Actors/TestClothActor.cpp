@@ -3,7 +3,11 @@
 #include "UObject/ObjectFactory.h"
 #include "Components/ClothMeshComponent.h"
 #include "Engine/ClothAsset.h"
-#include <functional> 
+#include "Engine/StaticMeshActor.h"
+#include "Components/StaticMeshComponent.h"
+#include "World/World.h"
+#include "Cloth/ClothInstance.h"
+#include <functional>
 
 struct FEdge
 {
@@ -18,7 +22,7 @@ struct FEdge
         B = FMath::Max(InA, InB);
     }
 
-    bool operator==(const FEdge& Other) const
+    bool operator==(const FEdge &Other) const
     {
         return A == Other.A && B == Other.B;
     }
@@ -26,10 +30,10 @@ struct FEdge
 
 namespace std
 {
-    template<>
+    template <>
     struct hash<FEdge>
     {
-        size_t operator()(const FEdge& Edge) const noexcept
+        size_t operator()(const FEdge &Edge) const noexcept
         {
             // 간단한 정수 해시 조합
             size_t h1 = std::hash<uint32>()(Edge.A);
@@ -47,6 +51,11 @@ ATestClothActor::ATestClothActor()
     RootComponent = ClothMesh;
 
     ClothAsset = FObjectFactory::ConstructObject<UClothAsset>(this, TEXT("TestClothAsset"));
+
+    AttachmentDriver = nullptr;
+    AnimationTime = 0.0f;
+    DriverInitialPosition = FVector::ZeroVector;
+    bDriverSpawned = false;
 }
 
 void ATestClothActor::BeginPlay()
@@ -56,13 +65,80 @@ void ATestClothActor::BeginPlay()
     // Generate simple test cloth
     CreateTestCloth();
 
+    // Cache attachment data from the cloth asset for runtime updates
+    if (ClothAsset)
+    {
+        const TArray<FClothAttachmentData> &assetAttachments = ClothAsset->GetAttachmentData();
+        CachedAttachments.Empty();
+        for (const FClothAttachmentData &data : assetAttachments)
+        {
+            CachedAttachments.Add(data);
+        }
+    }
+
     // Assign to component
     ClothMesh->SetClothAsset(ClothAsset);
     ClothMesh->StartSimulation();
+
+    // Note: Attachment driver will be spawned on first Tick to avoid iterator invalidation
+    // during World::BeginPlay() actor iteration
 }
 
 void ATestClothActor::Tick(float DeltaTime)
 {
+    Super::Tick(DeltaTime);
+
+    // Spawn attachment driver on first tick (after BeginPlay has completed)
+    // This avoids iterator invalidation during World::BeginPlay()
+    if (!bDriverSpawned)
+    {
+        bDriverSpawned = true;
+
+        // Position driver above the cloth
+        FVector driverSpawnLocation = GetActorLocation() + FVector(0.0f, 0.0f, 20.0f);
+
+        // Spawn the attachment driver actor
+        UWorld *world = GetWorld();
+        if (world)
+        {
+            AttachmentDriver = world->SpawnActor<AStaticMeshActor>();
+        }
+
+        if (AttachmentDriver)
+        {
+            // Set position after spawning
+            AttachmentDriver->SetActorLocation(driverSpawnLocation);
+
+            // Store initial position for animation
+            DriverInitialPosition = driverSpawnLocation;
+
+            // Set up the attachment driver mesh component if it exists
+            UStaticMeshComponent *meshComp = AttachmentDriver->GetStaticMeshComponent();
+            if (meshComp)
+            {
+                // The mesh could be set here if we have a specific mesh asset
+                meshComp->SetWorldLocation(driverSpawnLocation);
+            }
+        }
+    }
+
+    // Accumulate animation time
+    AnimationTime += DeltaTime;
+
+    // Animate the attachment driver with a simple oscillating motion
+    // This demonstrates the cloth following the moving attachment point
+    if (AttachmentDriver)
+    {
+        // Sinusoidal motion: oscillate left-right and up-down
+        //float horizontalOffset = FMath::Sin(AnimationTime * 2.0f) * 10.0f; // 10 cm amplitude
+        //float verticalOffset = FMath::Cos(AnimationTime * 1.5f) * 5.0f;    // 5 cm amplitude
+
+        //FVector newPosition = DriverInitialPosition + FVector(0.0f, horizontalOffset, verticalOffset);
+        //AttachmentDriver->SetActorLocation(newPosition);
+    }
+
+    // Update attachment positions to follow the driver
+    UpdateAttachments();
 }
 
 void ATestClothActor::CreateTestCloth()
@@ -88,14 +164,9 @@ void ATestClothActor::CreateTestCloth()
             positions.Add(pos);
 
             // Top row is fixed (pinned)
-            float invMass = (y == 0) ? 0.0f : 1.0f;
+            //float invMass = (y == 0) ? 0.0f : 1.0f;
+            float invMass = 1.0f;
             invMasses.Add(invMass);
-            /*bool bIsTopRow = (y == 0);
-            bool bIsLeftCorner = (x == 0);
-            bool bIsRightCorner = (x == GridSize - 1);
-
-            float invMass = (bIsTopRow && (bIsLeftCorner || bIsRightCorner)) ? 0.0f : 1.0f;
-            invMasses.Add(invMass);*/
         }
     }
 
@@ -171,19 +242,21 @@ void ATestClothActor::CreateTestCloth()
 
     const uint32 NumTriangles = indices.Num() / 3;
 
-    auto FindOppositeVertex = [&](uint32 TriIdx, const FEdge& Edge) -> uint32
+    auto FindOppositeVertex = [&](uint32 TriIdx, const FEdge &Edge) -> uint32
     {
         uint32 i0 = indices[TriIdx * 3 + 0];
         uint32 i1 = indices[TriIdx * 3 + 1];
         uint32 i2 = indices[TriIdx * 3 + 2];
 
-        if (i0 != Edge.A && i0 != Edge.B) return i0;
-        if (i1 != Edge.A && i1 != Edge.B) return i1;
+        if (i0 != Edge.A && i0 != Edge.B)
+            return i0;
+        if (i1 != Edge.A && i1 != Edge.B)
+            return i1;
         return i2;
     };
 
-    auto CalculateDihedralAngle = [&](const FVector& A, const FVector& B,
-        const FVector& C, const FVector& D) -> float
+    auto CalculateDihedralAngle = [&](const FVector &A, const FVector &B,
+                                      const FVector &C, const FVector &D) -> float
     {
         FVector e = B - A;
         FVector n1 = FVector::CrossProduct(C - A, e);
@@ -215,9 +288,9 @@ void ATestClothActor::CreateTestCloth()
         EdgeToTriangles.FindOrAdd(FEdge(i2, i0)).Add(triIdx);
     }
 
-    for (auto& Pair : EdgeToTriangles)
+    for (auto &Pair : EdgeToTriangles)
     {
-        const TArray<uint32>& Tris = Pair.Value;
+        const TArray<uint32> &Tris = Pair.Value;
         if (Tris.Num() == 2)
         {
             FEdge edge = Pair.Key;
@@ -239,7 +312,7 @@ void ATestClothActor::CreateTestCloth()
             bc.ParticleC = opp0;
             bc.ParticleD = opp1;
             bc.RestAngle = restAngle;
-            bc.Stiffness = 1.0f;     // 기본값, 또는 Config.BendStiffness 사용
+            bc.Stiffness = 1.0f;
             bc.Compliance = 0.0f;
             bc.Lambda = 0.0f;
 
@@ -247,16 +320,18 @@ void ATestClothActor::CreateTestCloth()
         }
     }
 
-    // Attachment
+    // Set up attachment points for the cloth
+    // Attach the top-left corner (vertex 0) to follow the attachment driver
+    TArray<FClothAttachmentData> attachments;
+
     FClothAttachmentData attachment;
     attachment.Type = EClothAttachmentType::WorldPosition;
-    attachment.ClothVertexIndex = 40;
-    attachment.WorldPosition = FVector(0, 0, 0);
-    attachment.Stiffness = 1.0f;  // Hard kinematic
-
-    TArray<FClothAttachmentData> attachments;
+    attachment.ClothVertexIndex = 0;         // Top-left corner
+    attachment.WorldPosition = positions[0]; // Will be updated each frame to follow driver
+    attachment.Stiffness = 1.0f;             // Hard kinematic constraint
+    attachment.bIsKinematic = true;
     attachments.Add(attachment);
-    
+
     // Set cloth asset data
     ClothAsset->SetRestPositions(positions);
     ClothAsset->SetIndices(indices);
@@ -266,23 +341,62 @@ void ATestClothActor::CreateTestCloth()
     {
         ClothAsset->AddDistanceConstraint(constraint);
     }
-    for (const FClothBendConstraint& constraint : bendConstraints)
+    for (const FClothBendConstraint &constraint : bendConstraints)
     {
         ClothAsset->AddBendConstraint(constraint);
     }
-    for (const FClothAttachmentData& data : attachments)
+    for (const FClothAttachmentData &data : attachments)
     {
         ClothAsset->AddAttachmentData(data);
     }
+
     // Configure simulation parameters
     FClothConfig config;
     config.Mass = 1.0f;
-    config.Damping = 0.2f;          // Lower damping for more dynamic motion
-    config.StretchStiffness = 0.9f; // High stiffness for structural integrity
+    config.Damping = 0.2f;
+    config.StretchStiffness = 0.9f;
     config.BendStiffness = 0.9f;
-    config.NumIterations = 2;        // Increase iterations for better convergence
+    config.NumIterations = 2;
     config.TimeStep = 0.016f;
     config.bUseXPBD = false;
 
     ClothAsset->SetConfig(config);
+}
+
+void ATestClothActor::UpdateAttachments()
+{
+    // Update attachment positions to follow the driver mesh
+    // This is called every frame to keep the cloth attached to moving objects
+
+    if (!AttachmentDriver || !ClothMesh || CachedAttachments.Num() == 0)
+        return;
+
+    // Get the current driver position
+    FVector driverPosition = AttachmentDriver->GetActorLocation();
+
+    // Update all attachment world positions to follow the driver
+    for (int32 i = 0; i < CachedAttachments.Num(); ++i)
+    {
+        FClothAttachmentData &attachment = CachedAttachments[i];
+
+        // For ActorTransform type, use the driver's world position
+        if (attachment.Type == EClothAttachmentType::ActorTransform)
+        {
+            attachment.WorldPosition = driverPosition + attachment.LocalOffset.GetTranslation();
+        }
+        else if (attachment.Type == EClothAttachmentType::WorldPosition)
+        {
+            // For world position attachments to the driver, update to follow it
+            // In this test case, we'll make them follow the driver position
+            attachment.WorldPosition = driverPosition;
+        }
+    }
+
+    // Send updated attachments to the cloth component's instance
+    // The component will forward them to the solver for GPU processing
+    FClothInstance *instance = ClothMesh->GetClothInstance();
+    if (instance)
+    {
+        instance->UpdateAttachments(CachedAttachments);
+    }
 }
