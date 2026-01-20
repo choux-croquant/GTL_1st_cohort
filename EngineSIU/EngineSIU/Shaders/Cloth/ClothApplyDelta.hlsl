@@ -1,11 +1,12 @@
 #include "ClothCommon.hlsli"
 
-static const float kScale = 1000.0f;
-
 StructuredBuffer<FClothParticle> PositionRead : register(t0);
+
 RWStructuredBuffer<int3> PositionDelta  : register(u0);
 RWStructuredBuffer<int>  PositionWeight : register(u1);
 RWStructuredBuffer<FClothParticle> PositionWrite : register(u2);
+
+static const float kScale = 1000.0f;
 
 [numthreads(64, 1, 1)]
 void ApplyConstraintDeltasCS(uint3 DTid : SV_DispatchThreadID)

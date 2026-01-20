@@ -12,10 +12,6 @@ StructuredBuffer<FKinematicTarget> KinematicTargetBuffer : register(t0);
 // Input/Output buffer
 RWStructuredBuffer<FClothParticle> PositionBuffer : register(u0);
 
-/**
- * Apply kinematic target positions
- * One thread per kinematic target
- */
 [numthreads(64, 1, 1)]
 void ApplyKinematicTargetsCS(uint3 DTid : SV_DispatchThreadID)
 {
