@@ -2,6 +2,8 @@
  * Cloth World - Centralized cloth simulation manager
  * Manages all cloth instances and runs simulation once per frame
  * Similar to PhysicsManager for physics bodies
+ *
+ * Now supports both Legacy (per-instance solver) and Batched (LOD-based batching) modes
  */
 
 #pragma once
@@ -9,6 +11,7 @@
 #include "HAL/PlatformType.h"
 #include "ClothInstance.h"
 #include "ClothSolver.h"
+#include "ClothBatchTypes.h"
 #include "Container/Array.h"
 
 // Forward declarations
@@ -17,6 +20,8 @@ class FDXDBufferManager;
 class FDXDShaderManager;
 class UClothComponent;
 class UWorld;
+class FClothBatchManager;
+class FClothInstanceHandle;
 
 /**
  * Explosion force - Transient radial force affecting all cloth
@@ -82,10 +87,17 @@ public:
     void Update(float DeltaTime);
 
     /**
-     * Registration API for components
+     * Registration API for components - Legacy mode
      */
     FClothInstance *RegisterClothInstance(UClothComponent *Component, UClothAsset *Asset, const FClothConfig &Config);
     void UnregisterClothInstance(FClothInstance *Instance);
+
+    /**
+     * Registration API for components - Batched mode
+     */
+    FClothInstanceHandle *RegisterClothInstanceBatched(UClothComponent *Component, UClothAsset *Asset,
+                                                       const FClothConfig &Config, EClothLODLevel InitialLOD = EClothLODLevel::LOD_0);
+    void UnregisterClothInstanceBatched(FClothInstanceHandle *Instance);
 
     /**
      * Query
@@ -107,6 +119,19 @@ public:
     void AddExplosionForce(const FVector &Position, float Strength, float Radius, float Duration);
     const FClothGlobalForces &GetGlobalForces() const { return GlobalForces; }
 
+    /**
+     * Mode management
+     */
+    void SetSystemMode(EClothSystemMode Mode);
+    EClothSystemMode GetSystemMode() const { return SystemMode; }
+
+    /**
+     * LOD management
+     */
+    void SetLODSelectionParams(const FClothLODSelectionParams &Params);
+    FClothBatchManager *GetBatchManager(EClothLODLevel LOD);
+    int32 GetNumInstancesInLOD(EClothLODLevel LOD) const;
+
 private:
     /**
      * Update all instances before simulation
@@ -117,11 +142,23 @@ private:
      * Run GPU simulation for all instances
      */
     void SimulateAllInstances(float DeltaTime);
+    void SimulateAllBatches(float DeltaTime);
 
     /**
      * Clean up destroyed instances
      */
     void CleanupDestroyedInstances();
+
+    /**
+     * Process LOD transitions
+     */
+    void ProcessLODTransitions();
+
+    /**
+     * Initialize batch managers
+     */
+    void InitializeBatchManagers();
+    void ReleaseBatchManagers();
 
 private:
     // Graphics resources
@@ -129,14 +166,19 @@ private:
     FDXDBufferManager *BufferManager;
     FDXDShaderManager *ShaderManager;
 
-    // Shared solver for all instances
+    // System mode
+    EClothSystemMode SystemMode;
+
+    // Legacy mode resources
     FClothSolver *Solver;
-
-    // All active cloth instances
     TArray<FClothInstance *> ActiveInstances;
-
-    // Instances pending removal
     TArray<FClothInstance *> PendingRemoval;
+
+    // Batched mode resources
+    FClothBatchManager *LODBatches[static_cast<int32>(EClothLODLevel::Max)];
+    TArray<FClothInstanceHandle *> BatchedInstances;
+    TArray<FClothInstanceHandle *> BatchedPendingRemoval;
+    FClothLODSelectionParams LODSelectionParams;
 
     // Global forces applied to all instances
     FClothGlobalForces GlobalForces;

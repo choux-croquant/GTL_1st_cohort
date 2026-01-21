@@ -221,6 +221,7 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\BehellaGameMode.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\BehellaScreenUI.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\Camera.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\TestBatchedClothActor.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Animation\AnimCustomNotify.cpp" />
     <ClCompile Include="Engine\Contents\AnimInstance\EnemyAnimInstance.cpp" />
     <ClCompile Include="Engine\Contents\AnimInstance\LuaScriptAnimInstance.cpp" />
@@ -397,6 +398,9 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\PhysicsEngine\BodyInstance.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\PhysicsEngine\ConstraintInstance.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\PhysicsEngine\PhysicsAsset.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchedSolver.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchManager.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothInstanceHandle.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothSolver.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothInstance.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothWorld.cpp" />
@@ -587,6 +591,7 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\BehellaGameMode.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\BehellaScreenUI.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\Camera.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\TestBatchedClothActor.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Animation\AnimCustomNotify.h" />
     <ClInclude Include="Engine\Contents\AnimInstance\EnemyAnimInstance.h" />
     <ClInclude Include="Engine\Contents\AnimInstance\LuaScriptAnimInstance.h" />
@@ -811,6 +816,10 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\PhysicsEngine\BodyInstance.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\PhysicsEngine\ConstraintInstance.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\PhysicsEngine\PhysicsAsset.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchedSolver.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchManager.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchTypes.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothInstanceHandle.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothSimulationData.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothGPUStructs.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothSolver.h" />

@@ -34,12 +34,13 @@ cbuffer ClothSimConstants : register(b0)
 
 /**
  * Particle data structure
- * Stores position and inverse mass for each cloth particle
+ * Stores position and instance ID for batched simulation
+ * InvMass is now stored in a separate buffer for batching support
  */
 struct FClothParticle
 {
     float3 Position;
-    float InvMass;  // 0 = fixed/kinematic particle
+    uint InstanceID;  // Which instance owns this particle (for batched simulation)
 };
 
 /**
@@ -99,6 +100,42 @@ struct FKinematicTarget
     
     float3 TargetPosition; // World-space target position
     float Padding2;
+};
+
+/**
+ * Per-instance parameters for batched simulation
+ * Allows different instances to have different material properties
+ */
+struct FClothInstanceParameters
+{
+    // Forces (world-space)
+    float3 Gravity;
+    float GravityMultiplier;
+    
+    float3 Wind;
+    float WindStrength;
+    
+    // Material properties
+    float AirDrag;
+    float Damping;
+    float StretchStiffness;
+    float BendStiffness;
+    
+    // Instance identification
+    uint ParticleOffset;
+    uint ParticleCount;
+    uint ConstraintOffset;
+    uint ConstraintCount;
+    
+    uint BendConstraintOffset;
+    uint BendConstraintCount;
+    uint KinematicTargetOffset;
+    uint KinematicTargetCount;
+    
+    uint TriangleOffset;
+    uint TriangleCount;
+    uint IsActive;
+    uint Padding;
 };
 
 /**

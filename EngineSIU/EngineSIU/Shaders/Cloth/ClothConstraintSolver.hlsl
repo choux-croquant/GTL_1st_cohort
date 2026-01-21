@@ -1,9 +1,18 @@
+/**
+ * Cloth Distance Constraint Solver
+ * Solves distance constraints using Position-Based Dynamics
+ * Now supports batched simulation with per-instance parameters
+ */
+
 #include "ClothCommon.hlsli"
 
-// Read-only
-StructuredBuffer<FClothParticle>  PositionRead        : register(t0);
+// Read-only buffers
+StructuredBuffer<FClothParticle> PositionRead : register(t0);
 StructuredBuffer<FDistanceConstraint> ConstraintBuffer : register(t1);
+StructuredBuffer<float> InvMassBuffer : register(t2);  // NEW: Separate inverse mass buffer
+StructuredBuffer<FClothInstanceParameters> InstanceParams : register(t3);  // NEW: Per-instance parameters
 
+// Write buffers for delta accumulation
 RWStructuredBuffer<int3> PositionDelta : register(u0);
 RWStructuredBuffer<int>  PositionWeight : register(u1);
 
@@ -27,12 +36,22 @@ void SolveDistanceConstraintsCS(uint3 DTid : SV_DispatchThreadID)
     float error = currentLength - constraint.RestLength;
     float3 dir = deltaPos / currentLength;
 
-    float w1 = pA.InvMass;
-    float w2 = pB.InvMass;
+    // NEW: Load inverse masses from separate buffer
+    float w1 = InvMassBuffer[constraint.ParticleA];
+    float w2 = InvMassBuffer[constraint.ParticleB];
     float wSum = w1 + w2;
     if (wSum < 1e-6f) return;
 
-    float stiffness = constraint.Stiffness * StretchStiffness;
+    // NEW: Get per-instance stiffness multiplier
+    // Use instance ID from first particle (both should belong to same instance)
+    uint instanceID = pA.InstanceID;
+    FClothInstanceParameters params = InstanceParams[instanceID];
+    
+    // Skip if instance is inactive
+    if (params.IsActive == 0) return;
+    
+    // Apply per-instance stiffness multiplier
+    float stiffness = constraint.Stiffness * params.StretchStiffness;
 
     float3 correctionA, correctionB;
 

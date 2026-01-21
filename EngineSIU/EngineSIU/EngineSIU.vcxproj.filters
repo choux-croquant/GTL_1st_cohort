@@ -1670,6 +1670,10 @@
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIEFreeFlyPawn.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIEPlayerController.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIETestGameMode.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchedSolver.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchManager.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothInstanceHandle.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\TestBatchedClothActor.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="EngineSIU.natvis" />
@@ -1851,6 +1855,11 @@
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIEFreeFlyPawn.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIEPlayerController.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIETestGameMode.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchedSolver.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchManager.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchTypes.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothInstanceHandle.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\TestBatchedClothActor.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\CompositingShader.hlsl" />

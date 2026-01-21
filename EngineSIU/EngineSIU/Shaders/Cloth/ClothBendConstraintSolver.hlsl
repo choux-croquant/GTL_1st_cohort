@@ -1,8 +1,18 @@
+/**
+ * Cloth Bend Constraint Solver
+ * Solves bend constraints using dihedral angle constraints
+ * Now supports batched simulation with per-instance parameters
+ */
+
 #include "ClothCommon.hlsli"
 
+// Read-only buffers
 StructuredBuffer<FClothParticle> PositionRead : register(t0);
 StructuredBuffer<FBendConstraint> BendConstraintBuffer : register(t1);
+StructuredBuffer<float> InvMassBuffer : register(t2);  // NEW: Separate inverse mass buffer
+StructuredBuffer<FClothInstanceParameters> InstanceParams : register(t3);  // NEW: Per-instance parameters
 
+// Write buffers
 RWStructuredBuffer<int3> PositionDelta : register(u0);
 RWStructuredBuffer<int> PositionWeight : register(u1);
 
@@ -40,15 +50,21 @@ void SolveBendConstraintsCS(uint3 DTid : SV_DispatchThreadID)
     // Calculate error
     float angleError = currentAngle - constraint.RestAngle;
 
-    // PBD formulation for dihedral angle constraint
-    // Compute gradients and corrections (simplified)
-    float stiffness = constraint.Stiffness * BendStiffness;
+    // NEW: Get per-instance bend stiffness multiplier
+    uint instanceID = pA.InstanceID;
+    FClothInstanceParameters params = InstanceParams[instanceID];
+    
+    // Skip if instance is inactive
+    if (params.IsActive == 0) return;
+    
+    // Apply per-instance bend stiffness multiplier
+    float stiffness = constraint.Stiffness * params.BendStiffness;
 
-    // Inverse masses
-    float w1 = pA.InvMass;
-    float w2 = pB.InvMass;
-    float w3 = pC.InvMass;
-    float w4 = pD.InvMass;
+    // NEW: Load inverse masses from separate buffer
+    float w1 = InvMassBuffer[constraint.ParticleA];
+    float w2 = InvMassBuffer[constraint.ParticleB];
+    float w3 = InvMassBuffer[constraint.ParticleC];
+    float w4 = InvMassBuffer[constraint.ParticleD];
 
     // Gradient magnitudes (approximate, full derivation is complex)
     float edgeLen = length(e);

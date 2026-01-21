@@ -1,7 +1,16 @@
+/**
+ * Cloth Apply Constraint Deltas
+ * Applies accumulated constraint corrections to particle positions
+ * Now supports batched simulation with separate InvMass buffer
+ */
+
 #include "ClothCommon.hlsli"
 
+// Read-only buffers
 StructuredBuffer<FClothParticle> PositionRead : register(t0);
+StructuredBuffer<float> InvMassBuffer : register(t2);  // NEW: Separate inverse mass buffer
 
+// Write buffers
 RWStructuredBuffer<int3> PositionDelta  : register(u0);
 RWStructuredBuffer<int>  PositionWeight : register(u1);
 RWStructuredBuffer<FClothParticle> PositionWrite : register(u2);
@@ -17,8 +26,12 @@ void ApplyConstraintDeltasCS(uint3 DTid : SV_DispatchThreadID)
 
     FClothParticle p = PositionRead[i];
     FClothVelocity velocity = VelocityBuffer[i];
+    
+    // NEW: Load inverse mass from separate buffer
+    float invMass = InvMassBuffer[i];
 
-    if (p.InvMass == 0.0f)
+    // Skip fixed particles
+    if (invMass == 0.0f)
     {
         PositionWrite[i] = p;
         PositionDelta[i] = int3(0, 0, 0);

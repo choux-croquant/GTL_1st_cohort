@@ -1,16 +1,19 @@
 /**
  * Cloth Component - Base component for cloth simulation
  * Handles simulation updates and external forces
+ * Now supports both Legacy and Batched cloth systems
  */
 
 #pragma once
 
 #include "SceneComponent.h"
 #include "../../Cloth/ClothSimulationData.h"
+#include "../../Cloth/ClothBatchTypes.h"
 
 // Forward declarations
 class UClothAsset;
 class FClothInstance;
+class FClothInstanceHandle;
 class USceneComponent;
 class USkeletalMeshComponent;
 
@@ -63,11 +66,15 @@ protected:
     // Cloth asset
     UClothAsset *ClothAsset;
 
-    // Cloth instance (registered with ClothWorld)
+    // Cloth instance (registered with ClothWorld) - Legacy mode
     FClothInstance *ClothInstance;
+
+    // Cloth instance handle - Batched mode
+    FClothInstanceHandle *ClothInstanceHandle;
 
     // State
     bool bIsSimulating;
+    bool bUseBatchedMode;
 
     bool bDebugDrawEnabled;
 
@@ -78,6 +85,12 @@ protected:
     FVector AccumulatedForce;
 
 public:
-    // Access to cloth instance for rendering
+    // Access to cloth instance for rendering (Legacy mode)
     FClothInstance *GetClothInstance() const { return ClothInstance; }
+
+    // Access to cloth instance handle (Batched mode)
+    FClothInstanceHandle *GetClothInstanceHandle() const { return ClothInstanceHandle; }
+
+    // Check which mode is active
+    bool IsBatchedMode() const { return bUseBatchedMode; }
 };

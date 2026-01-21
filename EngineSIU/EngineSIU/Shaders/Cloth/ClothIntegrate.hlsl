@@ -2,14 +2,19 @@
  * Cloth Integration Compute Shader
  * Performs semi-implicit Euler integration for cloth particles
  * Applies external forces (gravity, wind, drag) and predicts new positions
+ * Now supports batched simulation with per-instance parameters
  */
 
 #include "ClothCommon.hlsli"
 
- // Input/Output buffers
+// Input/Output buffers
 RWStructuredBuffer<FClothParticle> PositionRead  : register(u0);
 RWStructuredBuffer<FClothParticle> PositionWrite : register(u1);
 RWStructuredBuffer<FClothVelocity> VelocityBuffer : register(u2);
+
+// Batched simulation buffers
+StructuredBuffer<float> InvMassBuffer : register(t2);  // Separate inverse mass buffer
+StructuredBuffer<FClothInstanceParameters> InstanceParams : register(t3);  // Per-instance parameters
 
 [numthreads(64, 1, 1)]
 void IntegrateCS(uint3 DTid : SV_DispatchThreadID)
@@ -23,32 +28,45 @@ void IntegrateCS(uint3 DTid : SV_DispatchThreadID)
     // Load particle data
     FClothParticle particle = PositionRead[idx];
     FClothVelocity velocity = VelocityBuffer[idx];
+    float invMass = InvMassBuffer[idx];  // NEW: Load from separate buffer
 
     // Skip fixed particles
-    if (particle.InvMass == 0.0f)
+    if (invMass == 0.0f)
     {
         PositionWrite[idx] = particle;
         VelocityBuffer[idx] = velocity;
         return;
     }
 
-    // Calculate total external force
+    // NEW: Get per-instance parameters
+    uint instanceID = particle.InstanceID;
+    FClothInstanceParameters params = InstanceParams[instanceID];
+    
+    // Check if instance is active
+    if (params.IsActive == 0)
+    {
+        PositionWrite[idx] = particle;
+        VelocityBuffer[idx] = velocity;
+        return;
+    }
+
+    // Calculate total external force using per-instance parameters
     float3 force = float3(0, 0, 0);
 
-    // Add gravity
-    force += Gravity;
+    // Add per-instance gravity
+    force += params.Gravity * params.GravityMultiplier;
 
-    // Add wind with air drag
-    force += Wind * AirDrag;
+    // Add per-instance wind with air drag
+    force += params.Wind * params.WindStrength * params.AirDrag;
 
     // Acceleration
-    float3 acceleration = force * particle.InvMass;
+    float3 acceleration = force * invMass;
 
     // Semi-implicit Euler
     velocity.Velocity += acceleration * DeltaTime;
 
-    // Velocity damping
-    velocity.Velocity *= (1.0f - Damping);
+    // Velocity damping (per-instance)
+    velocity.Velocity *= (1.0f - params.Damping);
 
     // Clamp velocity
     float maxVelocity = 10000.0f;
@@ -59,7 +77,7 @@ void IntegrateCS(uint3 DTid : SV_DispatchThreadID)
     }
 
     particle.Position += velocity.Velocity * DeltaTime;
-    //particle.Position += velocity.Velocity * DeltaTime + 0.5f * acceleration * DeltaTime * DeltaTime;
 
     PositionWrite[idx] = particle;
+    VelocityBuffer[idx] = velocity;
 }

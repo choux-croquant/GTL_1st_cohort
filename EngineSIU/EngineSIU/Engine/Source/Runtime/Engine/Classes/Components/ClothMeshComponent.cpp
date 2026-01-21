@@ -28,6 +28,7 @@ void UClothMeshComponent::TickComponent(float DeltaTime)
 
     // Update world transform from component hierarchy every frame
     // This ensures the cloth follows its parent component/actor transforms
+    if (!ClothInstance) return;
     WorldTransform = GetWorldMatrix();
     FVector gravity = FTransform(WorldTransform).InverseTransformDirection(ClothInstance->GetClothWorld()->GetGlobalForces().GlobalGravity);
     ClothInstance->SetGravity(gravity);
