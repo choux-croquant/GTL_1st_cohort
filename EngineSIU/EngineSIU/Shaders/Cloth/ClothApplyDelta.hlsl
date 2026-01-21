@@ -5,6 +5,7 @@ StructuredBuffer<FClothParticle> PositionRead : register(t0);
 RWStructuredBuffer<int3> PositionDelta  : register(u0);
 RWStructuredBuffer<int>  PositionWeight : register(u1);
 RWStructuredBuffer<FClothParticle> PositionWrite : register(u2);
+RWStructuredBuffer<FClothVelocity> VelocityBuffer : register(u3);
 
 static const float kScale = 1000.0f;
 
@@ -15,6 +16,7 @@ void ApplyConstraintDeltasCS(uint3 DTid : SV_DispatchThreadID)
     if (i >= NumParticles) return;
 
     FClothParticle p = PositionRead[i];
+    FClothVelocity velocity = VelocityBuffer[i];
 
     if (p.InvMass == 0.0f)
     {
@@ -29,6 +31,9 @@ void ApplyConstraintDeltasCS(uint3 DTid : SV_DispatchThreadID)
 
     p.Position += delta;
     PositionWrite[i] = p;
+    
+    velocity.Velocity = delta / DeltaTime;
+    VelocityBuffer[i] = velocity;
 
     PositionDelta[i] = int3(0, 0, 0);
     PositionWeight[i] = 0;
