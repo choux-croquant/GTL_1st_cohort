@@ -84,11 +84,11 @@ void UWorld::BeginPlay()
     /*ATestClothActor* ClothActor = this->SpawnActor<ATestClothActor>();
     ClothActor->SetActorLocation(FVector(100, 0, 0));*/
 
-    const int32 GridX = 7;
-    const int32 GridY = 7;
-    const float SpacingX = 100.0f;
-    const float SpacingY = 100.0f;
-    const FVector BaseLocation(100.0f, 0.0f, 0.0f);
+    const int32 GridX = 4;
+    const int32 GridY = 4;
+    const float SpacingX = 150.0f;
+    const float SpacingY = 150.0f;
+    const FVector BaseLocation(0.0f, 0.0f, 0.0f);
 
     for (int32 ix = 0; ix < GridX; ++ix)
     {
@@ -101,8 +101,8 @@ void UWorld::BeginPlay()
             const float OffsetX = ix * SpacingX;
             const float OffsetY = iy * SpacingY;
 
-            ClothActor->SetActorLocation(
-                BaseLocation + FVector(OffsetX, OffsetY, 0.0f));
+            //ClothActor->SetActorLocation(BaseLocation + FVector(OffsetX, OffsetY, 0.0f));
+            ClothActor->DriverInitialPosition = BaseLocation + FVector(OffsetX, OffsetY, 0.0f);
         }
     }
 

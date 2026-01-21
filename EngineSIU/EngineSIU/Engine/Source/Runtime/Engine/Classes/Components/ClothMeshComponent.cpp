@@ -1,6 +1,7 @@
 #include "ClothMeshComponent.h"
 #include "Cloth/ClothSolver.h"
 #include "Cloth/ClothInstance.h"
+#include "Cloth/ClothWorld.h"
 
 UClothMeshComponent::UClothMeshComponent()
     : WorldTransform(FMatrix::Identity), DebugDrawMode(EClothDebugDrawMode::None), bIsVisible(true), bSimulate(true)
@@ -28,6 +29,8 @@ void UClothMeshComponent::TickComponent(float DeltaTime)
     // Update world transform from component hierarchy every frame
     // This ensures the cloth follows its parent component/actor transforms
     WorldTransform = GetWorldMatrix();
+    FVector gravity = FTransform(WorldTransform).InverseTransformDirection(ClothInstance->GetClothWorld()->GetGlobalForces().GlobalGravity);
+    ClothInstance->SetGravity(gravity);
 }
 
 void UClothMeshComponent::GetRenderData(FClothRenderData &OutData) const

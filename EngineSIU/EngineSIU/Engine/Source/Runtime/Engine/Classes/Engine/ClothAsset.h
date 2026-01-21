@@ -37,6 +37,7 @@ public:
     const TArray<float> &GetInvMasses() const { return InvMasses; }
     const TArray<FClothDistanceConstraint> &GetDistanceConstraints() const { return DistanceConstraints; }
     const TArray<FClothBendConstraint> &GetBendConstraints() const { return BendConstraints; }
+    const TArray<FClothAttachmentData>& GetAttachmentData() const { return AttachmentsData; }
     const TArray<uint32> &GetAttachmentIndices() const { return AttachmentIndices; }
     const TArray<FClothVertexPaintData> &GetVertexPaintData() const { return VertexPaintData; }
 
@@ -46,6 +47,7 @@ public:
     void SetInvMasses(const TArray<float> &InInvMasses) { InvMasses = InInvMasses; }
     void AddDistanceConstraint(const FClothDistanceConstraint &Constraint) { DistanceConstraints.Add(Constraint); }
     void AddBendConstraint(const FClothBendConstraint &Constraint) { BendConstraints.Add(Constraint); }
+    void AddAttachmentData(const FClothAttachmentData& Data) { AttachmentsData.Add(Data); }
     void AddAttachmentIndex(uint32 VertexIndex) { AttachmentIndices.Add(VertexIndex); }
 
     // Serialization
@@ -74,6 +76,8 @@ public:
     TArray<FClothDistanceConstraint> DistanceConstraints;
 
     TArray<FClothBendConstraint> BendConstraints;
+
+    TArray<FClothAttachmentData> AttachmentsData;
 
     TArray<uint32> AttachmentIndices;
 

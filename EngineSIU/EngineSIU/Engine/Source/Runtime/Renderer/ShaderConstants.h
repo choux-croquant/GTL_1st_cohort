@@ -264,21 +264,22 @@ struct alignas(16) FClothSimConstants
     uint32 NumParticles;
     uint32 NumConstraints;
     uint32 NumBendConstraints;
-    float DeltaTime;
-    
-    float Damping;
-    FVector Gravity;
-    
-    float StretchStiffness;
-    FVector Wind;
-    
-    float BendStiffness;
-    float AirDrag;
-    uint32 NumIterations;
-    uint32 CurrentIteration;
+    uint32 NumKinematicTargets;
 
+    float DeltaTime;
+    float Damping;
+    float StretchStiffness;
+    float BendStiffness;
+
+    FVector Gravity;
+    float AirDrag;
+
+    FVector Wind;
+    uint32 NumIterations;
+
+    uint32 CurrentIteration;
     uint32 UseXPBD;
-    FVector Padding;
+    FVector2D Padding;
 
     alignas(16) FMatrix WorldMatrix;
 };

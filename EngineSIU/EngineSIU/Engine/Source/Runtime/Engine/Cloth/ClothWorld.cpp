@@ -12,7 +12,6 @@
 #include "Container/Map.h"
 #include "Engine/UserInterface/Console.h"
 
-
 FClothWorld::FClothWorld()
     : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), Solver(nullptr), bIsInitialized(false), TotalParticleCount(0), TotalConstraintCount(0)
 {
@@ -76,9 +75,21 @@ void FClothWorld::Release()
 
 void FClothWorld::Update(float DeltaTime)
 {
-    if (!bIsInitialized || ActiveInstances.Num() == 0) return;
+    if (!bIsInitialized || ActiveInstances.Num() == 0)
+        return;
     QUICK_SCOPE_CYCLE_COUNTER(ClothSimulate_Tick)
     QUICK_GPU_SCOPE_CYCLE_COUNTER(ClothSimulate_Tick_GPU, *FEngineLoop::Renderer.GPUTimingManager)
+
+    // Update transient explosion forces
+    for (int32 i = GlobalForces.Explosions.Num() - 1; i >= 0; --i)
+    {
+        GlobalForces.Explosions[i].TimeRemaining -= DeltaTime;
+        if (GlobalForces.Explosions[i].TimeRemaining <= 0.0f)
+        {
+            GlobalForces.Explosions.RemoveAt(i);
+        }
+    }
+
     UpdateKinematicData(DeltaTime);
 
     SimulateAllInstances(DeltaTime);
@@ -104,8 +115,9 @@ FClothInstance *FClothWorld::RegisterClothInstance(UClothComponent *Component, U
         return nullptr;
     }
 
-    // Link to component
+    // Link to component and world
     Instance->SetOwnerComponent(Component);
+    Instance->SetClothWorld(this);
 
     // Add to active list
     ActiveInstances.Add(Instance);
@@ -122,7 +134,8 @@ FClothInstance *FClothWorld::RegisterClothInstance(UClothComponent *Component, U
 
 void FClothWorld::UnregisterClothInstance(FClothInstance *Instance)
 {
-    if (!Instance) return;
+    if (!Instance)
+        return;
 
     int32 Index = ActiveInstances.Find(Instance);
 
@@ -186,4 +199,23 @@ void FClothWorld::CleanupDestroyedInstances()
         }
     }
     PendingRemoval.Empty();
+}
+
+void FClothWorld::SetGlobalGravity(const FVector &InGravity)
+{
+    GlobalForces.GlobalGravity = InGravity;
+}
+
+void FClothWorld::SetGlobalWind(const FVector &InWind)
+{
+    GlobalForces.GlobalWind = InWind;
+}
+
+void FClothWorld::AddExplosionForce(const FVector &Position, float Strength, float Radius, float Duration)
+{
+    FClothExplosionForce explosion(Position, Strength, Radius, Duration);
+    GlobalForces.Explosions.Add(explosion);
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothWorld: Added explosion force at (%f, %f, %f) with strength %f, radius %f"),
+           Position.X, Position.Y, Position.Z, Strength, Radius);
 }

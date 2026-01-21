@@ -14,6 +14,7 @@
 
 // Forward declarations
 class FClothSolver;
+class FClothWorld;
 class UClothAsset;
 class UClothComponent;
 class FGraphicsDevice;
@@ -89,6 +90,12 @@ public:
     void SetOwnerComponent(UClothComponent *InOwner) { OwnerComponent = InOwner; }
     UClothComponent *GetOwnerComponent() const { return OwnerComponent; }
 
+    /**
+     * Set owning ClothWorld (for accessing global forces)
+     */
+    void SetClothWorld(FClothWorld *InWorld) { ClothWorld = InWorld; }
+    FClothWorld *GetClothWorld() const { return ClothWorld; }
+
     // Data access for solver
     uint32 GetNumParticles() const { return NumParticles; }
     uint32 GetNumConstraints() const { return NumConstraints; }
@@ -96,12 +103,15 @@ public:
     const TArray<float> &GetInvMasses() const { return InvMasses; }
     const TArray<FClothDistanceConstraint> &GetConstraints() const { return Constraints; }
     const TArray<uint32> &GetIndices() const { return Indices; }
-    
-    FClothSolver* GetSolver() const { return Solver; }
+
+    FClothSolver *GetSolver() const { return Solver; }
 
 private:
     // Solver for this instance
-    FClothSolver* Solver;
+    FClothSolver *Solver;
+
+    // Reference to owning ClothWorld (for global forces)
+    FClothWorld *ClothWorld;
 
     // Simulation state
     FClothSimulationData SimData;
