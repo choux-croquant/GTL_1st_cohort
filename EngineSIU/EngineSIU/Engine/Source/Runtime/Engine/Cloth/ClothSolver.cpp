@@ -230,6 +230,18 @@ void FClothSolver::Simulate(float InDeltaTime)
     // Test for runtime wind change
     //Config.AirDrag = sin(SimData.CurrentTime) * 10.f;
     // Config.AirDrag = 10.f;
+    //const int32 NumSubsteps = 3;
+    //const float SubstepDeltaTime = InDeltaTime / (float)NumSubsteps;
+
+    //for (int32 i = 0; i < NumSubsteps; ++i)
+    //{
+    //    // 기존의 SimulateCS 호출 (내부에서 Integration -> Constraints -> VelocityUpdate 수행)
+    //    // 주의: 내부 셰이더에는 반드시 'SubstepDeltaTime'을 넘겨줘야 함
+    //    SimulateCS(SubstepDeltaTime);
+
+    //    // 시간 누적
+    //    SimData.CurrentTime += SubstepDeltaTime;
+    //}
     SimulateCS(DeltaTime);
 
     // Update simulation time
@@ -633,7 +645,7 @@ bool FClothSolver::CreateBuffers()
 
     // Create kinematic target buffer (dynamic - updated each frame)
     // Start with reasonable capacity, will be reallocated if needed
-    uint32 maxKinematicTargets = FMath::Max(NumParticles / 10, 16u); // Reserve 10% of particles or min 16
+    uint32 maxKinematicTargets = FMath::Max(NumParticles / 10, 2560u); // Reserve 10% of particles or min 16
     bufferDesc.Usage = D3D11_USAGE_DYNAMIC;
     bufferDesc.ByteWidth = sizeof(FClothKinematicTargetGPU) * maxKinematicTargets;
     bufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
@@ -1204,10 +1216,11 @@ void FClothSolver::DispatchApplyConstraintDeltas()
         {
             PositionDeltaUAV,     // u0
             PositionWeightUAV,    // u1
-            PositionUAV[writeIdx] // u2: 다음 버퍼에 결과 기록
+            PositionUAV[writeIdx],// u2: 다음 버퍼에 결과 기록
+            VelocityUAV           // u3: VelocityBuffer (in-place)
         };
     UINT initialCounts[3] = {0, 0, 0};
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 3, uavs, initialCounts);
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 4, uavs, initialCounts);
 
     // Bind constants
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &ClothSimConstantBuffer);
@@ -1220,12 +1233,10 @@ void FClothSolver::DispatchApplyConstraintDeltas()
     Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
 
     // Unbind
-    ID3D11UnorderedAccessView *nullUAVs[3] = {nullptr, nullptr, nullptr};
+    ID3D11UnorderedAccessView *nullUAVs[4] = {nullptr, nullptr, nullptr, nullptr};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 3, nullUAVs, nullptr);
     ID3D11ShaderResourceView *nullSRV = nullptr;
     Graphics->DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
-
-    // ping-pong 스왑: 이제 write 버퍼가 새 Current가 됨
 }
 
 void FClothSolver::DispatchNormalUpdate()

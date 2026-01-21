@@ -23,6 +23,9 @@ public:
     // Attachment driver - a StaticMesh that the cloth is attached to
     AStaticMeshActor *AttachmentDriver;
 
+    // Initial driver position
+    FVector DriverInitialPosition;
+
     // Create a simple test cloth (10x10 grid)
     void CreateTestCloth();
 
@@ -36,8 +39,6 @@ private:
     // Animation time for scripted motion
     float AnimationTime;
 
-    // Initial driver position
-    FVector DriverInitialPosition;
 
     // Flag to track if driver has been spawned
     bool bDriverSpawned;

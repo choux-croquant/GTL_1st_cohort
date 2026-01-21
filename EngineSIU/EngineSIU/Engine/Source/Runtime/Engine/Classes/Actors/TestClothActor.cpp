@@ -7,6 +7,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "World/World.h"
 #include "Cloth/ClothInstance.h"
+#include "Classes/Engine/FObjLoader.h"
 #include <functional>
 
 struct FEdge
@@ -95,7 +96,7 @@ void ATestClothActor::Tick(float DeltaTime)
         bDriverSpawned = true;
 
         // Position driver above the cloth
-        FVector driverSpawnLocation = GetActorLocation() + FVector(0.0f, 0.0f, 20.0f);
+        //FVector driverSpawnLocation = GetActorLocation() + FVector(0.0f, 0.0f, 0.0f);
 
         // Spawn the attachment driver actor
         UWorld *world = GetWorld();
@@ -107,17 +108,23 @@ void ATestClothActor::Tick(float DeltaTime)
         if (AttachmentDriver)
         {
             // Set position after spawning
-            AttachmentDriver->SetActorLocation(driverSpawnLocation);
-
+            //AttachmentDriver->SetActorLocation(driverSpawnLocation);
+            AttachmentDriver->SetActorLocation(DriverInitialPosition);
+            
             // Store initial position for animation
-            DriverInitialPosition = driverSpawnLocation;
+            //DriverInitialPosition = driverSpawnLocation;
 
             // Set up the attachment driver mesh component if it exists
             UStaticMeshComponent *meshComp = AttachmentDriver->GetStaticMeshComponent();
+            FString MeshName = "Contents/pole/pole.obj";
+            UStaticMesh* StaticMesh = FObjManager::GetStaticMesh(MeshName.ToWideString());
+            meshComp->SetStaticMesh(StaticMesh);
+            meshComp->SetRelativeScale3D(FVector(2.0f, 2.0f, 4.0f));
+
             if (meshComp)
             {
                 // The mesh could be set here if we have a specific mesh asset
-                meshComp->SetWorldLocation(driverSpawnLocation);
+                //meshComp->SetWorldLocation(driverSpawnLocation);
             }
         }
     }
@@ -129,12 +136,29 @@ void ATestClothActor::Tick(float DeltaTime)
     // This demonstrates the cloth following the moving attachment point
     if (AttachmentDriver)
     {
-        // Sinusoidal motion: oscillate left-right and up-down
-        //float horizontalOffset = FMath::Sin(AnimationTime * 2.0f) * 10.0f; // 10 cm amplitude
-        //float verticalOffset = FMath::Cos(AnimationTime * 1.5f) * 5.0f;    // 5 cm amplitude
+        // 속도와 크기 조절
+        const float Speed = 1.0f;             // 전체 동작 속도
+        const float MoveRadius = 150.0f;      // 위치 이동 반경
+        const float SwayAngleScale = 45.0f;   // 회전 각도 (±45도)
 
-        //FVector newPosition = DriverInitialPosition + FVector(0.0f, horizontalOffset, verticalOffset);
-        //AttachmentDriver->SetActorLocation(newPosition);
+        float Time = AnimationTime * Speed;
+
+        // 1. 위치 이동 (Position): 8자 형태의 큰 궤적 (Lissajous)
+        float OffsetY = FMath::Sin(Time) * MoveRadius;          // 좌우 이동
+        float OffsetX = FMath::Cos(Time * 2.0f) * (MoveRadius * 0.4f); // 앞뒤 이동
+        float OffsetZ = FMath::Sin(Time * 2.0f) * (MoveRadius * 0.2f); // 상하 반동
+
+        FVector NewLocation = DriverInitialPosition + FVector(OffsetX, OffsetY, OffsetZ);
+
+        // 2. 회전 (Rotation)
+        float RollAngle = -FMath::Cos(Time) * SwayAngleScale;   // 좌우 이동 속도에 맞춰 기울기
+        float PitchAngle = FMath::Sin(Time * 2.0f) * (SwayAngleScale * 0.3f); // 앞뒤 이동에 맞춘 기울기
+
+        FRotator NewRotation = FRotator(PitchAngle, 0.0f, RollAngle);
+
+        // 3. 적용
+        AttachmentDriver->SetActorLocation(NewLocation);
+        AttachmentDriver->SetActorRotation(NewRotation);
     }
 
     // Update attachment positions to follow the driver
@@ -143,7 +167,7 @@ void ATestClothActor::Tick(float DeltaTime)
 
 void ATestClothActor::CreateTestCloth()
 {
-    const int32 GridSize = 4;
+    const int32 GridSize = 8;
     const float Spacing = 5.0f; // 10 cm spacing between particles
 
     TArray<FVector> positions;
@@ -164,8 +188,9 @@ void ATestClothActor::CreateTestCloth()
             positions.Add(pos);
 
             // Top row is fixed (pinned)
-            //float invMass = (y == 0) ? 0.0f : 1.0f;
-            float invMass = 1.0f;
+            float invMass = (y == 0) ? 0.0f : 1.0f;
+            //float invMass = 1.0f;
+            //if (y == 0 && (x == 0 || x == GridSize - 1)) invMass = 0.0f;
             invMasses.Add(invMass);
         }
     }
@@ -324,13 +349,22 @@ void ATestClothActor::CreateTestCloth()
     // Attach the top-left corner (vertex 0) to follow the attachment driver
     TArray<FClothAttachmentData> attachments;
 
-    FClothAttachmentData attachment;
-    attachment.Type = EClothAttachmentType::WorldPosition;
-    attachment.ClothVertexIndex = 0;         // Top-left corner
-    attachment.WorldPosition = positions[0]; // Will be updated each frame to follow driver
-    attachment.Stiffness = 1.0f;             // Hard kinematic constraint
-    attachment.bIsKinematic = true;
-    attachments.Add(attachment);
+    for (int32 x = 0; x < GridSize; ++x)
+    {
+        FClothAttachmentData attachment;
+        attachment.Type = EClothAttachmentType::ActorTransform;
+        attachment.ClothVertexIndex = x;
+
+        // 0.0 ~ 22.5 - 10
+        // 0.0 ~ 17.5 - 10
+        float Offset = (15.0f / float(GridSize - 1)) * x;
+        attachment.LocalOffset = FTransform(FVector(0.0f, 0.0f, Offset));
+
+        attachment.Stiffness = 0.98f; // Hard kinematic constraint
+        attachment.bIsKinematic = true;
+
+        attachments.Add(attachment);
+    }
 
     // Set cloth asset data
     ClothAsset->SetRestPositions(positions);
@@ -353,10 +387,10 @@ void ATestClothActor::CreateTestCloth()
     // Configure simulation parameters
     FClothConfig config;
     config.Mass = 1.0f;
-    config.Damping = 0.2f;
-    config.StretchStiffness = 0.9f;
-    config.BendStiffness = 0.9f;
-    config.NumIterations = 2;
+    config.Damping = 0.7f;
+    config.StretchStiffness = 1.0f;
+    config.BendStiffness = 0.2f;
+    config.NumIterations = 5;
     config.TimeStep = 0.016f;
     config.bUseXPBD = false;
 
@@ -382,7 +416,14 @@ void ATestClothActor::UpdateAttachments()
         // For ActorTransform type, use the driver's world position
         if (attachment.Type == EClothAttachmentType::ActorTransform)
         {
-            attachment.WorldPosition = driverPosition + attachment.LocalOffset.GetTranslation();
+            //WorldTransform = GetWorldMatrix();
+            /*FMatrix Mat = AttachmentDriver->GetStaticMeshComponent()->GetWorldMatrix();
+            FVector Pos = FTransform(Mat).InverseTransformDirection(driverPosition + attachment.LocalOffset.GetTranslation());
+            attachment.WorldPosition = Pos;*/
+            const FTransform AttachmentWorldTransform = FTransform(AttachmentDriver->GetStaticMeshComponent()->GetWorldMatrix()) * attachment.LocalOffset;
+
+            // 위치만 필요하므로 Translation만 사용
+            attachment.WorldPosition = AttachmentWorldTransform.GetTranslation();
         }
         else if (attachment.Type == EClothAttachmentType::WorldPosition)
         {
