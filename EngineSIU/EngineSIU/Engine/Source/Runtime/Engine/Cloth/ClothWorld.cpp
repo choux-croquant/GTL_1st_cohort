@@ -330,6 +330,13 @@ FClothInstanceHandle *FClothWorld::RegisterClothInstanceBatched(UClothComponent 
     Params.OwnerComponent = Component;
     Params.InitialLOD = InitialLOD;
 
+    Params.RestPositions = Asset->GetRestPositions();
+    Params.InvMasses = Asset->GetInvMasses();
+    Params.Indices = Asset->GetIndices(); 
+    Params.Constraints = Asset->GetDistanceConstraints();
+    Params.BendConstraints = Asset->GetBendConstraints();
+    Params.Attachments = Asset->GetAttachmentData();
+
     // Add instance to batch
     FClothInstanceHandle *Handle = BatchMgr->AddInstance(Params);
     if (!Handle)

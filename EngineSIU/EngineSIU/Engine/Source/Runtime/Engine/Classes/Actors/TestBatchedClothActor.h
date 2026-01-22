@@ -28,7 +28,7 @@ public:
     virtual void Tick(float DeltaTime) override;
 
     // Multiple cloth instances for batching test
-    static constexpr int32 NumClothInstances = 8;
+    static constexpr int32 NumClothInstances = 256;
     UClothMeshComponent *ClothMeshes[NumClothInstances];
     UClothAsset *ClothAssets[NumClothInstances];
     FClothInstanceHandle *ClothHandles[NumClothInstances];

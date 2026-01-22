@@ -45,19 +45,11 @@ void ATestBatchedClothActor::BeginPlay()
     // Create test cloths with different sizes and LOD levels
     // This demonstrates the batching system's ability to handle multiple instances
 
-    // LOD 0 (High detail) - 2 instances
-    CreateTestCloth(0, 12, EClothLODLevel::LOD_0); // 12x12 grid
-    CreateTestCloth(1, 10, EClothLODLevel::LOD_0); // 10x10 grid
-
-    // LOD 1 (Medium detail) - 3 instances
-    CreateTestCloth(2, 8, EClothLODLevel::LOD_1); // 8x8 grid
-    CreateTestCloth(3, 8, EClothLODLevel::LOD_1);
-    CreateTestCloth(4, 6, EClothLODLevel::LOD_1); // 6x6 grid
-
-    // LOD 2 (Low detail) - 3 instances
-    CreateTestCloth(5, 6, EClothLODLevel::LOD_2);
-    CreateTestCloth(6, 4, EClothLODLevel::LOD_2); // 4x4 grid
-    CreateTestCloth(7, 4, EClothLODLevel::LOD_2);
+    // LOD 0 (High detail) - Batch Test Only use LOD1 at first
+    for (int i = 0; i < 256; i++)
+    {
+        CreateTestCloth(i, 40, EClothLODLevel::LOD_0); // 12x12 grid
+    }
 
     // Position instances in a grid layout
     for (int32 i = 0; i < NumClothInstances; ++i)

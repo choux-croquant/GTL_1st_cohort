@@ -22,7 +22,7 @@ enum class EClothLODLevel : uint8
     LOD_0 = 0, // High detail   - Close to camera
     LOD_1 = 1, // Medium detail - Medium distance
     LOD_2 = 2, // Low detail    - Far from camera
-    LOD_3 = 3, // Ultra low     - Very far (optional)
+    //LOD_3 = 3, // Ultra low     - Very far (optional)
 
     Max
 };

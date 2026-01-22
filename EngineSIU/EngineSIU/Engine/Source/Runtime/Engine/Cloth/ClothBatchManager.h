@@ -51,6 +51,7 @@ public:
     // Query
     int32 GetInstanceCount() const { return Instances.Num(); }
     uint32 GetTotalParticleCount() const { return TotalParticleCount; }
+    uint32 GetTotalTriangleCount() const { return TotalTriangleCount; }
     EClothLODLevel GetLODLevel() const { return LODLevel; }
     bool CanAcceptInstance(uint32 ParticleCount) const;
 
