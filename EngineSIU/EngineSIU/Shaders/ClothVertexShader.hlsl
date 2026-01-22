@@ -14,7 +14,9 @@ cbuffer ClothMeshConstants : register(b10)
 {
     row_major matrix ClothWorldMatrix;
     uint ClothNumVertices;
-    uint3 ClothPadding;
+    uint ClothParticleOffset;  // NEW: For batched mode - offset into unified buffer
+    uint ClothIndexOffset;     // NEW: For batched mode - index offset
+    uint ClothPadding;
 };
 
 struct VS_INPUT_Cloth
@@ -27,12 +29,15 @@ PS_INPUT_CommonMesh main(VS_INPUT_Cloth Input)
 {
     PS_INPUT_CommonMesh Output;
     
-    // Read dynamic position from simulation buffer
-    float4 particleData = ClothPositionBuffer[Input.VertexID];
+    // NEW: Apply particle offset for batched mode
+    uint particleIndex = Input.VertexID + ClothParticleOffset;
+    
+    // Read dynamic position from simulation buffer (unified buffer in batched mode)
+    float4 particleData = ClothPositionBuffer[particleIndex];
     float3 position = particleData.xyz;
     
-    // Read dynamic normal from simulation buffer
-    float3 normal = ClothNormalBuffer[Input.VertexID];
+    // Read dynamic normal from simulation buffer (unified buffer in batched mode)
+    float3 normal = ClothNormalBuffer[particleIndex];
     
     // Transform to world space
     float4 worldPos = mul(float4(position, 1.0), ClothWorldMatrix);

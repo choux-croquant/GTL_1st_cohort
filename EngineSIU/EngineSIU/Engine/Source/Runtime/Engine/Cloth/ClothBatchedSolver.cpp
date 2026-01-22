@@ -9,6 +9,7 @@
 #include "Windows/D3D11RHI/DXDShaderManager.h"
 #include "Engine/UserInterface/Console.h"
 #include "Core/Math/MathUtility.h"
+#include "Core/Math/Matrix.h"
 #include "ShaderConstants.h"
 
 #define SAFE_RELEASE(p) \
@@ -72,18 +73,20 @@ void FClothBatchedSolver::Initialize(FGraphicsDevice *InGraphics,
     if (!Graphics || !BufferManager || !ShaderManager)
     {
         UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Invalid initialization parameters"));
+        bInitialized = false;
         return;
     }
 
-    // Load compute shaders (can reuse existing shaders initially)
+    // Load compute shaders - this will compile them if not already loaded
     if (!LoadComputeShaders())
     {
         UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to load compute shaders"));
+        bInitialized = false;
         return;
     }
 
-    bInitialized = true;
-    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Initialized successfully"));
+    // NOTE: bInitialized will be set true in AllocateBuffers() after buffers are created
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Shaders loaded, ready for buffer allocation"));
 }
 
 void FClothBatchedSolver::Release()
@@ -347,14 +350,18 @@ bool FClothBatchedSolver::AllocateBuffers(uint32 MaxParticles, uint32 MaxConstra
     }
 
     // Create index buffer
+    // NOTE: This buffer is used both as:
+    //   1. Index buffer for rendering (IASetIndexBuffer) - requires D3D11_BIND_INDEX_BUFFER
+    //   2. Shader resource for compute shaders (normal computation) - requires D3D11_BIND_SHADER_RESOURCE
+    // Cannot use D3D11_RESOURCE_MISC_BUFFER_STRUCTURED with index buffers, so use typed buffer instead
     if (MaxTriangles > 0)
     {
         bufferDesc.Usage = D3D11_USAGE_DEFAULT;
         bufferDesc.ByteWidth = sizeof(uint32) * MaxTriangles * 3;
-        bufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-        bufferDesc.StructureByteStride = sizeof(uint32);
+        bufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER | D3D11_BIND_SHADER_RESOURCE; // Both flags for dual use
+        bufferDesc.StructureByteStride = 0;                                          // Not a structured buffer
         bufferDesc.CPUAccessFlags = 0;
-        bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+        bufferDesc.MiscFlags = 0; // Remove D3D11_RESOURCE_MISC_BUFFER_STRUCTURED
 
         hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &UnifiedIndexBuffer);
         if (FAILED(hr))
@@ -363,8 +370,14 @@ bool FClothBatchedSolver::AllocateBuffers(uint32 MaxParticles, uint32 MaxConstra
             return false;
         }
 
-        srvDesc.Buffer.NumElements = MaxTriangles * 3;
-        hr = Graphics->Device->CreateShaderResourceView(UnifiedIndexBuffer, &srvDesc, &UnifiedIndexSRV);
+        // Create SRV as typed buffer (Buffer<uint> in HLSL) instead of StructuredBuffer<uint>
+        D3D11_SHADER_RESOURCE_VIEW_DESC indexSrvDesc = {};
+        indexSrvDesc.Format = DXGI_FORMAT_R32_UINT; // Typed as uint32
+        indexSrvDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+        indexSrvDesc.Buffer.FirstElement = 0;
+        indexSrvDesc.Buffer.NumElements = MaxTriangles * 3;
+
+        hr = Graphics->Device->CreateShaderResourceView(UnifiedIndexBuffer, &indexSrvDesc, &UnifiedIndexSRV);
         if (FAILED(hr))
         {
             UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create index SRV"));
@@ -478,6 +491,9 @@ bool FClothBatchedSolver::AllocateBuffers(uint32 MaxParticles, uint32 MaxConstra
         return false;
     }
 
+    // Mark as fully initialized now that both shaders and buffers are ready
+    bInitialized = true;
+
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Allocated buffers - Particles: %d, Constraints: %d, Instances: %d"),
            MaxParticles, MaxConstraints, MaxInstances);
 
@@ -560,22 +576,88 @@ bool FClothBatchedSolver::LoadComputeShaders()
         return false;
 
     bool bSuccess = true;
+    HRESULT hr;
 
-    // Reuse existing shaders initially
-    // TODO: Update to batched versions later
+    // Load or get Integration shader
+    hr = ShaderManager->AddComputeShader(L"ClothIntegrateCS", L"Shaders/Cloth/ClothIntegrate.hlsl", "IntegrateCS");
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to compile ClothIntegrate shader"));
+        bSuccess = false;
+    }
     IntegrateCS = ShaderManager->GetComputeShaderByKey(L"ClothIntegrateCS");
+
+    // Load or get Constraint Solver shader
+    hr = ShaderManager->AddComputeShader(L"ClothConstraintSolverCS", L"Shaders/Cloth/ClothConstraintSolver.hlsl", "SolveDistanceConstraintsCS");
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to compile ClothConstraintSolver shader"));
+        bSuccess = false;
+    }
     ConstraintSolverCS = ShaderManager->GetComputeShaderByKey(L"ClothConstraintSolverCS");
+
+    // Load or get Bend Constraint Solver shader
+    hr = ShaderManager->AddComputeShader(L"ClothBendConstraintSolverCS", L"Shaders/Cloth/ClothBendConstraintSolver.hlsl", "SolveBendConstraintsCS");
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to compile ClothBendConstraintSolver shader"));
+        bSuccess = false;
+    }
     BendConstraintSolverCS = ShaderManager->GetComputeShaderByKey(L"ClothBendConstraintSolverCS");
+
+    // Load or get Apply Deltas shader
+    hr = ShaderManager->AddComputeShader(L"ClothApplyConstraintDeltasCS", L"Shaders/Cloth/ClothApplyDelta.hlsl", "ApplyConstraintDeltasCS");
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to compile ClothApplyDelta shader"));
+        bSuccess = false;
+    }
     ApplyDeltasCS = ShaderManager->GetComputeShaderByKey(L"ClothApplyConstraintDeltasCS");
+
+    // Load or get Apply Kinematic Targets shader
+    hr = ShaderManager->AddComputeShader(L"ClothApplyKinematicTargetsCS", L"Shaders/Cloth/ClothApplyKinematicTargets.hlsl", "ApplyKinematicTargetsCS");
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to compile ClothApplyKinematicTargets shader (optional)"));
+        // Not critical - kinematic targets are optional
+    }
     ApplyKinematicTargetsCS = ShaderManager->GetComputeShaderByKey(L"ClothApplyKinematicTargetsCS");
+
+    // Load or get Normal Update shaders
+    hr = ShaderManager->AddComputeShader(L"ClothClearNormalsCS", L"Shaders/Cloth/ClothUpdateNormals.hlsl", "ClearNormalsCS");
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to compile ClothClearNormals shader"));
+        bSuccess = false;
+    }
     ClearNormalsCS = ShaderManager->GetComputeShaderByKey(L"ClothClearNormalsCS");
+
+    hr = ShaderManager->AddComputeShader(L"ClothUpdateNormalsCS", L"Shaders/Cloth/ClothUpdateNormals.hlsl", "UpdateNormalsCS");
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to compile ClothUpdateNormals shader"));
+        bSuccess = false;
+    }
     UpdateNormalsCS = ShaderManager->GetComputeShaderByKey(L"ClothUpdateNormalsCS");
+
+    hr = ShaderManager->AddComputeShader(L"ClothNormalizeNormalsCS", L"Shaders/Cloth/ClothUpdateNormals.hlsl", "NormalizeNormalsCS");
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to compile ClothNormalizeNormals shader"));
+        bSuccess = false;
+    }
     NormalizeNormalsCS = ShaderManager->GetComputeShaderByKey(L"ClothNormalizeNormalsCS");
 
+    // Verify critical shaders loaded
     if (!IntegrateCS || !ConstraintSolverCS || !BendConstraintSolverCS || !ApplyDeltasCS)
     {
         UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to load required compute shaders"));
         bSuccess = false;
+    }
+
+    if (bSuccess)
+    {
+        UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: All compute shaders loaded successfully"));
     }
 
     return bSuccess;
@@ -633,7 +715,9 @@ void FClothBatchedSolver::UploadParticleData(const TArray<FVector> &Positions,
     for (uint32 i = 0; i < numParticles; ++i)
     {
         particlesGPU[i].Position = Positions[i];
-        particlesGPU[i].InvMass = (i < static_cast<uint32>(InvMasses.Num())) ? InvMasses[i] : 1.0f;
+        particlesGPU[i].InstanceID = (i < static_cast<uint32>(InstanceIDs.Num()))
+                                         ? InstanceIDs[i]
+                                         : 0;
     }
 
     // Upload to unified position buffers (both ping-pong buffers)

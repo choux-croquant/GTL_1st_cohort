@@ -47,9 +47,9 @@ public:
     void SetOwnerComponent(UClothComponent *InOwner) { OwnerComponent = InOwner; }
     UClothComponent *GetOwnerComponent() const { return OwnerComponent; }
 
-    // Metadata access
-    const FClothInstanceMetadata &GetMetadata() const { return Metadata; }
-    FClothInstanceMetadata &GetMetadataRef() { return Metadata; }
+    // Metadata access - Get from batch manager's array (not local copy)
+    const FClothInstanceMetadata &GetMetadata() const;
+    FClothInstanceMetadata &GetMetadataRef();
     FClothBatchManager *GetBatchManager() const { return BatchManager; }
 
     // For internal batch manager use

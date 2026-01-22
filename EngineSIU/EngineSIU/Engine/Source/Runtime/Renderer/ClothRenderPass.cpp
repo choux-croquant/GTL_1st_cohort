@@ -13,6 +13,9 @@
 #include "Engine/EditorEngine.h"
 #include "Components/ClothMeshComponent.h"
 #include "UObject/UObjectIterator.h"
+#include "Cloth/ClothBatchManager.h"
+#include "Cloth/ClothBatchedSolver.h"
+#include "Cloth/ClothInstanceHandle.h"
 
 #define SAFE_RELEASE(p) \
     if (p)              \
@@ -127,7 +130,7 @@ void FClothRenderPass::PrepareRender(const std::shared_ptr<FEditorViewportClient
     }
     else
     {
-        //Graphics->DeviceContext->RSSetState(Graphics->RasterizerSolidBack);
+        // Graphics->DeviceContext->RSSetState(Graphics->RasterizerSolidBack);
         Graphics->DeviceContext->RSSetState(Graphics->RasterizerWireframeBack);
     }
 }
@@ -194,7 +197,7 @@ void FClothRenderPass::CreateResource()
 
     // Create rasterizer state for two-sided rendering
     D3D11_RASTERIZER_DESC rastDesc = {};
-    //rastDesc.FillMode = D3D11_FILL_SOLID;
+    // rastDesc.FillMode = D3D11_FILL_SOLID;
     rastDesc.FillMode = D3D11_FILL_WIREFRAME;
     rastDesc.CullMode = D3D11_CULL_NONE; // Two-sided rendering
     rastDesc.FrontCounterClockwise = FALSE;
@@ -221,39 +224,88 @@ void FClothRenderPass::RenderClothComponent(UClothMeshComponent *ClothComponent,
     // Validate required data
     if (!renderData.PositionBufferSRV || !renderData.NormalBufferSRV)
         return;
-    if (!renderData.Indices || renderData.Indices->Num() == 0)
-        return;
     if (renderData.NumTriangles == 0)
         return;
 
-    // Bind simulation buffers as SRVs
+    // Bind simulation buffers as SRVs (shared for both legacy and batched)
     ID3D11ShaderResourceView *clothSRVs[] = {
         renderData.PositionBufferSRV,
-        renderData.NormalBufferSRV
-    };
-
+        renderData.NormalBufferSRV};
     Graphics->DeviceContext->VSSetShaderResources(9, 2, clothSRVs);
 
-    // Update cloth mesh constant buffer
-    UpdateClothMeshConstantBuffer(renderData.WorldTransform, renderData.NumVertices);
+    // Update cloth mesh constant buffer with offsets for batched mode
+    UpdateClothMeshConstantBuffer(renderData.WorldTransform, renderData.NumVertices,
+                                  renderData.ParticleOffset, renderData.IndexOffset);
     Graphics->DeviceContext->VSSetConstantBuffers(10, 1, &ClothMeshConstantBuffer);
 
-    // Create and bind index buffer
-    SAFE_RELEASE(TempIndexBuffer);
-    TempIndexBuffer = CreateIndexBufferFromIndices(*renderData.Indices);
-    if (TempIndexBuffer)
+    // Handle index buffer based on mode
+    if (renderData.bIsBatchedMode)
     {
-        Graphics->DeviceContext->IASetIndexBuffer(TempIndexBuffer, DXGI_FORMAT_R32_UINT, 0);
+        // Batched mode: Use unified index buffer with DrawIndexed at offset
+        if (!renderData.UnifiedIndexBuffer)
+            return;
+
+        // Validate rendering parameters to prevent D3D11 errors
+        uint32 indexCount = renderData.NumTriangles * 3;
+        uint32 startIndexLocation = renderData.IndexOffset; // Already in index units (not triangles)
+        int32 baseVertexLocation = 0;                       // Vertex offset handled in shader via ClothParticleOffset
+
+        // Calculate the last index that will be accessed
+        uint32 lastIndexAccessed = startIndexLocation + indexCount;
+
+        // Get buffer description to verify size
+        D3D11_BUFFER_DESC bufferDesc;
+        renderData.UnifiedIndexBuffer->GetDesc(&bufferDesc);
+        uint32 bufferIndexCapacity = bufferDesc.ByteWidth / sizeof(uint32);
+
+        // Validate bounds
+        if (lastIndexAccessed > bufferIndexCapacity)
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothRenderPass: Index buffer out of bounds! StartIndex: %u, Count: %u, Last: %u, Capacity: %u"),
+                   startIndexLocation, indexCount, lastIndexAccessed, bufferIndexCapacity);
+            return; // Skip rendering to avoid D3D11 error
+        }
+
+        if (indexCount == 0 || renderData.NumTriangles == 0)
+        {
+            return; // Nothing to render
+        }
+
+        // Bind unified index buffer directly
+        Graphics->DeviceContext->IASetIndexBuffer(renderData.UnifiedIndexBuffer, DXGI_FORMAT_R32_UINT, 0);
+
+        // Draw with offset and count
+        // StartIndexLocation is in indices (not bytes)
+        // BaseVertexLocation is 0 because we handle vertex offset in shader via ClothParticleOffset
+        Graphics->DeviceContext->DrawIndexed(indexCount, startIndexLocation, baseVertexLocation);
     }
+    else
+    {
+        // Legacy mode: Create temp index buffer from per-instance indices
+        if (!renderData.Indices || renderData.Indices->Num() == 0)
+            return;
 
-    // Set material (if available)
-    // TODO: Bind material textures and constants
+        SAFE_RELEASE(TempIndexBuffer);
+        TempIndexBuffer = CreateIndexBufferFromIndices(*renderData.Indices);
+        if (TempIndexBuffer)
+        {
+            Graphics->DeviceContext->IASetIndexBuffer(TempIndexBuffer, DXGI_FORMAT_R32_UINT, 0);
+        }
+        else
+        {
+            return;
+        }
 
-    // Draw cloth mesh using indexed rendering
-    Graphics->DeviceContext->DrawIndexed(renderData.NumTriangles * 3, 0, 0);
+        // Set material (if available)
+        // TODO: Bind material textures and constants
+
+        // Draw cloth mesh using indexed rendering
+        Graphics->DeviceContext->DrawIndexed(renderData.NumTriangles * 3, 0, 0);
+    }
 }
 
-void FClothRenderPass::UpdateClothMeshConstantBuffer(const FMatrix &WorldTransform, uint32 NumVertices)
+void FClothRenderPass::UpdateClothMeshConstantBuffer(const FMatrix &WorldTransform, uint32 NumVertices,
+                                                     uint32 ParticleOffset, uint32 IndexOffset)
 {
     if (!ClothMeshConstantBuffer)
         return;
@@ -261,9 +313,9 @@ void FClothRenderPass::UpdateClothMeshConstantBuffer(const FMatrix &WorldTransfo
     FClothMeshConstants constants;
     constants.ClothWorldMatrix = WorldTransform;
     constants.ClothNumVertices = NumVertices;
-    constants.ClothPadding0 = 0;
-    constants.ClothPadding1 = 0;
-    constants.ClothPadding2 = 0;
+    constants.ClothParticleOffset = ParticleOffset;
+    constants.ClothIndexOffset = IndexOffset;
+    constants.ClothPadding = 0;
 
     D3D11_MAPPED_SUBRESOURCE msr;
     HRESULT hr = Graphics->DeviceContext->Map(ClothMeshConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &msr);

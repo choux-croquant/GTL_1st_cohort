@@ -22,11 +22,12 @@ struct FClothNormalUpdateConstants;
 /**
  * GPU particle structure (16 bytes, aligned)
  * Must match FClothParticle in ClothCommon.hlsli
+ * Note: InvMass is now stored in a separate buffer for batched simulation
  */
 struct FClothParticleGPU
 {
     FVector Position;
-    float InvMass;
+    uint32 InstanceID; // Which instance owns this particle (for batched simulation)
 };
 
 /**

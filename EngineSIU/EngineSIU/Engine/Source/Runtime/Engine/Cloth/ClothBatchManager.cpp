@@ -6,6 +6,7 @@
 #include "ClothBatchManager.h"
 #include "ClothBatchedSolver.h"
 #include "ClothInstanceHandle.h"
+#include "Classes/Components/ClothComponent.h"
 #include "Windows/D3D11RHI/GraphicDevice.h"
 #include "Windows/D3D11RHI/DXDBufferManager.h"
 #include "Windows/D3D11RHI/DXDShaderManager.h"
@@ -61,10 +62,19 @@ void FClothBatchManager::Initialize(FGraphicsDevice *InGraphics,
     AllocatedParticleCapacity = initialParticles;
     AllocatedConstraintCapacity = initialConstraints;
 
-    bIsInitialized = true;
-
-    UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Initialized with capacity for %d particles, %d instances"),
-           static_cast<int32>(LODLevel), initialParticles, initialInstances);
+    // Check if solver is fully initialized (shaders + buffers)
+    if (BatchedSolver && BatchedSolver->IsInitialized())
+    {
+        bIsInitialized = true;
+        UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Initialized with capacity for %d particles, %d instances"),
+               static_cast<int32>(LODLevel), initialParticles, initialInstances);
+    }
+    else
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchManager[LOD%d]: Solver failed to initialize fully"),
+               static_cast<int32>(LODLevel));
+        bIsInitialized = false;
+    }
 }
 
 void FClothBatchManager::Release()
@@ -489,8 +499,46 @@ void FClothBatchManager::UpdateInstanceParameterBuffer()
 
 void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
 {
-    // TODO: Update kinematic targets for all instances
-    // This will collect attachment data from all instances and upload to GPU
+    if (!BatchedSolver || TotalKinematicTargetCount == 0)
+        return;
+
+    // Collect all kinematic targets from all instances
+    TArray<FClothKinematicTargetGPU> allTargets;
+    allTargets.Reserve(TotalKinematicTargetCount);
+
+    for (FClothInstanceHandle *Handle : Instances)
+    {
+        if (!Handle || !Handle->IsActive())
+            continue;
+
+        const FClothInstanceMetadata &metadata = Handle->GetMetadata();
+        UClothComponent *owner = Handle->GetOwnerComponent();
+
+        if (!owner || owner->GetAttachments().Num() == 0)
+            continue;
+
+        // Get attachments from owner component
+        const TArray<FClothAttachmentData> &attachments = owner->GetAttachments();
+
+        for (const FClothAttachmentData &attachment : attachments)
+        {
+            FClothKinematicTargetGPU target;
+            target.ParticleIndex = attachment.ClothVertexIndex + metadata.ParticleOffset; // Global index
+            target.TargetPosition = attachment.WorldPosition;
+            target.Stiffness = attachment.Stiffness;
+            target.Padding0 = 0.0f;
+            target.Padding1 = 0.0f;
+            target.Padding2 = 0.0f;
+
+            allTargets.Add(target);
+        }
+    }
+
+    // Upload all kinematic targets to GPU
+    if (allTargets.Num() > 0)
+    {
+        BatchedSolver->UploadKinematicTargets(allTargets, 0);
+    }
 }
 
 bool FClothBatchManager::NeedsReallocation(uint32 RequiredParticles, uint32 RequiredConstraints) const

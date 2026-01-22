@@ -93,4 +93,8 @@ public:
 
     // Check which mode is active
     bool IsBatchedMode() const { return bUseBatchedMode; }
+
+    // Access to attachment data
+    const TArray<FClothAttachmentData> &GetAttachments() const { return Attachments; }
+    TArray<FClothAttachmentData> &GetAttachmentsRef() { return Attachments; }
 };

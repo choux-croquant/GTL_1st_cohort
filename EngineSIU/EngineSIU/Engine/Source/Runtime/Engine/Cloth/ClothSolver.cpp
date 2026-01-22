@@ -10,6 +10,7 @@
 #include "Windows/D3D11RHI/DXDShaderManager.h"
 #include "Engine/UserInterface/Console.h"
 #include "Core/Math/MathUtility.h"
+#include "Core/Math/Matrix.h"
 #include "ShaderConstants.h"
 #include "Classes/Engine/ClothAsset.h"
 
@@ -19,7 +20,6 @@
         (p)->Release(); \
         (p) = nullptr;  \
     }
-
 
 FClothSolver::FClothSolver()
     : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), IntegrateCS(nullptr), ConstraintSolverCS(nullptr), BendConstraintSolverCS(nullptr), ApplyKinematicTargetsCS(nullptr), UpdateNormalsCS(nullptr), ClearNormalsCS(nullptr), NormalizeNormalsCS(nullptr), ClothSimConstantBuffer(nullptr), NormalUpdateConstantBuffer(nullptr), CurrentBufferIndex(0), NumParticles(0), NumConstraints(0), NumBendConstraints(0), NumKinematicTargets(0), NumTriangles(0), bInitialized(false), ExternalForceAccum(FVector::ZeroVector)
@@ -228,16 +228,16 @@ void FClothSolver::Simulate(float InDeltaTime)
     // Clamp delta time
     float DeltaTime = FMath::Clamp(InDeltaTime, 0.0001f, 0.033f);
     // Test for runtime wind change
-    //Config.AirDrag = sin(SimData.CurrentTime) * 10.f;
+    // Config.AirDrag = sin(SimData.CurrentTime) * 10.f;
     // Config.AirDrag = 10.f;
-    //const int32 NumSubsteps = 3;
-    //const float SubstepDeltaTime = InDeltaTime / (float)NumSubsteps;
+    // const int32 NumSubsteps = 3;
+    // const float SubstepDeltaTime = InDeltaTime / (float)NumSubsteps;
 
-    //for (int32 i = 0; i < NumSubsteps; ++i)
+    // for (int32 i = 0; i < NumSubsteps; ++i)
     //{
-    //    // 기존의 SimulateCS 호출 (내부에서 Integration -> Constraints -> VelocityUpdate 수행)
-    //    // 주의: 내부 셰이더에는 반드시 'SubstepDeltaTime'을 넘겨줘야 함
-    //    SimulateCS(SubstepDeltaTime);
+    //     // 기존의 SimulateCS 호출 (내부에서 Integration -> Constraints -> VelocityUpdate 수행)
+    //     // 주의: 내부 셰이더에는 반드시 'SubstepDeltaTime'을 넘겨줘야 함
+    //     SimulateCS(SubstepDeltaTime);
 
     //    // 시간 누적
     //    SimData.CurrentTime += SubstepDeltaTime;
@@ -896,7 +896,7 @@ bool FClothSolver::UploadInitialData()
         for (uint32 i = 0; i < NumParticles; ++i)
         {
             particlesGPU[i].Position = RestPositions[i];
-            particlesGPU[i].InvMass = (i < static_cast<uint32>(InvMasses.Num())) ? InvMasses[i] : 1.0f;
+            particlesGPU[i].InstanceID = 0; // Legacy mode uses InstanceID=0 (single instance)
         }
 
         // Upload to both ping-pong buffers
@@ -1214,10 +1214,10 @@ void FClothSolver::DispatchApplyConstraintDeltas()
     // u0: PositionDelta, u1: PositionWeight, u2: PositionWrite
     ID3D11UnorderedAccessView *uavs[] =
         {
-            PositionDeltaUAV,     // u0
-            PositionWeightUAV,    // u1
-            PositionUAV[writeIdx],// u2: 다음 버퍼에 결과 기록
-            VelocityUAV           // u3: VelocityBuffer (in-place)
+            PositionDeltaUAV,      // u0
+            PositionWeightUAV,     // u1
+            PositionUAV[writeIdx], // u2: 다음 버퍼에 결과 기록
+            VelocityUAV            // u3: VelocityBuffer (in-place)
         };
     UINT initialCounts[3] = {0, 0, 0};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 4, uavs, initialCounts);

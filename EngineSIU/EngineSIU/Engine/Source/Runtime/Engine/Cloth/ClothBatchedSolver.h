@@ -66,6 +66,9 @@ public:
 
     void UploadIndexData(const TArray<uint32> &Indices, uint32 DestOffset);
 
+    // Index buffer access
+    ID3D11Buffer *GetUnifiedIndexBuffer() const { return UnifiedIndexBuffer; }
+
     // Configuration
     void SetConfig(const FClothConfig &InConfig);
     const FClothConfig &GetConfig() const { return Config; }
@@ -73,6 +76,9 @@ public:
     // Data access for rendering
     ID3D11ShaderResourceView *GetPositionBufferSRV() const;
     ID3D11ShaderResourceView *GetNormalBufferSRV() const;
+
+    // Initialization state
+    bool IsInitialized() const { return bInitialized; }
 
     // Statistics
     uint32 GetAllocatedParticleCapacity() const { return AllocatedParticleCapacity; }
