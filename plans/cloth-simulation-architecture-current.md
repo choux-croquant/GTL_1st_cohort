@@ -151,6 +151,158 @@ graph TB
     class RenderPass,VS,PS,CameraCB,ObjectCB renderClass
 ```
 
+```mermaid
+graph TB
+    subgraph "CPU / Engine Layer"
+        ClothComp[ClothMeshComponent]
+        ClothAsset[ClothAsset<br/>Mesh Data + Config]
+        ClothWorld[ClothWorld<br/>System Manager]
+
+        subgraph "Batch Management"
+            BatchMgr0[FClothBatchManager LOD 0<br/>High Detail Instances]
+            BatchMgr1[FClothBatchManager LOD 1<br/>Medium Detail Instances]
+            BatchMgr2[FClothBatchManager LOD 2<br/>Low Detail Instances]
+        end
+
+        InstHandle[FClothInstanceHandle<br/>Lightweight Instance Reference]
+        InstMeta[FClothInstanceMetadata<br/>Offsets + Counts]
+    end
+
+    ClothComp -->|references| ClothAsset
+    ClothComp -->|creates| InstHandle
+    InstHandle -->|registers with| ClothWorld
+    ClothWorld -->|distributes to LOD| BatchMgr0
+    ClothWorld -->|distributes to LOD| BatchMgr1
+    ClothWorld -->|distributes to LOD| BatchMgr2
+    BatchMgr0 -->|stores| InstMeta
+    BatchMgr1 -->|stores| InstMeta
+    BatchMgr2 -->|stores| InstMeta
+
+```
+
+```mermaid
+graph TB
+    subgraph "GPU / Compute Simulation"
+        subgraph "Batched Solver"
+            Solver[FClothBatchedSolver<br/>Manages Unified Buffers]
+        end
+
+        subgraph "Unified GPU Buffers"
+            PosBuffer[Position Buffer Ping-Pong]
+            VelBuffer[Velocity Buffer]
+            InvMassBuffer[Inverse Mass Buffer]
+            ConstraintBuffer[Distance Constraint Buffer]
+            BendBuffer[Bend Constraint Buffer]
+            KinematicBuffer[Kinematic Target Buffer]
+            IndexBuffer[Index Buffer]
+            NormalBuffer[Normal Buffer]
+            DeltaBuffer[Delta Accumulation Buffers]
+            InstanceParamBuffer[Instance Parameter Buffer]
+        end
+    end
+
+    Solver -->|allocates + manages| PosBuffer
+    Solver -->|allocates + manages| VelBuffer
+    Solver -->|allocates + manages| InvMassBuffer
+    Solver -->|allocates + manages| ConstraintBuffer
+    Solver -->|allocates + manages| BendBuffer
+    Solver -->|allocates + manages| KinematicBuffer
+    Solver -->|allocates + manages| IndexBuffer
+    Solver -->|allocates + manages| NormalBuffer
+    Solver -->|allocates + manages| DeltaBuffer
+    Solver -->|allocates + manages| InstanceParamBuffer
+
+```
+
+```mermaid
+graph LR
+    subgraph "Unified GPU Buffers"
+        PosBuffer[Position Buffer]
+        VelBuffer[Velocity Buffer]
+        InvMassBuffer[Inverse Mass Buffer]
+        ConstraintBuffer[Distance Constraints]
+        BendBuffer[Bend Constraints]
+        KinematicBuffer[Kinematic Targets]
+        IndexBuffer[Index Buffer]
+        NormalBuffer[Normal Buffer]
+        DeltaBuffer[Delta Buffers]
+        InstanceParamBuffer[Instance Params]
+    end
+
+    subgraph "Compute Shaders"
+        CS1[ClothIntegrate.hlsl]
+        CS2[ClothConstraintSolver.hlsl]
+        CS3[ClothBendConstraintSolver.hlsl]
+        CS4[ClothApplyDelta.hlsl]
+        CS5[ClothApplyKinematicTargets.hlsl]
+        CS6[ClothUpdateNormals.hlsl]
+    end
+
+    PosBuffer --> CS1
+    VelBuffer --> CS1
+    InvMassBuffer --> CS1
+    InstanceParamBuffer --> CS1
+    CS1 --> PosBuffer
+    CS1 --> VelBuffer
+
+    PosBuffer --> CS2
+    ConstraintBuffer --> CS2
+    InstanceParamBuffer --> CS2
+    DeltaBuffer --> CS2
+
+    PosBuffer --> CS3
+    BendBuffer --> CS3
+    DeltaBuffer --> CS3
+
+    DeltaBuffer --> CS4
+    CS4 --> PosBuffer
+
+    KinematicBuffer --> CS5
+    CS5 --> PosBuffer
+
+    PosBuffer --> CS6
+    IndexBuffer --> CS6
+    CS6 --> NormalBuffer
+
+```
+
+```mermaid
+graph TB
+    subgraph "Rendering Pipeline"
+        RenderPass[ClothRenderPass<br/>Collects Cloth Components]
+
+        subgraph "Rendering Shaders"
+            VS[Cloth Vertex Shader<br/>Transform Particles]
+            PS[Cloth Pixel Shader<br/>Material Shading]
+        end
+
+        subgraph "Constant Buffers"
+            CameraCB[Camera CB<br/>View + Projection]
+            ObjectCB[Object CB<br/>World Matrix + Offsets]
+        end
+    end
+
+    subgraph "Inputs from Simulation"
+        PosBuffer[Position Buffer SRV]
+        NormalBuffer[Normal Buffer SRV]
+        IndexBuffer[Index Buffer]
+        InstMeta[FClothInstanceMetadata<br/>Offsets + Counts]
+    end
+
+    PosBuffer -->|SRV| RenderPass
+    NormalBuffer -->|SRV| RenderPass
+    IndexBuffer -->|Index Buffer| RenderPass
+    InstMeta -->|per-instance offsets| RenderPass
+
+    RenderPass -->|draw calls| VS
+    VS --> PS
+
+    CameraCB --> VS
+    ObjectCB --> VS
+    CameraCB --> PS
+    ObjectCB --> PS
+
+```
 ---
 
 ## Key Components Description
