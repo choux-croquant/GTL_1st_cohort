@@ -6,7 +6,9 @@ This document presents the high-level architecture of the **current batch-based 
 
 ---
 
-## System Architecture Diagram
+## Complete System Architecture Diagram
+
+This is a comprehensive view showing all major components and their relationships. For detailed views of specific subsystems, see the focused diagrams in subsequent sections.
 
 ```mermaid
 graph TB
