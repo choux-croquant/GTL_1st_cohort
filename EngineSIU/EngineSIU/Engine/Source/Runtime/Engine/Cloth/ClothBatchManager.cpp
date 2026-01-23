@@ -43,12 +43,12 @@ void FClothBatchManager::Initialize(FGraphicsDevice *InGraphics,
     BatchedSolver->Initialize(Graphics, BufferManager, ShaderManager);
 
     // Initial buffer allocation (conservative estimate)
-    uint32 initialParticles = 10000;   // ~25 instances @ 400 particles
-    uint32 initialConstraints = 50000; // ~5 constraints per particle
+    uint32 initialParticles = 150000;   // ~25 instances @ 400 particles
+    uint32 initialConstraints = 5000000; // ~5 constraints per particle
     uint32 initialBendConstraints = 20000;
-    uint32 initialKinematicTargets = 1000;
-    uint32 initialTriangles = 20000;
-    uint32 initialInstances = 50;
+    uint32 initialKinematicTargets = 10000;
+    uint32 initialTriangles = 2000000;
+    uint32 initialInstances = 256;
 
     if (!BatchedSolver->AllocateBuffers(initialParticles, initialConstraints,
                                         initialBendConstraints, initialKinematicTargets,

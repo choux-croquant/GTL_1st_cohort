@@ -564,9 +564,9 @@ void FClothBatchedSolver::Simulate(float DeltaTime)
     // 4. Update normals for rendering
     if (UsedTriangleCount > 0)
     {
-        DispatchClearNormals(UsedParticleCount);
-        DispatchUpdateNormals(UsedTriangleCount);
-        DispatchNormalizeNormals(UsedParticleCount);
+        //DispatchClearNormals(UsedParticleCount);
+        //DispatchUpdateNormals(UsedTriangleCount);
+        //DispatchNormalizeNormals(UsedParticleCount);
     }
 }
 
@@ -787,27 +787,48 @@ void FClothBatchedSolver::UploadBendConstraintData(const TArray<FClothBendConstr
                                                BendConstraints.GetData(), 0, 0);
 }
 
-void FClothBatchedSolver::UploadKinematicTargets(const TArray<FClothKinematicTargetGPU> &Targets,
-                                                 uint32 DestOffset)
+// ClothBatchedSolver.cpp
+void FClothBatchedSolver::UploadKinematicTargets(
+    const TArray<FClothKinematicTargetGPU>& Targets,
+    uint32 DestOffset)
 {
-    if (!Graphics || !Graphics->DeviceContext || Targets.Num() == 0)
-        return;
+    if (!Graphics || !Graphics->DeviceContext || Targets.Num() == 0) return;
+    if (!UnifiedKinematicTargetBuffer) return;
 
-    if (!UnifiedKinematicTargetBuffer)
-        return;
+    // Kinematic targets는 매 프레임 전체를 업데이트하므로
+    // WRITE_DISCARD 사용 (DestOffset은 무시됨)
+    D3D11_MAPPED_SUBRESOURCE msr;
+    HRESULT hr = Graphics->DeviceContext->Map(
+        UnifiedKinematicTargetBuffer,
+        0,
+        D3D11_MAP_WRITE_DISCARD,
+        0,
+        &msr);
 
-    // For kinematic targets, upload to offset region using UpdateSubresource
-    D3D11_BOX destBox;
-    destBox.left = DestOffset * sizeof(FClothKinematicTargetGPU);
-    destBox.right = destBox.left + Targets.Num() * sizeof(FClothKinematicTargetGPU);
-    destBox.top = 0;
-    destBox.bottom = 1;
-    destBox.front = 0;
-    destBox.back = 1;
+    if (SUCCEEDED(hr))
+    {
+        // DestOffset이 0이 아니면 경고
+        if (DestOffset != 0)
+        {
+            UE_LOG(ELogLevel::Warning,
+                TEXT("UploadKinematicTargets: DestOffset %d ignored (WRITE_DISCARD used)"),
+                DestOffset);
+        }
 
-    Graphics->DeviceContext->UpdateSubresource(UnifiedKinematicTargetBuffer, 0, &destBox,
-                                               Targets.GetData(), 0, 0);
+        // 전체 버퍼의 시작부터 복사
+        uint32 bytesToCopy = Targets.Num() * sizeof(FClothKinematicTargetGPU);
+        memcpy(msr.pData, Targets.GetData(), bytesToCopy);
+
+        Graphics->DeviceContext->Unmap(UnifiedKinematicTargetBuffer, 0);
+    }
+    else
+    {
+        UE_LOG(ELogLevel::Error,
+            TEXT("ClothBatchedSolver: Failed to map kinematic target buffer (HR=0x%08X)"),
+            hr);
+    }
 }
+
 
 void FClothBatchedSolver::UploadInstanceParameters(const TArray<FClothInstanceParameters> &Parameters)
 {

@@ -48,7 +48,7 @@ void ATestBatchedClothActor::BeginPlay()
     // LOD 0 (High detail) - Batch Test Only use LOD1 at first
     for (int i = 0; i < 256; i++)
     {
-        CreateTestCloth(i, 40, EClothLODLevel::LOD_0); // 12x12 grid
+        CreateTestCloth(i, 20, EClothLODLevel::LOD_0); // 12x12 grid
     }
 
     // Position instances in a grid layout
