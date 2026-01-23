@@ -182,6 +182,31 @@ graph TB
 
 ```mermaid
 graph TB
+    subgraph " "
+        ClothWorld[ClothWorld]
+
+        subgraph "Batch by LOD Level"
+            BatchMgr0[FClothBatchManager LOD 0]
+            BatchMgr1[FClothBatchManager LOD 1]
+            BatchMgr2[FClothBatchManager LOD 2]
+        end
+
+        InstHandle[FClothInstance]
+        InstMeta[FClothInstanceMetadata<br/>Offsets + Counts]
+    end
+
+    InstHandle -->|registers with| ClothWorld
+    ClothWorld -->|distributes to LOD| BatchMgr0
+    ClothWorld -->|distributes to LOD| BatchMgr1
+    ClothWorld -->|distributes to LOD| BatchMgr2
+    BatchMgr0 -->|stores| InstMeta
+    BatchMgr1 -->|stores| InstMeta
+    BatchMgr2 -->|stores| InstMeta
+
+```
+
+```mermaid
+graph TB
     subgraph "Batch Management Layer"
         BatchMgr0[FClothBatchManager LOD 0]
         BatchMgr1[FClothBatchManager LOD 1]
