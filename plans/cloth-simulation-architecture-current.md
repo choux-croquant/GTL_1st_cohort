@@ -153,7 +153,7 @@ graph TB
 
 ```mermaid
 graph TB
-    subgraph ""
+    subgraph " "
         ClothComp[ClothMeshComponent]
         ClothAsset[ClothAsset<br/>Mesh Data + Config]
         ClothWorld[ClothWorld]
