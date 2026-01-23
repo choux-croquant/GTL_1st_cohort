@@ -153,18 +153,18 @@ graph TB
 
 ```mermaid
 graph TB
-    subgraph "CPU / Engine Layer"
+    subgraph ""
         ClothComp[ClothMeshComponent]
         ClothAsset[ClothAsset<br/>Mesh Data + Config]
-        ClothWorld[ClothWorld<br/>System Manager]
+        ClothWorld[ClothWorld]
 
-        subgraph "Batch Management"
-            BatchMgr0[FClothBatchManager LOD 0<br/>High Detail Instances]
-            BatchMgr1[FClothBatchManager LOD 1<br/>Medium Detail Instances]
-            BatchMgr2[FClothBatchManager LOD 2<br/>Low Detail Instances]
+        subgraph "Batch by LOD Level"
+            BatchMgr0[FClothBatchManager LOD 0]
+            BatchMgr1[FClothBatchManager LOD 1]
+            BatchMgr2[FClothBatchManager LOD 2]
         end
 
-        InstHandle[FClothInstanceHandle<br/>Lightweight Instance Reference]
+        InstHandle[FClothInstance]
         InstMeta[FClothInstanceMetadata<br/>Offsets + Counts]
     end
 
@@ -178,6 +178,56 @@ graph TB
     BatchMgr1 -->|stores| InstMeta
     BatchMgr2 -->|stores| InstMeta
 
+```
+
+```mermaid
+text
+graph TB
+    subgraph "Batch Management Layer"
+        BatchMgr0[FClothBatchManager LOD 0]
+        BatchMgr1[FClothBatchManager LOD 1]
+        BatchMgr2[FClothBatchManager LOD 2]
+    end
+    
+    subgraph "Solver Layer"
+        Solver0[FClothBatchedSolver<br/>LOD 0 Solver]
+        Solver1[FClothBatchedSolver<br/>LOD 1 Solver]
+        Solver2[FClothBatchedSolver<br/>LOD 2 Solver]
+    end
+    
+    subgraph "LOD 0 Unified Buffers"
+        Buffer0[Unified GPU Buffers<br/>Position/Velocity/Constraint/Index/Normal]
+    end
+    
+    subgraph "LOD 1 Unified Buffers"
+        Buffer1[Unified GPU Buffers<br/>Position/Velocity/Constraint/Index/Normal]
+    end
+    
+    subgraph "LOD 2 Unified Buffers"
+        Buffer2[Unified GPU Buffers<br/>Position/Velocity/Constraint/Index/Normal]
+    end
+    
+    subgraph "GPU Compute Dispatch"
+        Dispatch0[Compute Shader Dispatch]
+        Dispatch1[Compute Shader Dispatch]
+        Dispatch2[Compute Shader Dispatch]
+    end
+    
+    BatchMgr0 -->|owns & Update| Solver0
+    BatchMgr1 -->|owns & Update| Solver1
+    BatchMgr2 -->|owns & Update| Solver2
+    
+    Solver0 -->|manages| Buffer0
+    Solver1 -->|manages| Buffer1
+    Solver2 -->|manages| Buffer2
+    
+    Solver0 -->|Simulate & Dispatch| Dispatch0
+    Solver1 -->|Simulate & Dispatch| Dispatch1
+    Solver2 -->|Simulate & Dispatch| Dispatch2
+    
+    Buffer0 -.->|binds to| Dispatch0
+    Buffer1 -.->|binds to| Dispatch1
+    Buffer2 -.->|binds to| Dispatch2
 ```
 
 ```mermaid
