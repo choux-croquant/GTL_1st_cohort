@@ -181,7 +181,6 @@ graph TB
 ```
 
 ```mermaid
-text
 graph TB
     subgraph "Batch Management Layer"
         BatchMgr0[FClothBatchManager LOD 0]
