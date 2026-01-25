@@ -29,17 +29,22 @@ PS_INPUT_CommonMesh main(VS_INPUT_Cloth Input)
 {
     PS_INPUT_CommonMesh Output;
     
-    // NEW: Apply particle offset for batched mode
+    // Batched mode: Apply particle offset to access this instance's data in unified buffer
+    // Each instance has a ParticleOffset that points to its data in the shared buffers
     uint particleIndex = Input.VertexID + ClothParticleOffset;
     
-    // Read dynamic position from simulation buffer (unified buffer in batched mode)
+    // Read dynamic position from simulation buffer
+    // - Batched mode: Unified buffer containing all instances at different offsets
+    // - Legacy mode: Per-instance buffer (offset = 0)
     float4 particleData = ClothPositionBuffer[particleIndex];
     float3 position = particleData.xyz;
     
-    // Read dynamic normal from simulation buffer (unified buffer in batched mode)
+    // Read dynamic normal from simulation buffer
     float3 normal = ClothNormalBuffer[particleIndex];
     
     // Transform to world space
+    // - Batched mode: ClothWorldMatrix = Identity (particles already in world space)
+    // - Legacy mode: ClothWorldMatrix = component transform (particles in local space)
     float4 worldPos = mul(float4(position, 1.0), ClothWorldMatrix);
     Output.WorldPosition = worldPos.xyz;
     

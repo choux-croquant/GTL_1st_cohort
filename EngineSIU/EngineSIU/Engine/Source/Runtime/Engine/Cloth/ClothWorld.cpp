@@ -325,17 +325,21 @@ FClothInstanceHandle *FClothWorld::RegisterClothInstanceBatched(UClothComponent 
 
     // Create instance creation params
     FClothInstanceCreationParams Params;
-    // TODO: Fill params from Asset
     Params.Config = Config;
     Params.OwnerComponent = Component;
     Params.InitialLOD = InitialLOD;
 
+    // Get rest positions and other data from asset (in LOCAL space)
     Params.RestPositions = Asset->GetRestPositions();
     Params.InvMasses = Asset->GetInvMasses();
-    Params.Indices = Asset->GetIndices(); 
+    Params.Indices = Asset->GetIndices();
     Params.Constraints = Asset->GetDistanceConstraints();
     Params.BendConstraints = Asset->GetBendConstraints();
     Params.Attachments = Asset->GetAttachmentData();
+
+    // CRITICAL FIX: Get component's world transform for converting local positions to world space
+    // This ensures each instance simulates at its correct location in the world
+    Params.WorldTransform = Component->GetComponentTransform();
 
     // Add instance to batch
     FClothInstanceHandle *Handle = BatchMgr->AddInstance(Params);

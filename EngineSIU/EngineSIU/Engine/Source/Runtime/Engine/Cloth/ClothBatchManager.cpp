@@ -43,7 +43,7 @@ void FClothBatchManager::Initialize(FGraphicsDevice *InGraphics,
     BatchedSolver->Initialize(Graphics, BufferManager, ShaderManager);
 
     // Initial buffer allocation (conservative estimate)
-    uint32 initialParticles = 150000;   // ~25 instances @ 400 particles
+    uint32 initialParticles = 150000;    // ~25 instances @ 400 particles
     uint32 initialConstraints = 5000000; // ~5 constraints per particle
     uint32 initialBendConstraints = 20000;
     uint32 initialKinematicTargets = 10000;
@@ -171,7 +171,26 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
 
     // ===== UPLOAD INSTANCE DATA TO GPU BUFFERS =====
 
-    // 1. Upload particle data with instance IDs
+    // 1. Transform particle positions from LOCAL space to WORLD space
+    // This ensures each instance simulates at its correct world location
+    TArray<FVector> worldSpacePositions;
+    worldSpacePositions.Reserve(particleCount);
+
+    for (uint32 i = 0; i < particleCount; ++i)
+    {
+        // Transform each particle position to world space using the instance's WorldTransform
+        FVector localPos = Params.RestPositions[i];
+        FVector worldPos = Params.WorldTransform.TransformPosition(localPos);
+        worldSpacePositions.Add(worldPos);
+    }
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Transforming %d particles to world space at offset (%f, %f, %f)"),
+           static_cast<int32>(LODLevel), particleCount,
+           Params.WorldTransform.GetTranslation().X,
+           Params.WorldTransform.GetTranslation().Y,
+           Params.WorldTransform.GetTranslation().Z);
+
+    // 2. Upload particle data with instance IDs
     TArray<uint32> instanceIDs;
     instanceIDs.SetNum(particleCount);
     for (uint32 i = 0; i < particleCount; ++i)
@@ -179,13 +198,14 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         instanceIDs[i] = metadata.InstanceParameterIndex; // All particles belong to this instance
     }
 
+    // Upload transformed world-space positions (NOT local-space positions!)
     BatchedSolver->UploadParticleData(
-        Params.RestPositions,
+        worldSpacePositions, // Changed from Params.RestPositions
         Params.InvMasses,
         instanceIDs,
         metadata.ParticleOffset);
 
-    // 2. Upload distance constraints with global particle indices
+    // 3. Upload distance constraints with global particle indices
     if (Params.Constraints.Num() > 0)
     {
         TArray<FClothDistanceConstraintGPU> constraintsGPU;
@@ -210,7 +230,7 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         BatchedSolver->UploadConstraintData(constraintsGPU, metadata.ConstraintOffset);
     }
 
-    // 3. Upload bend constraints with global particle indices
+    // 4. Upload bend constraints with global particle indices
     if (Params.BendConstraints.Num() > 0)
     {
         TArray<FClothBendConstraintGPU> bendConstraintsGPU;
@@ -235,7 +255,7 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         BatchedSolver->UploadBendConstraintData(bendConstraintsGPU, metadata.BendConstraintOffset);
     }
 
-    // 4. Upload triangle indices with global particle indices
+    // 5. Upload triangle indices with global particle indices
     if (Params.Indices.Num() > 0)
     {
         TArray<uint32> globalIndices;
@@ -249,7 +269,7 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         BatchedSolver->UploadIndexData(globalIndices, metadata.TriangleOffset * 3);
     }
 
-    // 5. Upload kinematic targets (will be updated each frame)
+    // 6. Upload kinematic targets (will be updated each frame)
     if (Params.Attachments.Num() > 0)
     {
         TArray<FClothKinematicTargetGPU> kinematicTargets;
@@ -271,7 +291,7 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         BatchedSolver->UploadKinematicTargets(kinematicTargets, metadata.KinematicTargetOffset);
     }
 
-    // 6. Update instance parameters
+    // 7. Update instance parameters
     UpdateInstanceParameterBuffer();
 
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Added instance - %d particles, %d constraints, Total instances: %d, Total particles: %d"),

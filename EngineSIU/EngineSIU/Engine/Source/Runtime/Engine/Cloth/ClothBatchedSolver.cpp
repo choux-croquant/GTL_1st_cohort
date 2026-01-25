@@ -564,9 +564,9 @@ void FClothBatchedSolver::Simulate(float DeltaTime)
     // 4. Update normals for rendering
     if (UsedTriangleCount > 0)
     {
-        //DispatchClearNormals(UsedParticleCount);
-        //DispatchUpdateNormals(UsedTriangleCount);
-        //DispatchNormalizeNormals(UsedParticleCount);
+        // DispatchClearNormals(UsedParticleCount);
+        // DispatchUpdateNormals(UsedTriangleCount);
+        // DispatchNormalizeNormals(UsedParticleCount);
     }
 }
 
@@ -703,7 +703,7 @@ void FClothBatchedSolver::UploadParticleData(const TArray<FVector> &Positions,
     if (!Graphics || !Graphics->DeviceContext || Positions.Num() == 0)
         return;
 
-    if (!UnifiedPositionBuffer[0] || !UnifiedPositionBuffer[1] || !UnifiedInvMassBuffer)
+    if (!UnifiedPositionBuffer[0] || !UnifiedPositionBuffer[1] || !UnifiedInvMassBuffer || !UnifiedVelocityBuffer)
         return;
 
     uint32 numParticles = Positions.Num();
@@ -743,6 +743,22 @@ void FClothBatchedSolver::UploadParticleData(const TArray<FVector> &Positions,
         Graphics->DeviceContext->UpdateSubresource(UnifiedInvMassBuffer, 0, &destBox,
                                                    InvMasses.GetData(), 0, 0);
     }
+
+    // CRITICAL FIX: Initialize velocity buffer to zero for new particles
+    // Without this, velocities contain undefined data and simulation won't start correctly
+    TArray<FClothVelocityGPU> velocitiesGPU;
+    velocitiesGPU.SetNum(numParticles);
+    for (uint32 i = 0; i < numParticles; ++i)
+    {
+        velocitiesGPU[i].Velocity = FVector::ZeroVector;
+        velocitiesGPU[i].Padding = 0.0f;
+    }
+
+    destBox.left = DestOffset * sizeof(FClothVelocityGPU);
+    destBox.right = destBox.left + numParticles * sizeof(FClothVelocityGPU);
+
+    Graphics->DeviceContext->UpdateSubresource(UnifiedVelocityBuffer, 0, &destBox,
+                                               velocitiesGPU.GetData(), 0, 0);
 }
 
 void FClothBatchedSolver::UploadConstraintData(const TArray<FClothDistanceConstraintGPU> &Constraints,
@@ -789,11 +805,13 @@ void FClothBatchedSolver::UploadBendConstraintData(const TArray<FClothBendConstr
 
 // ClothBatchedSolver.cpp
 void FClothBatchedSolver::UploadKinematicTargets(
-    const TArray<FClothKinematicTargetGPU>& Targets,
+    const TArray<FClothKinematicTargetGPU> &Targets,
     uint32 DestOffset)
 {
-    if (!Graphics || !Graphics->DeviceContext || Targets.Num() == 0) return;
-    if (!UnifiedKinematicTargetBuffer) return;
+    if (!Graphics || !Graphics->DeviceContext || Targets.Num() == 0)
+        return;
+    if (!UnifiedKinematicTargetBuffer)
+        return;
 
     // Kinematic targets는 매 프레임 전체를 업데이트하므로
     // WRITE_DISCARD 사용 (DestOffset은 무시됨)
@@ -811,8 +829,8 @@ void FClothBatchedSolver::UploadKinematicTargets(
         if (DestOffset != 0)
         {
             UE_LOG(ELogLevel::Warning,
-                TEXT("UploadKinematicTargets: DestOffset %d ignored (WRITE_DISCARD used)"),
-                DestOffset);
+                   TEXT("UploadKinematicTargets: DestOffset %d ignored (WRITE_DISCARD used)"),
+                   DestOffset);
         }
 
         // 전체 버퍼의 시작부터 복사
@@ -824,11 +842,10 @@ void FClothBatchedSolver::UploadKinematicTargets(
     else
     {
         UE_LOG(ELogLevel::Error,
-            TEXT("ClothBatchedSolver: Failed to map kinematic target buffer (HR=0x%08X)"),
-            hr);
+               TEXT("ClothBatchedSolver: Failed to map kinematic target buffer (HR=0x%08X)"),
+               hr);
     }
 }
-
 
 void FClothBatchedSolver::UploadInstanceParameters(const TArray<FClothInstanceParameters> &Parameters)
 {
@@ -880,11 +897,10 @@ void FClothBatchedSolver::DispatchIntegration(uint32 ParticleCount)
     // Bind constant buffer
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
 
-    // Bind instance parameter buffer (t1)
-    Graphics->DeviceContext->CSSetShaderResources(1, 1, &InstanceParameterSRV);
-
-    // Bind inverse mass buffer (t2)
-    Graphics->DeviceContext->CSSetShaderResources(2, 1, &UnifiedInvMassSRV);
+    // CRITICAL FIX: Bind SRVs to correct slots matching shader registers
+    // Integration shader expects: t2 = InvMassBuffer, t3 = InstanceParams
+    Graphics->DeviceContext->CSSetShaderResources(2, 1, &UnifiedInvMassSRV);    // t2: InvMassBuffer
+    Graphics->DeviceContext->CSSetShaderResources(3, 1, &InstanceParameterSRV); // t3: InstanceParams
 
     // Bind UAVs
     ID3D11UnorderedAccessView *uavs[] = {
@@ -906,8 +922,8 @@ void FClothBatchedSolver::DispatchIntegration(uint32 ParticleCount)
     // Unbind
     ID3D11UnorderedAccessView *nullUAVs[3] = {nullptr, nullptr, nullptr};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 3, nullUAVs, nullptr);
-    ID3D11ShaderResourceView *nullSRVs[3] = {nullptr, nullptr, nullptr};
-    Graphics->DeviceContext->CSSetShaderResources(1, 2, nullSRVs);
+    ID3D11ShaderResourceView *nullSRVs[2] = {nullptr, nullptr};
+    Graphics->DeviceContext->CSSetShaderResources(2, 2, nullSRVs); // Unbind t2, t3
 }
 
 void FClothBatchedSolver::DispatchConstraintSolver(uint32 ConstraintCount)
@@ -1003,8 +1019,10 @@ void FClothBatchedSolver::DispatchApplyDeltas(uint32 ParticleCount)
     // Bind constant buffer
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
 
-    // Bind position read SRV
-    Graphics->DeviceContext->CSSetShaderResources(0, 1, &UnifiedPositionSRV[readIdx]);
+    // CRITICAL FIX: Bind SRVs to match shader registers
+    // ApplyDelta shader expects: t0 = PositionRead, t2 = InvMassBuffer
+    Graphics->DeviceContext->CSSetShaderResources(0, 1, &UnifiedPositionSRV[readIdx]); // t0: PositionRead
+    Graphics->DeviceContext->CSSetShaderResources(2, 1, &UnifiedInvMassSRV);           // t2: InvMassBuffer
 
     // Bind UAVs
     ID3D11UnorderedAccessView *uavs[] = {
@@ -1026,8 +1044,9 @@ void FClothBatchedSolver::DispatchApplyDeltas(uint32 ParticleCount)
     // Unbind
     ID3D11UnorderedAccessView *nullUAVs[4] = {nullptr, nullptr, nullptr, nullptr};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 4, nullUAVs, nullptr);
-    ID3D11ShaderResourceView *nullSRV = nullptr;
-    Graphics->DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
+    ID3D11ShaderResourceView *nullSRVs[3] = {nullptr, nullptr, nullptr};
+    Graphics->DeviceContext->CSSetShaderResources(0, 1, nullSRVs);     // Unbind t0
+    Graphics->DeviceContext->CSSetShaderResources(2, 1, &nullSRVs[1]); // Unbind t2
 }
 
 void FClothBatchedSolver::DispatchApplyKinematicTargets(uint32 TargetCount)

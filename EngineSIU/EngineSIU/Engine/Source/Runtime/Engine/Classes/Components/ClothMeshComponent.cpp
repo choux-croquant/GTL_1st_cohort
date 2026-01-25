@@ -42,7 +42,6 @@ void UClothMeshComponent::GetRenderData(FClothRenderData &OutData) const
 {
     // Initialize to safe defaults
     OutData = FClothRenderData(); // Use default constructor
-    OutData.WorldTransform = WorldTransform;
     OutData.Material = Materials.Num() > 0 ? Materials[0] : nullptr;
 
     // Check which mode we're in
@@ -69,6 +68,11 @@ void UClothMeshComponent::GetRenderData(FClothRenderData &OutData) const
         OutData.IndexOffset = metadata.TriangleOffset * 3; // Convert triangle offset to index offset
         OutData.NumTriangles = metadata.TriangleCount;
 
+        // CRITICAL FIX: Use Identity transform for batched mode
+        // Particles are already in WORLD space (transformed during upload)
+        // No additional transform needed in vertex shader
+        OutData.WorldTransform = FMatrix::Identity;
+
         // Mark as batched mode
         OutData.bIsBatchedMode = true;
 
@@ -90,6 +94,10 @@ void UClothMeshComponent::GetRenderData(FClothRenderData &OutData) const
         OutData.ParticleOffset = 0;
         OutData.IndexOffset = 0;
         OutData.bIsBatchedMode = false;
+
+        // Legacy mode: Use component's world transform
+        // Particles are in LOCAL space, need transformation to world
+        OutData.WorldTransform = WorldTransform;
     }
 }
 

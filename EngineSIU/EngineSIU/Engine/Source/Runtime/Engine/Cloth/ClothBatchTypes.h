@@ -22,7 +22,7 @@ enum class EClothLODLevel : uint8
     LOD_0 = 0, // High detail   - Close to camera
     LOD_1 = 1, // Medium detail - Medium distance
     LOD_2 = 2, // Low detail    - Far from camera
-    //LOD_3 = 3, // Ultra low     - Very far (optional)
+    // LOD_3 = 3, // Ultra low     - Very far (optional)
 
     Max
 };
@@ -119,7 +119,7 @@ struct FClothInstanceMetadata
  */
 struct FClothInstanceCreationParams
 {
-    // Asset data
+    // Asset data (in LOCAL space - will be transformed to world space during upload)
     TArray<FVector> RestPositions;
     TArray<float> InvMasses;
     TArray<uint32> Indices;
@@ -131,6 +131,9 @@ struct FClothInstanceCreationParams
     FClothConfig Config;
     FClothInstanceParameters InstanceParams;
 
+    // Transform (NEW: For converting local-space positions to world space)
+    FTransform WorldTransform;
+
     // Owner
     UClothComponent *OwnerComponent;
 
@@ -139,7 +142,7 @@ struct FClothInstanceCreationParams
     bool bStartActive = true;
 
     FClothInstanceCreationParams()
-        : OwnerComponent(nullptr), InitialLOD(EClothLODLevel::LOD_0), bStartActive(true)
+        : WorldTransform(FTransform::Identity), OwnerComponent(nullptr), InitialLOD(EClothLODLevel::LOD_0), bStartActive(true)
     {
     }
 };
