@@ -4,6 +4,7 @@
 
 #include "ClothInstanceHandle.h"
 #include "ClothBatchManager.h"
+#include "Components/ClothComponent.h"
 
 FClothInstanceHandle::FClothInstanceHandle(FClothBatchManager *InBatch, int32 InMetadataIndex)
     : BatchManager(InBatch), MetadataIndex(InMetadataIndex), OwnerComponent(nullptr), PendingLOD(EClothLODLevel::LOD_0), bLODChangePending(false)
@@ -59,8 +60,14 @@ void FClothInstanceHandle::RequestLODChange(EClothLODLevel TargetLOD)
 
 void FClothInstanceHandle::UpdateKinematicTargets(const TArray<FClothAttachmentData> &Attachments)
 {
-    // Forward to batch manager - kinematic targets are updated in batch during Update()
-    // The batch manager collects all attachments from all instances in UpdateKinematicTargets()
+    // CRITICAL FIX: Store attachments in owner component so batch manager can read them
+    // The batch manager's UpdateKinematicTargets() reads from owner->GetAttachments()
+    if (OwnerComponent)
+    {
+        // Update the component's attachment array
+        TArray<FClothAttachmentData> &componentAttachments = OwnerComponent->GetAttachmentsRef();
+        componentAttachments = Attachments;
+    }
 }
 
 const FClothInstanceMetadata &FClothInstanceHandle::GetMetadata() const
