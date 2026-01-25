@@ -280,28 +280,27 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         BatchedSolver->UploadBendConstraintData(bendConstraintsGPU, metadata.BendConstraintOffset);
     }
 
-    // 5. Upload triangle indices with global particle indices
+    // 5. Upload triangle indices - OPTION A: Store LOCAL indices, use baseVertexLocation
+    // This is more idiomatic D3D11 - indices stay local (0-based per instance)
+    // D3D11's baseVertexLocation handles the particle offset during rendering
     if (Params.Indices.Num() > 0)
     {
-        TArray<uint32> globalIndices;
-        globalIndices.Reserve(Params.Indices.Num());
+        // OPTION A: Keep indices LOCAL - no offset addition
+        TArray<uint32> localIndices = Params.Indices; // Keep as-is, no modification
 
-        uint32 minGlobalIdx = UINT32_MAX;
-        uint32 maxGlobalIdx = 0;
+        uint32 minLocalIdx = UINT32_MAX;
+        uint32 maxLocalIdx = 0;
 
         for (uint32 localIdx : Params.Indices)
         {
-            uint32 globalIdx = localIdx + metadata.ParticleOffset;
-            globalIndices.Add(globalIdx);
-
-            minGlobalIdx = FMath::Min(minGlobalIdx, globalIdx);
-            maxGlobalIdx = FMath::Max(maxGlobalIdx, globalIdx);
+            minLocalIdx = FMath::Min(minLocalIdx, localIdx);
+            maxLocalIdx = FMath::Max(maxLocalIdx, localIdx);
         }
 
         uint32 indexOffset = metadata.TriangleOffset * 3; // Convert triangles to indices
 
         // CRITICAL VALIDATION: Verify index buffer has enough space
-        uint32 requiredIndexCapacity = indexOffset + globalIndices.Num();
+        uint32 requiredIndexCapacity = indexOffset + localIndices.Num();
         uint32 allocatedIndexCapacity = AllocatedTriangleCapacity * 3;
 
         if (requiredIndexCapacity > allocatedIndexCapacity)
@@ -309,27 +308,26 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
             UE_LOG(ELogLevel::Error, TEXT("ClothBatchManager[LOD%d]: INDEX BUFFER OVERFLOW! Required: %u, Allocated: %u, Instance: %d"),
                    static_cast<int32>(LODLevel), requiredIndexCapacity, allocatedIndexCapacity, Instances.Num());
             UE_LOG(ELogLevel::Error, TEXT("  IndexOffset: %u, IndexCount: %u, TotalTriangles: %u"),
-                   indexOffset, globalIndices.Num(), TotalTriangleCount);
+                   indexOffset, localIndices.Num(), TotalTriangleCount);
             return nullptr; // ABORT - would cause rendering corruption
         }
 
-        // ENHANCED INDEX VALIDATION: Verify indices reference correct particle range
-        UE_LOG(ELogLevel::Display, TEXT("  Global index range: [%u-%u], Expected particle range: [%u-%u]"),
-               minGlobalIdx, maxGlobalIdx,
-               metadata.ParticleOffset, metadata.ParticleOffset + metadata.ParticleCount - 1);
+        // OPTION A VALIDATION: Indices are LOCAL (0-based), range should be [0, ParticleCount)
+        UE_LOG(ELogLevel::Display, TEXT("  Local index range: [%u-%u], ParticleCount: %u"),
+               minLocalIdx, maxLocalIdx, metadata.ParticleCount);
 
-        // Validate that indices reference only this instance's particles
-        if (minGlobalIdx < metadata.ParticleOffset ||
-            maxGlobalIdx >= metadata.ParticleOffset + metadata.ParticleCount)
+        // Validate that local indices are within bounds
+        if (maxLocalIdx >= metadata.ParticleCount)
         {
-            UE_LOG(ELogLevel::Error, TEXT("  *** INDEX OUT OF RANGE! Indices reference particles outside instance range! ***"));
-            UE_LOG(ELogLevel::Error, TEXT("  This will cause rendering corruption and out-of-bounds buffer access!"));
+            UE_LOG(ELogLevel::Error, TEXT("  *** LOCAL INDEX OUT OF RANGE! Max index %u >= ParticleCount %u ***"),
+                   maxLocalIdx, metadata.ParticleCount);
+            UE_LOG(ELogLevel::Error, TEXT("  This will cause rendering corruption!"));
         }
 
-        UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Uploading %d indices at offset %u (Triangle offset: %u)"),
-               static_cast<int32>(LODLevel), globalIndices.Num(), indexOffset, metadata.TriangleOffset);
+        UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Uploading %d LOCAL indices at offset %u (will use baseVertex=%u)"),
+               static_cast<int32>(LODLevel), localIndices.Num(), indexOffset, metadata.ParticleOffset);
 
-        BatchedSolver->UploadIndexData(globalIndices, indexOffset);
+        BatchedSolver->UploadIndexData(localIndices, indexOffset);
     }
 
     // 6. DON'T upload kinematic targets during AddInstance
@@ -578,8 +576,18 @@ void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
     TArray<FClothKinematicTargetGPU> allTargets;
     allTargets.Reserve(TotalKinematicTargetCount);
 
-    for (FClothInstanceHandle *Handle : Instances)
+    static int updateCount = 0;
+    bool bLogDetails = (updateCount++ < 5); // Log first 5 updates
+
+    if (bLogDetails)
     {
+        UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: UpdateKinematicTargets - Processing %d instances"),
+               static_cast<int32>(LODLevel), Instances.Num());
+    }
+
+    for (int32 instIdx = 0; instIdx < Instances.Num(); ++instIdx)
+    {
+        FClothInstanceHandle *Handle = Instances[instIdx];
         if (!Handle || !Handle->IsActive())
             continue;
 
@@ -596,9 +604,16 @@ void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
         if (attachments.Num() == 0)
             continue;
 
-        // For each attachment, resolve world position and create GPU target
-        for (const FClothAttachmentData &attachment : attachments)
+        if (bLogDetails)
         {
+            UE_LOG(ELogLevel::Display, TEXT("  Instance %d: %d attachments, ParticleOffset=%u, AssetPtr=%p"),
+                   instIdx, attachments.Num(), metadata.ParticleOffset, owner->GetClothAsset());
+        }
+
+        // For each attachment, resolve world position and create GPU target
+        for (int32 attIdx = 0; attIdx < attachments.Num(); ++attIdx)
+        {
+            const FClothAttachmentData &attachment = attachments[attIdx];
             FClothKinematicTargetGPU target;
 
             // Convert local particle index to global batch index
@@ -614,12 +629,28 @@ void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
                 FTransform driverTransform = attachment.DriverComponent->GetComponentTransform();
                 FTransform attachmentWorldTransform = driverTransform * attachment.LocalOffset;
                 worldPosition = attachmentWorldTransform.GetTranslation();
+
+                if (bLogDetails && attIdx == 0) // Log first attachment of each instance
+                {
+                    FVector driverLocation = attachment.DriverComponent->GetComponentLocation();
+                    UE_LOG(ELogLevel::Display, TEXT("    Attachment[0]: ParticleIdx=%u (local=%u), DriverPtr=%p, DriverLoc=(%f,%f,%f), TargetPos=(%f,%f,%f)"),
+                           target.ParticleIndex, attachment.ClothVertexIndex,
+                           attachment.DriverComponent,
+                           driverLocation.X, driverLocation.Y, driverLocation.Z,
+                           worldPosition.X, worldPosition.Y, worldPosition.Z);
+                }
             }
             else
             {
                 // Fallback to manually-set WorldPosition (for static attachments or backward compatibility)
                 // Actor-based attachments should set DriverComponent instead
                 worldPosition = attachment.WorldPosition;
+
+                if (bLogDetails)
+                {
+                    UE_LOG(ELogLevel::Warning, TEXT("    Instance %d: Attachment has no DriverComponent! Using WorldPosition"),
+                           instIdx);
+                }
             }
 
             target.TargetPosition = worldPosition;
@@ -635,6 +666,11 @@ void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
     // Upload all kinematic targets to GPU in one batch
     if (allTargets.Num() > 0)
     {
+        if (bLogDetails)
+        {
+            UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Uploading %d kinematic targets to GPU"),
+                   static_cast<int32>(LODLevel), allTargets.Num());
+        }
         BatchedSolver->UploadKinematicTargets(allTargets, 0);
     }
 }

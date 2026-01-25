@@ -197,6 +197,25 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, ECloth
     // Set up attachments for top row by configuring them directly on the cloth asset.
     // The simulation system will automatically resolve world positions each frame
     // based on these driver references - no manual updates needed!
+
+    // CRITICAL: Verify driver exists before setting up attachments
+    if (!AttachmentDrivers[Index])
+    {
+        UE_LOG(ELogLevel::Error, TEXT("CreateTestCloth: AttachmentDrivers[%d] is NULL! Cannot set up attachments."), Index);
+        return;
+    }
+
+    UStaticMeshComponent *driverMeshComp = AttachmentDrivers[Index]->GetStaticMeshComponent();
+    if (!driverMeshComp)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("CreateTestCloth: Driver %d has no StaticMeshComponent!"), Index);
+        return;
+    }
+
+    FVector driverPos = AttachmentDrivers[Index]->GetActorLocation();
+    UE_LOG(ELogLevel::Display, TEXT("CreateTestCloth[%d]: Setting up %d attachments to driver @ (%f, %f, %f), DriverPtr=%p"),
+           Index, GridSize, driverPos.X, driverPos.Y, driverPos.Z, driverMeshComp);
+
     for (int32 x = 0; x < GridSize; ++x)
     {
         FClothAttachmentData attachment;
@@ -206,7 +225,7 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, ECloth
 
         // Attachment type and driver reference
         attachment.Type = EClothAttachmentType::ActorTransform;
-        attachment.DriverComponent = AttachmentDrivers[Index]->GetStaticMeshComponent();
+        attachment.DriverComponent = driverMeshComp; // Use cached pointer
 
         // Local offset from driver transform
         float Offset = (15.0f / float(GridSize - 1)) * x;
@@ -219,6 +238,9 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, ECloth
         // Add to asset - this is the single source of truth for attachments
         ClothAssets[Index]->AddAttachmentData(attachment);
     }
+
+    UE_LOG(ELogLevel::Display, TEXT("CreateTestCloth[%d]: Added %d attachments to ClothAsset %p (Driver=%p)"),
+           Index, GridSize, ClothAssets[Index], driverMeshComp);
 
     // Set cloth asset data
     ClothAssets[Index]->SetRestPositions(positions);
@@ -267,15 +289,37 @@ void ATestBatchedClothActor::PostSpawnInitialize()
     // Create test cloths with different sizes and LOD levels
     // This demonstrates the batching system's ability to handle multiple instances
 
+    // CRITICAL FIX: Calculate driver positions BEFORE spawning
+    // Position instances in a grid layout FIRST
+    for (int32 i = 0; i < NumClothInstances; ++i)
+    {
+        int32 row = i / 4;
+        int32 col = i % 4;
+
+        FVector offset(row * 150.0f, col * 150.0f, 0.0f);
+        FVector instanceLocation = GetActorLocation() + offset;
+
+        // Calculate and store driver positions BEFORE spawning
+        DriverInitialPositions[i] = instanceLocation;
+
+        UE_LOG(ELogLevel::Display, TEXT("  Instance %d will be positioned at (%f, %f, %f)"),
+               i, instanceLocation.X, instanceLocation.Y, instanceLocation.Z);
+    }
+
+    // Now spawn drivers at their correct positions
     UWorld *world = GetWorld();
     if (world)
     {
         for (int32 i = 0; i < NumClothInstances; ++i)
         {
+            UE_LOG(ELogLevel::Display, TEXT("  Spawning driver %d: Target position = (%f, %f, %f)"),
+                   i, DriverInitialPositions[i].X, DriverInitialPositions[i].Y, DriverInitialPositions[i].Z);
+
             AttachmentDrivers[i] = world->SpawnActor<AStaticMeshActor>();
 
             if (AttachmentDrivers[i])
             {
+                // FIXED: Now DriverInitialPositions[i] has the correct position
                 AttachmentDrivers[i]->SetActorLocation(DriverInitialPositions[i]);
 
                 // Set up mesh
@@ -288,34 +332,47 @@ void ATestBatchedClothActor::PostSpawnInitialize()
                     meshComp->SetStaticMesh(StaticMesh);
                     meshComp->SetRelativeScale3D(FVector(1.5f, 1.5f, 3.0f));
                 }
+
+                // Verify actual location after spawn
+                FVector actualLoc = AttachmentDrivers[i]->GetActorLocation();
+                UE_LOG(ELogLevel::Display, TEXT("  Driver %d SPAWNED: ActorPtr=%p, MeshCompPtr=%p, ActualLoc=(%f,%f,%f)"),
+                       i, AttachmentDrivers[i], meshComp, actualLoc.X, actualLoc.Y, actualLoc.Z);
+            }
+            else
+            {
+                UE_LOG(ELogLevel::Error, TEXT("  FAILED to spawn driver %d!"), i);
             }
         }
 
-        UE_LOG(ELogLevel::Display, TEXT("TestBatchedClothActor: Spawned %d attachment drivers"),
-               NumClothInstances);
+        UE_LOG(ELogLevel::Display, TEXT("TestBatchedClothActor: Spawned %d attachment drivers"), NumClothInstances);
+
+        // VERIFY: Check all driver positions are distinct
+        UE_LOG(ELogLevel::Display, TEXT("TestBatchedClothActor: Verifying driver positions:"));
+        for (int32 i = 0; i < NumClothInstances; ++i)
+        {
+            if (AttachmentDrivers[i])
+            {
+                FVector loc = AttachmentDrivers[i]->GetActorLocation();
+                UE_LOG(ELogLevel::Display, TEXT("  Driver[%d] @ (%f, %f, %f)"), i, loc.X, loc.Y, loc.Z);
+            }
+        }
     }
 
+    // CRITICAL FIX: Position cloth components BEFORE creating cloths/starting simulation
+    // When CreateTestCloth calls StartSimulation, it uploads particles using component transform
+    // Components must be at correct world positions BEFORE this happens
+    for (int32 i = 0; i < NumClothInstances; ++i)
+    {
+        ClothMeshes[i]->SetWorldLocation(DriverInitialPositions[i]);
+        UE_LOG(ELogLevel::Display, TEXT("  Positioned ClothMesh[%d] at (%f, %f, %f)"),
+               i, DriverInitialPositions[i].X, DriverInitialPositions[i].Y, DriverInitialPositions[i].Z);
+    }
+
+    // Now create cloth instances (particles will be uploaded at correct world positions)
     // LOD 0 (High detail) - Batch Test
     for (int32 i = 0; i < NumClothInstances; i++)
     {
         CreateTestCloth(i, 20 - i * 2, EClothLODLevel::LOD_0);
-    }
-
-    // Position instances in a grid layout
-    for (int32 i = 0; i < NumClothInstances; ++i)
-    {
-        int32 row = i / 4;
-        int32 col = i % 4;
-
-        FVector offset(row * 150.0f, col * 150.0f, 0.0f);
-        FVector instanceLocation = GetActorLocation() + offset;
-        ClothMeshes[i]->SetWorldLocation(instanceLocation);
-
-        // Store driver initial position
-        DriverInitialPositions[i] = instanceLocation;
-
-        UE_LOG(ELogLevel::Display, TEXT("  Instance %d positioned at (%f, %f, %f)"),
-               i, instanceLocation.X, instanceLocation.Y, instanceLocation.Z);
     }
 
     // Assign assets to components and start simulation

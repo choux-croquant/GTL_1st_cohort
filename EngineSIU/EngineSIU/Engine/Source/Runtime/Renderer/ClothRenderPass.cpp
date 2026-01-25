@@ -253,10 +253,11 @@ void FClothRenderPass::RenderClothComponent(UClothMeshComponent *ClothComponent,
         if (!renderData.UnifiedIndexBuffer)
             return;
 
-        // Validate rendering parameters to prevent D3D11 errors
+        // OPTION A: Use D3D11's baseVertexLocation for vertex offset
+        // Indices in buffer are LOCAL (0-based), baseVertex adds the particle offset
         uint32 indexCount = renderData.NumTriangles * 3;
-        uint32 startIndexLocation = renderData.IndexOffset; // Already in index units (not triangles)
-        int32 baseVertexLocation = 0;                       // Vertex offset handled in shader via ClothParticleOffset
+        uint32 startIndexLocation = renderData.IndexOffset;   // Already in index units (not triangles)
+        int32 baseVertexLocation = renderData.ParticleOffset; // D3D11 adds this to each index
 
         // Calculate the last index that will be accessed
         uint32 lastIndexAccessed = startIndexLocation + indexCount;
@@ -282,9 +283,9 @@ void FClothRenderPass::RenderClothComponent(UClothMeshComponent *ClothComponent,
         // Bind unified index buffer directly
         Graphics->DeviceContext->IASetIndexBuffer(renderData.UnifiedIndexBuffer, DXGI_FORMAT_R32_UINT, 0);
 
-        // Draw with offset and count
-        // StartIndexLocation is in indices (not bytes)
-        // BaseVertexLocation is 0 because we handle vertex offset in shader via ClothParticleOffset
+        // OPTION A: Use baseVertexLocation for per-instance vertex offset
+        // D3D11 automatically adds baseVertexLocation to each index value
+        // Index buffer contains local indices [0-N], D3D11 converts to [baseVertex-baseVertex+N]
         Graphics->DeviceContext->DrawIndexed(indexCount, startIndexLocation, baseVertexLocation);
     }
     else
