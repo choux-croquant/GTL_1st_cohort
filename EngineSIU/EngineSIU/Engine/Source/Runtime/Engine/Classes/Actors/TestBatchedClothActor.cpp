@@ -266,6 +266,20 @@ void ATestBatchedClothActor::PostSpawnInitialize()
 
     // Create test cloths with different sizes and LOD levels
     // This demonstrates the batching system's ability to handle multiple instances
+    for (int32 i = 0; i < NumClothInstances; ++i)
+    {
+        int32 row = i / 4;
+        int32 col = i % 4;
+
+        FVector offset(row * 150.0f, col * 150.0f, 0.0f);
+        FVector instanceLocation = GetActorLocation() + offset;
+
+        // Calculate and store driver positions BEFORE spawning
+        DriverInitialPositions[i] = instanceLocation;
+
+        UE_LOG(ELogLevel::Display, TEXT("  Instance %d will be positioned at (%f, %f, %f)"),
+            i, instanceLocation.X, instanceLocation.Y, instanceLocation.Z);
+    }
 
     UWorld *world = GetWorld();
     if (world)
