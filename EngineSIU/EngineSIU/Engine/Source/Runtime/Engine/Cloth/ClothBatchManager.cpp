@@ -157,6 +157,18 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
     metadata.bIsActive = Params.bStartActive;
     metadata.CurrentLOD = Params.InitialLOD;
 
+    // ENHANCED VALIDATION LOGGING
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: ===== Instance %d Metadata ====="),
+           static_cast<int32>(LODLevel), Instances.Num());
+    UE_LOG(ELogLevel::Display, TEXT("  Particles: Offset=%u, Count=%u, Range=[%u-%u]"),
+           metadata.ParticleOffset, metadata.ParticleCount,
+           metadata.ParticleOffset, metadata.ParticleOffset + metadata.ParticleCount - 1);
+    UE_LOG(ELogLevel::Display, TEXT("  Triangles: Offset=%u, Count=%u, IndexRange=[%u-%u]"),
+           metadata.TriangleOffset, metadata.TriangleCount,
+           metadata.TriangleOffset * 3, (metadata.TriangleOffset + metadata.TriangleCount) * 3 - 1);
+    UE_LOG(ELogLevel::Display, TEXT("  Constraints: Offset=%u, Count=%u"),
+           metadata.ConstraintOffset, metadata.ConstraintCount);
+
     // Create instance handle
     int32 metadataIndex = InstanceMetadata.Add(metadata);
     FClothInstanceHandle *handle = new FClothInstanceHandle(this, metadataIndex);
@@ -274,9 +286,16 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         TArray<uint32> globalIndices;
         globalIndices.Reserve(Params.Indices.Num());
 
+        uint32 minGlobalIdx = UINT32_MAX;
+        uint32 maxGlobalIdx = 0;
+
         for (uint32 localIdx : Params.Indices)
         {
-            globalIndices.Add(localIdx + metadata.ParticleOffset);
+            uint32 globalIdx = localIdx + metadata.ParticleOffset;
+            globalIndices.Add(globalIdx);
+
+            minGlobalIdx = FMath::Min(minGlobalIdx, globalIdx);
+            maxGlobalIdx = FMath::Max(maxGlobalIdx, globalIdx);
         }
 
         uint32 indexOffset = metadata.TriangleOffset * 3; // Convert triangles to indices
@@ -292,6 +311,19 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
             UE_LOG(ELogLevel::Error, TEXT("  IndexOffset: %u, IndexCount: %u, TotalTriangles: %u"),
                    indexOffset, globalIndices.Num(), TotalTriangleCount);
             return nullptr; // ABORT - would cause rendering corruption
+        }
+
+        // ENHANCED INDEX VALIDATION: Verify indices reference correct particle range
+        UE_LOG(ELogLevel::Display, TEXT("  Global index range: [%u-%u], Expected particle range: [%u-%u]"),
+               minGlobalIdx, maxGlobalIdx,
+               metadata.ParticleOffset, metadata.ParticleOffset + metadata.ParticleCount - 1);
+
+        // Validate that indices reference only this instance's particles
+        if (minGlobalIdx < metadata.ParticleOffset ||
+            maxGlobalIdx >= metadata.ParticleOffset + metadata.ParticleCount)
+        {
+            UE_LOG(ELogLevel::Error, TEXT("  *** INDEX OUT OF RANGE! Indices reference particles outside instance range! ***"));
+            UE_LOG(ELogLevel::Error, TEXT("  This will cause rendering corruption and out-of-bounds buffer access!"));
         }
 
         UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Uploading %d indices at offset %u (Triangle offset: %u)"),

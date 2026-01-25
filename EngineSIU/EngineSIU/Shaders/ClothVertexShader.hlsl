@@ -29,13 +29,17 @@ PS_INPUT_CommonMesh main(VS_INPUT_Cloth Input)
 {
     PS_INPUT_CommonMesh Output;
     
-    // Batched mode: Apply particle offset to access this instance's data in unified buffer
-    // Each instance has a ParticleOffset that points to its data in the shared buffers
-    uint particleIndex = Input.VertexID + ClothParticleOffset;
+    // CRITICAL FIX: Input.VertexID is the value from the index buffer
+    // In batched mode, indices are ALREADY global particle indices (converted during upload)
+    // Adding ClothParticleOffset would cause double offset bug
+    //
+    // Batched mode: Indices in index buffer are global (e.g., [400-723] for instance 1)
+    // Legacy mode: ClothParticleOffset = 0, indices are local [0-N], works correctly
+    uint particleIndex = Input.VertexID;  // Use index directly, no offset
     
     // Read dynamic position from simulation buffer
-    // - Batched mode: Unified buffer containing all instances at different offsets
-    // - Legacy mode: Per-instance buffer (offset = 0)
+    // - Batched mode: Unified buffer, indices already point to correct particles
+    // - Legacy mode: Per-instance buffer, indices are 0-based
     float4 particleData = ClothPositionBuffer[particleIndex];
     float3 position = particleData.xyz;
     

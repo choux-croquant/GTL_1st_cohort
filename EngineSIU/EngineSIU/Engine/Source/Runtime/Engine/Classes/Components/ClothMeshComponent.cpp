@@ -63,7 +63,10 @@ void UClothMeshComponent::GetRenderData(FClothRenderData &OutData) const
         OutData.UnifiedIndexBuffer = batchedSolver->GetUnifiedIndexBuffer();
 
         // Set instance-specific offsets and counts
-        OutData.ParticleOffset = metadata.ParticleOffset;
+        // CRITICAL FIX: ParticleOffset = 0 because indices in unified buffer are ALREADY global
+        // They were converted to global during upload (localIdx + ParticleOffset)
+        // Adding offset again in shader would cause double offset bug
+        OutData.ParticleOffset = 0;
         OutData.NumVertices = metadata.ParticleCount;
         OutData.IndexOffset = metadata.TriangleOffset * 3; // Convert triangle offset to index offset
         OutData.NumTriangles = metadata.TriangleCount;
