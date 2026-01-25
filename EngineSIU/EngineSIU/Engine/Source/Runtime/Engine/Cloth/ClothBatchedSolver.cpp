@@ -357,18 +357,37 @@ bool FClothBatchedSolver::AllocateBuffers(uint32 MaxParticles, uint32 MaxConstra
     if (MaxTriangles > 0)
     {
         bufferDesc.Usage = D3D11_USAGE_DEFAULT;
-        bufferDesc.ByteWidth = sizeof(uint32) * MaxTriangles * 3;
+        bufferDesc.ByteWidth = sizeof(uint32) * MaxTriangles * 3;                    // CRITICAL: 3 indices per triangle!
         bufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER | D3D11_BIND_SHADER_RESOURCE; // Both flags for dual use
         bufferDesc.StructureByteStride = 0;                                          // Not a structured buffer
         bufferDesc.CPUAccessFlags = 0;
         bufferDesc.MiscFlags = 0; // Remove D3D11_RESOURCE_MISC_BUFFER_STRUCTURED
 
+        UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Creating index buffer - Triangles: %u, Indices: %u, ByteWidth: %u"),
+               MaxTriangles, MaxTriangles * 3, bufferDesc.ByteWidth);
+
         hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &UnifiedIndexBuffer);
         if (FAILED(hr))
         {
-            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create index buffer"));
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create index buffer (HRESULT: 0x%08X)"), hr);
             return false;
         }
+
+        // VERIFY buffer was created with correct size
+        D3D11_BUFFER_DESC verifyDesc;
+        UnifiedIndexBuffer->GetDesc(&verifyDesc);
+        uint32 actualIndexCapacity = verifyDesc.ByteWidth / sizeof(uint32);
+        uint32 expectedIndexCapacity = MaxTriangles * 3;
+
+        if (actualIndexCapacity != expectedIndexCapacity)
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Index buffer size mismatch! Expected: %u indices, Got: %u indices"),
+                   expectedIndexCapacity, actualIndexCapacity);
+            return false;
+        }
+
+        UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Index buffer verified - Capacity: %u indices (%u bytes)"),
+               actualIndexCapacity, verifyDesc.ByteWidth);
 
         // Create SRV as typed buffer (Buffer<uint> in HLSL) instead of StructuredBuffer<uint>
         D3D11_SHADER_RESOURCE_VIEW_DESC indexSrvDesc = {};
@@ -507,6 +526,14 @@ void FClothBatchedSolver::Simulate(float DeltaTime)
 
     if (UsedParticleCount == 0)
         return;
+
+    // DIAGNOSTIC: Log simulation state every 60 frames
+   /* static int simFrameCount = 0;
+    if (simFrameCount++ % 60 == 0)
+    {
+        UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver::Simulate - Particles:%d, Constraints:%d, BendConstraints:%d, KinematicTargets:%d, BufferIndex:%d"),
+               UsedParticleCount, UsedConstraintCount, UsedBendConstraintCount, UsedKinematicTargetCount, CurrentBufferIndex);
+    }*/
 
     // Clamp delta time for stability
     float clampedDT = FMath::Clamp(DeltaTime, 0.0001f, 0.033f);

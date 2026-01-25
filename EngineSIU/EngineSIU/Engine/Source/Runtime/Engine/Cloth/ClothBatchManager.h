@@ -96,6 +96,10 @@ private:
     // Buffer management
     uint32 AllocatedParticleCapacity;
     uint32 AllocatedConstraintCapacity;
+    uint32 AllocatedBendConstraintCapacity;
+    uint32 AllocatedKinematicTargetCapacity;
+    uint32 AllocatedTriangleCapacity;
+    uint32 AllocatedInstanceCapacity;
     bool bNeedsReallocation;
     bool bNeedsCompaction;
     float GrowthFactor;

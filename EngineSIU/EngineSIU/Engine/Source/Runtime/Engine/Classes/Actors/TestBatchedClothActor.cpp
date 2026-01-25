@@ -27,6 +27,7 @@ ATestBatchedClothActor::ATestBatchedClothActor()
         ClothAssets[i] = FObjectFactory::ConstructObject<UClothAsset>(this, *AssetName);
 
         ClothHandles[i] = nullptr;
+        FString DriverName = FString::Printf(TEXT("AttachmentDriver_%d"), i);
         AttachmentDrivers[i] = nullptr;
         DriverInitialPositions[i] = FVector::ZeroVector;
     }
@@ -36,50 +37,12 @@ ATestBatchedClothActor::ATestBatchedClothActor()
 
     AnimationTime = 0.0f;
     bDriversSpawned = false;
+    bClothInitialized = false; // CRITICAL: Prevent double initialization
 }
 
 void ATestBatchedClothActor::BeginPlay()
 {
     Super::BeginPlay();
-
-    // Create test cloths with different sizes and LOD levels
-    // This demonstrates the batching system's ability to handle multiple instances
-
-    // LOD 0 (High detail) - Batch Test Only use LOD1 at first
-    for (int i = 0; i < 256; i++)
-    {
-        CreateTestCloth(i, 20, EClothLODLevel::LOD_0); // 12x12 grid
-    }
-
-    // Position instances in a grid layout
-    for (int32 i = 0; i < NumClothInstances; ++i)
-    {
-        int32 row = i / 4;
-        int32 col = i % 4;
-
-        FVector offset(row * 150.0f, col * 150.0f, 0.0f);
-        FVector instanceLocation = GetActorLocation() + offset;
-        ClothMeshes[i]->SetWorldLocation(instanceLocation);
-
-        // Store driver initial position
-        DriverInitialPositions[i] = instanceLocation;
-    }
-
-    // Assign assets to components and start simulation
-    for (int32 i = 0; i < NumClothInstances; ++i)
-    {
-        if (ClothMeshes[i] && ClothAssets[i])
-        {
-            ClothMeshes[i]->SetClothAsset(ClothAssets[i]);
-            ClothMeshes[i]->StartSimulation();
-
-            // Get the cloth instance handle (batched mode)
-            ClothHandles[i] = ClothMeshes[i]->GetClothInstanceHandle();
-        }
-    }
-
-    UE_LOG(ELogLevel::Display, TEXT("TestBatchedClothActor: Created %d cloth instances across LOD levels"),
-           NumClothInstances);
 }
 
 void ATestBatchedClothActor::Tick(float DeltaTime)
@@ -90,69 +53,11 @@ void ATestBatchedClothActor::Tick(float DeltaTime)
     if (!bDriversSpawned)
     {
         bDriversSpawned = true;
-
-        UWorld *world = GetWorld();
-        if (world)
-        {
-            for (int32 i = 0; i < NumClothInstances; ++i)
-            {
-                AttachmentDrivers[i] = world->SpawnActor<AStaticMeshActor>();
-
-                if (AttachmentDrivers[i])
-                {
-                    AttachmentDrivers[i]->SetActorLocation(DriverInitialPositions[i]);
-
-                    // Set up mesh
-                    UStaticMeshComponent *meshComp = AttachmentDrivers[i]->GetStaticMeshComponent();
-                    if (meshComp)
-                    {
-                        FString MeshName = "Contents/pole/pole.obj";
-                        UStaticMesh *StaticMesh = FObjManager::GetStaticMesh(MeshName.ToWideString());
-                        meshComp->SetStaticMesh(StaticMesh);
-                        meshComp->SetRelativeScale3D(FVector(1.5f, 1.5f, 3.0f));
-                    }
-                }
-            }
-
-            UE_LOG(ELogLevel::Display, TEXT("TestBatchedClothActor: Spawned %d attachment drivers"),
-                   NumClothInstances);
-        }
+        return;
     }
 
     // Accumulate animation time
     AnimationTime += DeltaTime;
-
-    // Animate each attachment driver with different phase offsets
-    for (int32 i = 0; i < NumClothInstances; ++i)
-    {
-        if (AttachmentDrivers[i])
-        {
-            float phaseOffset = (float)i / (float)NumClothInstances * 2.0f * PI;
-            const float Speed = 0.8f;
-            const float MoveRadius = 100.0f;
-            const float SwayAngleScale = 30.0f;
-
-            float Time = AnimationTime * Speed + phaseOffset;
-
-            // Different motion patterns based on instance index
-            float OffsetY = FMath::Sin(Time) * MoveRadius;
-            float OffsetX = FMath::Cos(Time * 2.0f) * (MoveRadius * 0.3f);
-            float OffsetZ = FMath::Sin(Time * 1.5f) * (MoveRadius * 0.15f);
-
-            FVector NewLocation = DriverInitialPositions[i] + FVector(OffsetX, OffsetY, OffsetZ);
-
-            float RollAngle = -FMath::Cos(Time) * SwayAngleScale;
-            float PitchAngle = FMath::Sin(Time * 1.5f) * (SwayAngleScale * 0.2f);
-
-            FRotator NewRotation = FRotator(PitchAngle, 0.0f, RollAngle);
-
-            AttachmentDrivers[i]->SetActorLocation(NewLocation);
-            AttachmentDrivers[i]->SetActorRotation(NewRotation);
-        }
-    }
-
-    // Update attachments for all instances
-    UpdateAllAttachments();
 }
 
 void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, EClothLODLevel LOD)
@@ -250,26 +155,70 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, ECloth
 
     // Generate bend constraints (simplified for test)
     TArray<FClothBendConstraint> bendConstraints;
-    // TODO: Add bend constraint generation if needed
+    // Horizontal bend constraints (connect triangles across horizontal edges)
+    for (int32 y = 0; y < GridSize - 1; ++y)
+    {
+        for (int32 x = 0; x < GridSize - 2; ++x)
+        {
+            // Two quads sharing a vertical edge
+            int32 pA = y * GridSize + x;       // Left-top
+            int32 pB = (y + 1) * GridSize + x; // Left-bottom (shared edge with pA)
+            int32 pC = y * GridSize + (x + 1); // Middle-top (opposite in left quad)
+            int32 pD = y * GridSize + (x + 2); // Right-top (opposite in right quad)
 
-    // Set up attachments for top row
-    TArray<FClothAttachmentData> attachments;
+            // Calculate rest angle (initially flat = PI radians)
+            float restAngle = PI;   // Flat cloth
+            float stiffness = 1.0f; // Moderate bend resistance
+
+            bendConstraints.Add(FClothBendConstraint(pA, pB, pC, pD, restAngle, stiffness));
+        }
+    }
+
+    // Vertical bend constraints (connect triangles across vertical edges)
+    for (int32 y = 0; y < GridSize - 2; ++y)
+    {
+        for (int32 x = 0; x < GridSize - 1; ++x)
+        {
+            // Two quads sharing a horizontal edge
+            int32 pA = y * GridSize + x;       // Top-left (shared edge)
+            int32 pB = y * GridSize + (x + 1); // Top-right (shared edge)
+            int32 pC = (y + 1) * GridSize + x; // Middle-left (opposite in top quad)
+            int32 pD = (y + 2) * GridSize + x; // Bottom-left (opposite in bottom quad)
+
+            // Calculate rest angle (initially flat = PI radians)
+            float restAngle = PI;   // Flat cloth
+            float stiffness = 1.0f; // Moderate bend resistance
+
+            bendConstraints.Add(FClothBendConstraint(pA, pB, pC, pD, restAngle, stiffness));
+        }
+    }
+
+    // DATA-DRIVEN ATTACHMENT CONFIGURATION
+    // Set up attachments for top row by configuring them directly on the cloth asset.
+    // The simulation system will automatically resolve world positions each frame
+    // based on these driver references - no manual updates needed!
     for (int32 x = 0; x < GridSize; ++x)
     {
         FClothAttachmentData attachment;
-        attachment.Type = EClothAttachmentType::ActorTransform;
-        attachment.ClothVertexIndex = x; // Top row
 
+        // Specify which cloth vertex this attachment controls
+        attachment.ClothVertexIndex = x; // Top row vertex index
+
+        // Attachment type and driver reference
+        attachment.Type = EClothAttachmentType::ActorTransform;
+        attachment.DriverComponent = AttachmentDrivers[Index]->GetStaticMeshComponent();
+
+        // Local offset from driver transform
         float Offset = (15.0f / float(GridSize - 1)) * x;
         attachment.LocalOffset = FTransform(FVector(0.0f, 0.0f, Offset));
+
+        // Attachment properties
         attachment.Stiffness = 0.98f;
         attachment.bIsKinematic = true;
 
-        attachments.Add(attachment);
+        // Add to asset - this is the single source of truth for attachments
+        ClothAssets[Index]->AddAttachmentData(attachment);
     }
-
-    // Store attachments for runtime updates
-    CachedAttachments[Index] = attachments;
 
     // Set cloth asset data
     ClothAssets[Index]->SetRestPositions(positions);
@@ -284,11 +233,6 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, ECloth
     for (const FClothBendConstraint &constraint : bendConstraints)
     {
         ClothAssets[Index]->AddBendConstraint(constraint);
-    }
-
-    for (const FClothAttachmentData &data : attachments)
-    {
-        ClothAssets[Index]->AddAttachmentData(data);
     }
 
     // Configure simulation parameters with variations per instance
@@ -308,58 +252,97 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, ECloth
            Index, GridSize, GridSize, static_cast<int32>(LOD), positions.Num());
 }
 
-void ATestBatchedClothActor::UpdateAllAttachments()
+void ATestBatchedClothActor::PostSpawnInitialize()
 {
+    // CRITICAL FIX: Guard against double initialization
+    // BeginPlay can be called multiple times in some engine scenarios
+    if (bClothInitialized)
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("TestBatchedClothActor: BeginPlay called again, skipping re-initialization"));
+        return;
+    }
+
+    UE_LOG(ELogLevel::Display, TEXT("TestBatchedClothActor: BeginPlay starting - Creating %d cloth instances"), NumClothInstances);
+
+    // Create test cloths with different sizes and LOD levels
+    // This demonstrates the batching system's ability to handle multiple instances
+
+    UWorld *world = GetWorld();
+    if (world)
+    {
+        for (int32 i = 0; i < NumClothInstances; ++i)
+        {
+            AttachmentDrivers[i] = world->SpawnActor<AStaticMeshActor>();
+
+            if (AttachmentDrivers[i])
+            {
+                AttachmentDrivers[i]->SetActorLocation(DriverInitialPositions[i]);
+
+                // Set up mesh
+                UStaticMeshComponent *meshComp = AttachmentDrivers[i]->GetStaticMeshComponent();
+
+                if (meshComp)
+                {
+                    FString MeshName = "Contents/pole/pole.obj";
+                    UStaticMesh *StaticMesh = FObjManager::GetStaticMesh(MeshName.ToWideString());
+                    meshComp->SetStaticMesh(StaticMesh);
+                    meshComp->SetRelativeScale3D(FVector(1.5f, 1.5f, 3.0f));
+                }
+            }
+        }
+
+        UE_LOG(ELogLevel::Display, TEXT("TestBatchedClothActor: Spawned %d attachment drivers"),
+               NumClothInstances);
+    }
+
+    // LOD 0 (High detail) - Batch Test
+    for (int32 i = 0; i < NumClothInstances; i++)
+    {
+        CreateTestCloth(i, 20 - i * 2, EClothLODLevel::LOD_0);
+    }
+
+    // Position instances in a grid layout
     for (int32 i = 0; i < NumClothInstances; ++i)
     {
-        UpdateAttachmentsForInstance(i);
-    }
-}
+        int32 row = i / 4;
+        int32 col = i % 4;
 
-void ATestBatchedClothActor::UpdateAttachmentsForInstance(int32 Index)
-{
-    if (Index < 0 || Index >= NumClothInstances)
-        return;
+        FVector offset(row * 150.0f, col * 150.0f, 0.0f);
+        FVector instanceLocation = GetActorLocation() + offset;
+        ClothMeshes[i]->SetWorldLocation(instanceLocation);
 
-    if (!AttachmentDrivers[Index] || !ClothMeshes[Index] || CachedAttachments[Index].Num() == 0)
-        return;
+        // Store driver initial position
+        DriverInitialPositions[i] = instanceLocation;
 
-    // Get driver transform
-    FVector driverPosition = AttachmentDrivers[Index]->GetActorLocation();
-
-    // Update all attachment world positions
-    for (int32 i = 0; i < CachedAttachments[Index].Num(); ++i)
-    {
-        FClothAttachmentData &attachment = CachedAttachments[Index][i];
-
-        if (attachment.Type == EClothAttachmentType::ActorTransform)
-        {
-            const FTransform AttachmentWorldTransform =
-                FTransform(AttachmentDrivers[Index]->GetStaticMeshComponent()->GetWorldMatrix()) *
-                attachment.LocalOffset;
-
-            attachment.WorldPosition = AttachmentWorldTransform.GetTranslation();
-        }
-        else if (attachment.Type == EClothAttachmentType::WorldPosition)
-        {
-            attachment.WorldPosition = driverPosition;
-        }
+        UE_LOG(ELogLevel::Display, TEXT("  Instance %d positioned at (%f, %f, %f)"),
+               i, instanceLocation.X, instanceLocation.Y, instanceLocation.Z);
     }
 
-    // Send updated attachments to cloth component
-    // For batched mode, this will update via the instance handle
-    FClothInstanceHandle *handle = ClothMeshes[Index]->GetClothInstanceHandle();
-    if (handle)
+    // Assign assets to components and start simulation
+    for (int32 i = 0; i < NumClothInstances; ++i)
     {
-        handle->UpdateKinematicTargets(CachedAttachments[Index]);
-    }
-    else
-    {
-        // Fallback to legacy mode
-        FClothInstance *instance = ClothMeshes[Index]->GetClothInstance();
-        if (instance)
+        if (ClothMeshes[i] && ClothAssets[i])
         {
-            instance->UpdateAttachments(CachedAttachments[Index]);
+            ClothMeshes[i]->SetClothAsset(ClothAssets[i]);
+            ClothMeshes[i]->StartSimulation();
+
+            // Get the cloth instance handle (batched mode)
+            ClothHandles[i] = ClothMeshes[i]->GetClothInstanceHandle();
+
+            if (ClothHandles[i])
+            {
+                UE_LOG(ELogLevel::Display, TEXT("  Instance %d: Handle created, MetadataIndex=%d"),
+                       i, ClothHandles[i]->GetMetadataIndex());
+            }
+            else
+            {
+                UE_LOG(ELogLevel::Error, TEXT("  Instance %d: FAILED to create handle!"), i);
+            }
         }
     }
+
+    bClothInitialized = true; // Mark as initialized
+
+    UE_LOG(ELogLevel::Display, TEXT("TestBatchedClothActor: Created %d cloth instances across LOD levels"),
+           NumClothInstances);
 }

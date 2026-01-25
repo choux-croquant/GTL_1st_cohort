@@ -25,10 +25,11 @@ class ATestBatchedClothActor : public AActor
 public:
     ATestBatchedClothActor();
     virtual void BeginPlay() override;
+    virtual void PostSpawnInitialize() override;
     virtual void Tick(float DeltaTime) override;
 
     // Multiple cloth instances for batching test
-    static constexpr int32 NumClothInstances = 256;
+    static constexpr int32 NumClothInstances = 5;
     UClothMeshComponent *ClothMeshes[NumClothInstances];
     UClothAsset *ClothAssets[NumClothInstances];
     FClothInstanceHandle *ClothHandles[NumClothInstances];
@@ -40,17 +41,13 @@ public:
     // Create test cloth grid
     void CreateTestCloth(int32 Index, int32 GridSize, EClothLODLevel LOD);
 
-    // Update attachments for all instances
-    void UpdateAllAttachments();
-    void UpdateAttachmentsForInstance(int32 Index);
-
 private:
-    // Cached attachment data per instance
-    TArray<FClothAttachmentData> CachedAttachments[NumClothInstances];
-
     // Animation time
     float AnimationTime;
 
     // Driver spawn tracking
     bool bDriversSpawned;
+
+    // CRITICAL: Prevent double initialization
+    bool bClothInitialized;
 };

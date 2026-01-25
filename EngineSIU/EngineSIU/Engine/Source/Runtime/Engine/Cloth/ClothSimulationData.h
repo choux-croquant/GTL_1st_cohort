@@ -7,6 +7,7 @@
 #include "Math/Transform.h"
 #include "Math/Quat.h"
 #include "CoreUObject/UObject/NameTypes.h"
+#include "Components/SceneComponent.h"
 
 /**
  * Cloth Simulation Data Structures
@@ -179,8 +180,13 @@ enum class EClothAttachmentType : uint8
     ActorTransform // Follow actor transform
 };
 
+// Forward declarations for driver references
+class USceneComponent;
+class AActor;
+
 /**
  * Attachment data for connecting cloth to skeletal meshes or static objects
+ * Now supports automatic transform resolution from driver references
  */
 struct FClothAttachmentData
 {
@@ -189,12 +195,16 @@ struct FClothAttachmentData
     // Attachment type
     EClothAttachmentType Type = EClothAttachmentType::WorldPosition;
 
+    // NEW: Driver references for automatic transform resolution
+    USceneComponent *DriverComponent = nullptr; // Reference to component that drives this attachment
+    AActor *DriverActor = nullptr;              // Alternative: reference to actor
+
     // For skeletal mesh attachment
     FName BoneName;
     int32 BoneIndex;
     FTransform LocalOffset;
 
-    // For world/actor attachment
+    // For world/actor attachment (cached, auto-updated from driver)
     FVector WorldPosition;
 
     // Constraint properties
@@ -202,9 +212,14 @@ struct FClothAttachmentData
     bool bIsKinematic = true;
 
     FClothAttachmentData()
-        : ClothVertexIndex(0), Type(EClothAttachmentType::WorldPosition), BoneName(FName()), BoneIndex(-1), LocalOffset(FTransform::Identity), WorldPosition(FVector::ZeroVector), Stiffness(1.0f), bIsKinematic(true)
+        : ClothVertexIndex(0), Type(EClothAttachmentType::WorldPosition), DriverComponent(nullptr), DriverActor(nullptr), BoneName(FName()), BoneIndex(-1), LocalOffset(FTransform::Identity), WorldPosition(FVector::ZeroVector), Stiffness(1.0f), bIsKinematic(true)
     {
     }
+
+    // NOTE: World position calculation is performed by the simulation system
+    // in ClothBatchManager::UpdateKinematicTargets() where all types are fully defined.
+    // The simulation system reads DriverComponent/DriverActor/LocalOffset and resolves
+    // the world position automatically each frame.
 };
 
 /**

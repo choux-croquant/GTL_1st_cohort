@@ -66,11 +66,10 @@ void UClothComponent::TickComponent(float DeltaTime)
             AccumulatedForce = FVector::ZeroVector;
         }
 
-        // Update attachments
-        if (Attachments.Num() > 0)
-        {
-            ClothInstanceHandle->UpdateKinematicTargets(Attachments);
-        }
+        // NEW ATTACHMENT PATTERN: No manual updates needed!
+        // Attachments are automatically resolved by ClothBatchManager::UpdateKinematicTargets()
+        // which reads attachment data directly from the ClothAsset each frame.
+        // The simulation system owns the attachment update flow.
     }
     else if (ClothInstance)
     {
@@ -81,6 +80,7 @@ void UClothComponent::TickComponent(float DeltaTime)
             AccumulatedForce = FVector::ZeroVector;
         }
 
+        // Legacy mode still uses manual attachment updates
         if (Attachments.Num() > 0)
         {
             ClothInstance->UpdateAttachments(Attachments);

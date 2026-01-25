@@ -6,6 +6,7 @@
 #include "ClothBatchManager.h"
 #include "ClothBatchedSolver.h"
 #include "ClothInstanceHandle.h"
+#include "Classes/Engine/ClothAsset.h"
 #include "Classes/Components/ClothComponent.h"
 #include "Windows/D3D11RHI/GraphicDevice.h"
 #include "Windows/D3D11RHI/DXDBufferManager.h"
@@ -14,7 +15,7 @@
 #include "Core/Math/MathUtility.h"
 
 FClothBatchManager::FClothBatchManager(EClothLODLevel InLODLevel)
-    : LODLevel(InLODLevel), BatchedSolver(nullptr), TotalParticleCount(0), TotalConstraintCount(0), TotalBendConstraintCount(0), TotalKinematicTargetCount(0), TotalTriangleCount(0), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), bNeedsReallocation(false), bNeedsCompaction(false), GrowthFactor(1.5f), Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), bIsInitialized(false)
+    : LODLevel(InLODLevel), BatchedSolver(nullptr), TotalParticleCount(0), TotalConstraintCount(0), TotalBendConstraintCount(0), TotalKinematicTargetCount(0), TotalTriangleCount(0), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), bNeedsReallocation(false), bNeedsCompaction(false), GrowthFactor(1.5f), Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), bIsInitialized(false)
 {
 }
 
@@ -42,13 +43,17 @@ void FClothBatchManager::Initialize(FGraphicsDevice *InGraphics,
     BatchedSolver = new FClothBatchedSolver();
     BatchedSolver->Initialize(Graphics, BufferManager, ShaderManager);
 
-    // Initial buffer allocation (conservative estimate)
-    uint32 initialParticles = 150000;    // ~25 instances @ 400 particles
-    uint32 initialConstraints = 5000000; // ~5 constraints per particle
-    uint32 initialBendConstraints = 20000;
-    uint32 initialKinematicTargets = 10000;
-    uint32 initialTriangles = 2000000;
-    uint32 initialInstances = 256;
+    // Initial buffer allocation (generous estimate to avoid reallocation)
+    // Increased to handle large batches without needing dynamic reallocation
+    uint32 initialParticles = 200000;    // ~500 instances @ 400 particles
+    uint32 initialConstraints = 8000000; // ~40 constraints per particle
+    uint32 initialBendConstraints = 50000;
+    uint32 initialKinematicTargets = 20000;
+    uint32 initialTriangles = 5000000; // CRITICAL: 5M triangles = 15M indices
+    uint32 initialInstances = 512;
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Allocating buffers - Triangles: %u (Indices: %u), Particles: %u"),
+           static_cast<int32>(LODLevel), initialTriangles, initialTriangles * 3, initialParticles);
 
     if (!BatchedSolver->AllocateBuffers(initialParticles, initialConstraints,
                                         initialBendConstraints, initialKinematicTargets,
@@ -61,6 +66,10 @@ void FClothBatchManager::Initialize(FGraphicsDevice *InGraphics,
 
     AllocatedParticleCapacity = initialParticles;
     AllocatedConstraintCapacity = initialConstraints;
+    AllocatedBendConstraintCapacity = initialBendConstraints;
+    AllocatedKinematicTargetCapacity = initialKinematicTargets;
+    AllocatedTriangleCapacity = initialTriangles;
+    AllocatedInstanceCapacity = initialInstances;
 
     // Check if solver is fully initialized (shaders + buffers)
     if (BatchedSolver && BatchedSolver->IsInitialized())
@@ -190,6 +199,10 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
            Params.WorldTransform.GetTranslation().Y,
            Params.WorldTransform.GetTranslation().Z);
 
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Instance %d Metadata - ParticleOffset=%d, ParticleCount=%d, ConstraintOffset=%d, TotalParticlesBefore=%d"),
+           static_cast<int32>(LODLevel), Instances.Num(), metadata.ParticleOffset, metadata.ParticleCount,
+           metadata.ConstraintOffset, TotalParticleCount - particleCount);
+
     // 2. Upload particle data with instance IDs
     TArray<uint32> instanceIDs;
     instanceIDs.SetNum(particleCount);
@@ -266,30 +279,32 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
             globalIndices.Add(localIdx + metadata.ParticleOffset);
         }
 
-        BatchedSolver->UploadIndexData(globalIndices, metadata.TriangleOffset * 3);
-    }
+        uint32 indexOffset = metadata.TriangleOffset * 3; // Convert triangles to indices
 
-    // 6. Upload kinematic targets (will be updated each frame)
-    if (Params.Attachments.Num() > 0)
-    {
-        TArray<FClothKinematicTargetGPU> kinematicTargets;
-        kinematicTargets.Reserve(Params.Attachments.Num());
+        // CRITICAL VALIDATION: Verify index buffer has enough space
+        uint32 requiredIndexCapacity = indexOffset + globalIndices.Num();
+        uint32 allocatedIndexCapacity = AllocatedTriangleCapacity * 3;
 
-        for (const FClothAttachmentData &attachment : Params.Attachments)
+        if (requiredIndexCapacity > allocatedIndexCapacity)
         {
-            FClothKinematicTargetGPU target;
-            target.ParticleIndex = attachment.ClothVertexIndex + metadata.ParticleOffset; // Global index
-            target.TargetPosition = attachment.WorldPosition;
-            target.Stiffness = attachment.Stiffness;
-            target.Padding0 = 0.0f;
-            target.Padding1 = 0.0f;
-            target.Padding2 = 0.0f;
-
-            kinematicTargets.Add(target);
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchManager[LOD%d]: INDEX BUFFER OVERFLOW! Required: %u, Allocated: %u, Instance: %d"),
+                   static_cast<int32>(LODLevel), requiredIndexCapacity, allocatedIndexCapacity, Instances.Num());
+            UE_LOG(ELogLevel::Error, TEXT("  IndexOffset: %u, IndexCount: %u, TotalTriangles: %u"),
+                   indexOffset, globalIndices.Num(), TotalTriangleCount);
+            return nullptr; // ABORT - would cause rendering corruption
         }
 
-        BatchedSolver->UploadKinematicTargets(kinematicTargets, metadata.KinematicTargetOffset);
+        UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Uploading %d indices at offset %u (Triangle offset: %u)"),
+               static_cast<int32>(LODLevel), globalIndices.Num(), indexOffset, metadata.TriangleOffset);
+
+        BatchedSolver->UploadIndexData(globalIndices, indexOffset);
     }
+
+    // 6. DON'T upload kinematic targets during AddInstance
+    // Kinematic targets are uploaded each frame in UpdateKinematicTargets()
+    // because they need to be updated with current driver positions.
+    // Initial upload with WRITE_DISCARD would overwrite previous instances' targets.
+    // The targets will be properly uploaded on the first Update() call.
 
     // 7. Update instance parameters
     UpdateInstanceParameterBuffer();
@@ -522,7 +537,12 @@ void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
     if (!BatchedSolver || TotalKinematicTargetCount == 0)
         return;
 
-    // Collect all kinematic targets from all instances
+    // SOLVER-DRIVEN ATTACHMENT UPDATE FLOW
+    // This method is called by the simulation system each frame.
+    // It reads attachment definitions from cloth assets, resolves world positions,
+    // and uploads kinematic targets to the GPU.
+    // Actors no longer need to manually update attachments.
+
     TArray<FClothKinematicTargetGPU> allTargets;
     allTargets.Reserve(TotalKinematicTargetCount);
 
@@ -534,17 +554,43 @@ void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
         const FClothInstanceMetadata &metadata = Handle->GetMetadata();
         UClothComponent *owner = Handle->GetOwnerComponent();
 
-        if (!owner || owner->GetAttachments().Num() == 0)
+        if (!owner || !owner->GetClothAsset())
             continue;
 
-        // Get attachments from owner component
-        const TArray<FClothAttachmentData> &attachments = owner->GetAttachments();
+        // Read attachment data directly from the cloth asset
+        // This is the single source of truth for attachment configuration
+        const TArray<FClothAttachmentData> &attachments = owner->GetClothAsset()->AttachmentsData;
 
+        if (attachments.Num() == 0)
+            continue;
+
+        // For each attachment, resolve world position and create GPU target
         for (const FClothAttachmentData &attachment : attachments)
         {
             FClothKinematicTargetGPU target;
-            target.ParticleIndex = attachment.ClothVertexIndex + metadata.ParticleOffset; // Global index
-            target.TargetPosition = attachment.WorldPosition;
+
+            // Convert local particle index to global batch index
+            target.ParticleIndex = attachment.ClothVertexIndex + metadata.ParticleOffset;
+
+            // AUTOMATIC WORLD POSITION RESOLUTION
+            // Resolve world position based on driver component reference
+            FVector worldPosition = FVector::ZeroVector;
+
+            // Component-based attachment (preferred and most reliable)
+            if (attachment.DriverComponent != nullptr)
+            {
+                FTransform driverTransform = attachment.DriverComponent->GetComponentTransform();
+                FTransform attachmentWorldTransform = driverTransform * attachment.LocalOffset;
+                worldPosition = attachmentWorldTransform.GetTranslation();
+            }
+            else
+            {
+                // Fallback to manually-set WorldPosition (for static attachments or backward compatibility)
+                // Actor-based attachments should set DriverComponent instead
+                worldPosition = attachment.WorldPosition;
+            }
+
+            target.TargetPosition = worldPosition;
             target.Stiffness = attachment.Stiffness;
             target.Padding0 = 0.0f;
             target.Padding1 = 0.0f;
@@ -554,7 +600,7 @@ void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
         }
     }
 
-    // Upload all kinematic targets to GPU
+    // Upload all kinematic targets to GPU in one batch
     if (allTargets.Num() > 0)
     {
         BatchedSolver->UploadKinematicTargets(allTargets, 0);

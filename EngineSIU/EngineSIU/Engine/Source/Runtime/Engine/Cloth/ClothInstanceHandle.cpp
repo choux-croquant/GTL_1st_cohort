@@ -58,18 +58,6 @@ void FClothInstanceHandle::RequestLODChange(EClothLODLevel TargetLOD)
     }
 }
 
-void FClothInstanceHandle::UpdateKinematicTargets(const TArray<FClothAttachmentData> &Attachments)
-{
-    // CRITICAL FIX: Store attachments in owner component so batch manager can read them
-    // The batch manager's UpdateKinematicTargets() reads from owner->GetAttachments()
-    if (OwnerComponent)
-    {
-        // Update the component's attachment array
-        TArray<FClothAttachmentData> &componentAttachments = OwnerComponent->GetAttachmentsRef();
-        componentAttachments = Attachments;
-    }
-}
-
 const FClothInstanceMetadata &FClothInstanceHandle::GetMetadata() const
 {
     // Get metadata from batch manager's array (the authoritative source)

@@ -221,6 +221,14 @@ void FClothRenderPass::RenderClothComponent(UClothMeshComponent *ClothComponent,
     FClothRenderData renderData;
     ClothComponent->GetRenderData(renderData);
 
+    // DIAGNOSTIC: Log render data for each component
+    static int renderCallCount = 0;
+    if (renderCallCount++ < 10) // Log first 10 calls
+    {
+        UE_LOG(ELogLevel::Display, TEXT("ClothRenderPass: Component render - ParticleOffset=%d, NumVertices=%d, IndexOffset=%d, NumTriangles=%d, BatchedMode=%d"),
+               renderData.ParticleOffset, renderData.NumVertices, renderData.IndexOffset, renderData.NumTriangles, renderData.bIsBatchedMode);
+    }
+
     // Validate required data
     if (!renderData.PositionBufferSRV || !renderData.NormalBufferSRV)
         return;

@@ -40,9 +40,6 @@ public:
     EClothLODLevel GetPendingLOD() const { return PendingLOD; }
     void ClearPendingLODChange() { bLODChangePending = false; }
 
-    // Kinematic target updates (called every frame)
-    void UpdateKinematicTargets(const TArray<FClothAttachmentData> &Attachments);
-
     // Owner tracking
     void SetOwnerComponent(UClothComponent *InOwner) { OwnerComponent = InOwner; }
     UClothComponent *GetOwnerComponent() const { return OwnerComponent; }
