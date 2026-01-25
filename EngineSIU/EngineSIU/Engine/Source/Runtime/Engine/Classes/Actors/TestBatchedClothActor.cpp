@@ -266,12 +266,12 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, ECloth
     // Configure simulation parameters with variations per instance
     FClothConfig config;
     config.Mass = 1.0f;
-    config.Damping = 0.6f + (Index * 0.05f); // Vary damping slightly
-    config.StretchStiffness = 0.9f + (Index * 0.01f);
-    config.BendStiffness = 0.2f;
-    config.NumIterations = 5;
+    config.Damping = 0.6f + (Index * 0.05f);           // Vary damping slightly
+    config.StretchStiffness = 0.95f + (Index * 0.01f); // INCREASED: Higher stiffness for less stretch
+    config.BendStiffness = 0.3f;                       // INCREASED: More bend resistance
+    config.NumIterations = 8;                          // INCREASED: More iterations for better convergence
     config.TimeStep = 0.016f;
-    config.bUseXPBD = false;
+    config.bUseXPBD = true;                 // CRITICAL FIX: Enable XPBD for time-step independent, iteration-independent behavior
     config.AirDrag = 0.5f + (Index * 0.1f); // Vary air drag
 
     ClothAssets[Index]->SetConfig(config);
@@ -306,7 +306,7 @@ void ATestBatchedClothActor::PostSpawnInitialize()
         DriverInitialPositions[i] = instanceLocation;
 
         UE_LOG(ELogLevel::Display, TEXT("  Instance %d will be positioned at (%f, %f, %f)"),
-            i, instanceLocation.X, instanceLocation.Y, instanceLocation.Z);
+               i, instanceLocation.X, instanceLocation.Y, instanceLocation.Z);
     }
 
     UWorld *world = GetWorld();

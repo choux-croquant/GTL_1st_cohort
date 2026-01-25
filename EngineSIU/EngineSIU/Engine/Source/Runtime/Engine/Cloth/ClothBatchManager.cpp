@@ -230,7 +230,7 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         instanceIDs,
         metadata.ParticleOffset);
 
-    // 3. Upload distance constraints with global particle indices
+    // 3. Upload distance constraints with global particle indices and XPBD compliance
     if (Params.Constraints.Num() > 0)
     {
         TArray<FClothDistanceConstraintGPU> constraintsGPU;
@@ -244,8 +244,22 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
             gpu.ParticleB = c.ParticleB + metadata.ParticleOffset;
             gpu.RestLength = c.RestLength;
             gpu.Stiffness = c.Stiffness;
-            gpu.Compliance = c.Compliance;
-            gpu.Lambda = c.Lambda;
+
+            // XPBD compliance: Compute if not already set
+            if (c.Compliance <= 0.0f)
+            {
+                // Auto-compute from stiffness using default config
+                float artistStiffness = c.Stiffness * Params.InstanceParams.StretchStiffness;
+                gpu.Compliance = FClothConfig::ComputeStretchCompliance(artistStiffness);
+                gpu.Lambda = 0.0f;
+            }
+            else
+            {
+                // Use pre-computed values
+                gpu.Compliance = c.Compliance;
+                gpu.Lambda = c.Lambda;
+            }
+
             gpu.Padding0 = 0.0f;
             gpu.Padding1 = 0.0f;
 
@@ -255,7 +269,7 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         BatchedSolver->UploadConstraintData(constraintsGPU, metadata.ConstraintOffset);
     }
 
-    // 4. Upload bend constraints with global particle indices
+    // 4. Upload bend constraints with global particle indices and XPBD compliance
     if (Params.BendConstraints.Num() > 0)
     {
         TArray<FClothBendConstraintGPU> bendConstraintsGPU;
@@ -271,8 +285,21 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
             gpu.ParticleD = bc.ParticleD + metadata.ParticleOffset;
             gpu.RestAngle = bc.RestAngle;
             gpu.Stiffness = bc.Stiffness;
-            gpu.Compliance = bc.Compliance;
-            gpu.Lambda = bc.Lambda;
+
+            // XPBD compliance: Compute if not already set
+            if (bc.Compliance <= 0.0f)
+            {
+                // Auto-compute from stiffness using default config
+                float artistStiffness = bc.Stiffness * Params.InstanceParams.BendStiffness;
+                gpu.Compliance = FClothConfig::ComputeBendCompliance(artistStiffness);
+                gpu.Lambda = 0.0f;
+            }
+            else
+            {
+                // Use pre-computed values
+                gpu.Compliance = bc.Compliance;
+                gpu.Lambda = bc.Lambda;
+            }
 
             bendConstraintsGPU.Add(gpu);
         }
@@ -566,14 +593,13 @@ void FClothBatchManager::UpdateInstanceParameterBuffer()
 
 void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
 {
-    if (!BatchedSolver || TotalKinematicTargetCount == 0)
+    if (!BatchedSolver)
         return;
 
     // SOLVER-DRIVEN ATTACHMENT UPDATE FLOW
     // This method is called by the simulation system each frame.
     // It reads attachment definitions from cloth assets, resolves world positions,
     // and uploads kinematic targets to the GPU.
-    // Actors no longer need to manually update attachments.
 
     TArray<FClothKinematicTargetGPU> allTargets;
     allTargets.Reserve(TotalKinematicTargetCount);
@@ -590,7 +616,6 @@ void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
             continue;
 
         // Read attachment data directly from the cloth asset
-        // This is the single source of truth for attachment configuration
         const TArray<FClothAttachmentData> &attachments = owner->GetClothAsset()->AttachmentsData;
 
         if (attachments.Num() == 0)
@@ -605,10 +630,9 @@ void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
             target.ParticleIndex = attachment.ClothVertexIndex + metadata.ParticleOffset;
 
             // AUTOMATIC WORLD POSITION RESOLUTION
-            // Resolve world position based on driver component reference
             FVector worldPosition = FVector::ZeroVector;
 
-            // Component-based attachment (preferred and most reliable)
+            // Component-based attachment (preferred)
             if (attachment.DriverComponent != nullptr)
             {
                 FTransform driverTransform = attachment.DriverComponent->GetComponentTransform();
@@ -617,8 +641,7 @@ void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
             }
             else
             {
-                // Fallback to manually-set WorldPosition (for static attachments or backward compatibility)
-                // Actor-based attachments should set DriverComponent instead
+                // Fallback to manually-set WorldPosition
                 worldPosition = attachment.WorldPosition;
             }
 
@@ -632,10 +655,27 @@ void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
         }
     }
 
-    // Upload all kinematic targets to GPU in one batch
-    if (allTargets.Num() > 0)
+    // CRITICAL FIX: Update solver's kinematic target count BEFORE upload
+    // This ensures the shader dispatch uses the correct count
+    uint32 actualTargetCount = allTargets.Num();
+
+    if (actualTargetCount > 0)
     {
+        // Update the solver's count (this was missing!)
+        BatchedSolver->SetUsedCounts(TotalParticleCount, TotalConstraintCount, TotalBendConstraintCount,
+                                     actualTargetCount, TotalTriangleCount, Instances.Num());
+
+        // Upload all kinematic targets to GPU
         BatchedSolver->UploadKinematicTargets(allTargets, 0);
+
+        UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Updated %d kinematic targets"),
+               static_cast<int32>(LODLevel), actualTargetCount);
+    }
+    else
+    {
+        // No targets this frame - set count to zero
+        BatchedSolver->SetUsedCounts(TotalParticleCount, TotalConstraintCount, TotalBendConstraintCount,
+                                     0, TotalTriangleCount, Instances.Num());
     }
 }
 

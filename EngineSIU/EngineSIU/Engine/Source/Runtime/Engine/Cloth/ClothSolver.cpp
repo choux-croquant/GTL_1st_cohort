@@ -109,21 +109,91 @@ bool FClothSolver::SetupFromAsset(UClothAsset *InAsset, const FClothConfig &InCo
 
     RestPositions = AssetRestPositions;
     Indices = AssetIndices;
-    InvMasses = AssetInvMasses;
-
-    Constraints.Empty();
-    BendConstraints.Empty();
-    Constraints.Append(AssetDistConstraints);
-    BendConstraints.Append(AssetBendConstraints);
-
-    // TODO : Attachment, VertexPaint
-    // AttachmentIndices = InAsset->GetAttachmentIndices();
-    // VertexPaintData = InAsset->GetVertexPaintData();
 
     NumParticles = RestPositions.Num();
     NumConstraints = AssetDistConstraints.Num();
     NumBendConstraints = AssetBendConstraints.Num();
     NumTriangles = Indices.Num() / 3;
+
+    // Copy constraints and compute XPBD compliance values
+    Constraints.Empty();
+    Constraints.Reserve(NumConstraints);
+    for (const FClothDistanceConstraint &srcConstraint : AssetDistConstraints)
+    {
+        FClothDistanceConstraint constraint = srcConstraint;
+        // Compute compliance from artist stiffness
+        float artistStiffness = constraint.Stiffness * Config.StretchStiffness;
+        constraint.Compliance = FClothConfig::ComputeStretchCompliance(artistStiffness);
+        constraint.Lambda = 0.0f; // Initialize lambda for XPBD
+        Constraints.Add(constraint);
+    }
+
+    BendConstraints.Empty();
+    BendConstraints.Reserve(NumBendConstraints);
+    for (const FClothBendConstraint &srcConstraint : AssetBendConstraints)
+    {
+        FClothBendConstraint constraint = srcConstraint;
+        // Compute compliance from artist stiffness
+        float artistStiffness = constraint.Stiffness * Config.BendStiffness;
+        constraint.Compliance = FClothConfig::ComputeBendCompliance(artistStiffness);
+        constraint.Lambda = 0.0f; // Initialize lambda for XPBD
+        BendConstraints.Add(constraint);
+    }
+
+    // Compute inverse masses (area-based or uniform)
+    InvMasses.SetNum(NumParticles);
+    if (Config.bUseAreaBasedMass && NumTriangles > 0)
+    {
+        // Area-based mass distribution for resolution independence
+        TArray<float> particleMasses;
+        particleMasses.SetNum(NumParticles);
+
+        // Initialize to zero
+        for (uint32 i = 0; i < NumParticles; ++i)
+        {
+            particleMasses[i] = 0.0f;
+        }
+
+        // Accumulate mass from triangles
+        for (uint32 tri = 0; tri < NumTriangles; ++tri)
+        {
+            uint32 i0 = Indices[tri * 3 + 0];
+            uint32 i1 = Indices[tri * 3 + 1];
+            uint32 i2 = Indices[tri * 3 + 2];
+
+            FVector v0 = RestPositions[i0];
+            FVector v1 = RestPositions[i1];
+            FVector v2 = RestPositions[i2];
+
+            // Triangle area
+            float area = 0.5f * FVector::CrossProduct(v1 - v0, v2 - v0).Size();
+            float triMass = area * Config.Density; // Mass = area * density
+
+            // Distribute to vertices (1/3 each)
+            particleMasses[i0] += triMass / 3.0f;
+            particleMasses[i1] += triMass / 3.0f;
+            particleMasses[i2] += triMass / 3.0f;
+        }
+
+        // Convert to inverse mass
+        for (uint32 i = 0; i < NumParticles; ++i)
+        {
+            InvMasses[i] = (particleMasses[i] > 1e-6f) ? 1.0f / particleMasses[i] : 0.0f;
+        }
+
+        UE_LOG(ELogLevel::Display, TEXT("ClothSolver: Using area-based mass (avg mass: %f)"),
+               particleMasses.Num() > 0 ? (particleMasses[0] > 0 ? particleMasses[0] : 0) : 0);
+    }
+    else
+    {
+        // Uniform mass distribution (legacy)
+        InvMasses = AssetInvMasses;
+        UE_LOG(ELogLevel::Display, TEXT("ClothSolver: Using uniform mass distribution"));
+    }
+
+    // TODO : Attachment, VertexPaint
+    // AttachmentIndices = InAsset->GetAttachmentIndices();
+    // VertexPaintData = InAsset->GetVertexPaintData();
 
     if (NumParticles == 0)
     {
@@ -922,7 +992,7 @@ bool FClothSolver::UploadInitialData()
         Graphics->DeviceContext->UpdateSubresource(VelocityBuffer, 0, nullptr, velocitiesGPU.GetData(), 0, 0);
     }
 
-    // Upload constraint data
+    // Upload constraint data (including XPBD compliance and lambda)
     if (ConstraintBuffer && Constraints.Num() > 0)
     {
         TArray<FClothDistanceConstraintGPU> constraintsGPU;
@@ -934,14 +1004,19 @@ bool FClothSolver::UploadInitialData()
             constraintsGPU[i].ParticleB = Constraints[i].ParticleB;
             constraintsGPU[i].RestLength = Constraints[i].RestLength;
             constraintsGPU[i].Stiffness = Constraints[i].Stiffness;
+            constraintsGPU[i].Compliance = Constraints[i].Compliance; // XPBD
+            constraintsGPU[i].Lambda = Constraints[i].Lambda;         // XPBD
+            constraintsGPU[i].Padding0 = 0.0f;
+            constraintsGPU[i].Padding1 = 0.0f;
         }
 
         Graphics->DeviceContext->UpdateSubresource(ConstraintBuffer, 0, nullptr, constraintsGPU.GetData(), 0, 0);
 
-        UE_LOG(ELogLevel::Display, TEXT("ClothSolver: Uploaded %d constraints"), Constraints.Num());
+        UE_LOG(ELogLevel::Display, TEXT("ClothSolver: Uploaded %d constraints (XPBD: compliance=%f)"),
+               Constraints.Num(), Constraints.Num() > 0 ? Constraints[0].Compliance : 0.0f);
     }
 
-    // Upload bend constraint data
+    // Upload bend constraint data (including XPBD compliance and lambda)
     if (BendConstraintBuffer && BendConstraints.Num() > 0)
     {
         TArray<FClothBendConstraintGPU> bendConstraintsGPU;
@@ -955,11 +1030,14 @@ bool FClothSolver::UploadInitialData()
             bendConstraintsGPU[i].ParticleD = BendConstraints[i].ParticleD;
             bendConstraintsGPU[i].RestAngle = BendConstraints[i].RestAngle;
             bendConstraintsGPU[i].Stiffness = BendConstraints[i].Stiffness;
+            bendConstraintsGPU[i].Compliance = BendConstraints[i].Compliance; // XPBD
+            bendConstraintsGPU[i].Lambda = BendConstraints[i].Lambda;         // XPBD
         }
 
         Graphics->DeviceContext->UpdateSubresource(BendConstraintBuffer, 0, nullptr, bendConstraintsGPU.GetData(), 0, 0);
 
-        UE_LOG(ELogLevel::Display, TEXT("ClothSolver: Uploaded %d bend constraints"), BendConstraints.Num());
+        UE_LOG(ELogLevel::Display, TEXT("ClothSolver: Uploaded %d bend constraints (XPBD: compliance=%f)"),
+               BendConstraints.Num(), BendConstraints.Num() > 0 ? BendConstraints[0].Compliance : 0.0f);
     }
 
     // Upload index data
@@ -1179,11 +1257,20 @@ void FClothSolver::DispatchApplyKinematicTargets()
     // Bind constant buffer
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &ClothSimConstantBuffer);
 
-    // Bind kinematic target buffer (t0)
-    Graphics->DeviceContext->CSSetShaderResources(0, 1, &KinematicTargetSRV);
+    // Bind SRVs: t0 = KinematicTargets, t1 = InvMassBuffer (for spring force)
+    ID3D11ShaderResourceView *srvs[] = {
+        KinematicTargetSRV, // t0
+        nullptr             // t1: InvMass not available in legacy solver
+    };
+    Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
 
-    // Bind position buffer for write (u0) - writeIdx is the current output buffer
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &PositionUAV[writeIdx], nullptr);
+    // Bind UAVs: u0 = PositionWrite, u1 = VelocityBuffer
+    ID3D11UnorderedAccessView *uavs[] = {
+        PositionUAV[writeIdx], // u0
+        VelocityUAV            // u1: NEW - critical for velocity sync
+    };
+    UINT initialCounts[2] = {0, 0};
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, initialCounts);
 
     // Set shader
     Graphics->DeviceContext->CSSetShader(ApplyKinematicTargetsCS, nullptr, 0);
@@ -1193,10 +1280,10 @@ void FClothSolver::DispatchApplyKinematicTargets()
     Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
 
     // Unbind
-    ID3D11UnorderedAccessView *nullUAV = nullptr;
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
-    ID3D11ShaderResourceView *nullSRV = nullptr;
-    Graphics->DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
+    ID3D11UnorderedAccessView *nullUAVs[2] = {nullptr, nullptr};
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
+    ID3D11ShaderResourceView *nullSRVs[2] = {nullptr, nullptr};
+    Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
 }
 
 void FClothSolver::DispatchApplyConstraintDeltas()

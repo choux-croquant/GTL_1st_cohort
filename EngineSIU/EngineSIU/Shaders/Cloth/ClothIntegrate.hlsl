@@ -62,13 +62,17 @@ void IntegrateCS(uint3 DTid : SV_DispatchThreadID)
     // Acceleration
     float3 acceleration = force * invMass;
 
-    // Semi-implicit Euler
+    // Semi-implicit Euler integration
     velocity.Velocity += acceleration * DeltaTime;
 
-    // Velocity damping (per-instance)
-    velocity.Velocity *= (1.0f - params.Damping);
+    // REMOVED: Global velocity damping (causes underwater feel)
+    // OLD: velocity.Velocity *= (1.0f - params.Damping);
+    // Damping is now handled via:
+    // 1. XPBD constraint-level damping (in ClothConstraintSolver.hlsl)
+    // 2. Per-particle position damping (optional, in ClothApplyDelta.hlsl)
+    // This preserves momentum from external forces while still controlling oscillations
 
-    // Clamp velocity
+    // Clamp velocity for numerical stability
     float maxVelocity = 10000.0f;
     float velMagnitude = length(velocity.Velocity);
     if (velMagnitude > maxVelocity)
@@ -76,6 +80,7 @@ void IntegrateCS(uint3 DTid : SV_DispatchThreadID)
         velocity.Velocity = (velocity.Velocity / velMagnitude) * maxVelocity;
     }
 
+    // Predict new position
     particle.Position += velocity.Velocity * DeltaTime;
 
     PositionWrite[idx] = particle;

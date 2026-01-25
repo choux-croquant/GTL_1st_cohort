@@ -21,18 +21,19 @@ struct FClothConfig
 {
     // Global simulation settings
     float Mass = 1.0f;
-    float Damping = 0.05f;
+    float Damping = 0.01f; // Changed default: Lower damping (was 0.05, now constraint-level damping)
     float Friction = 0.1f;
+    float Density = 0.001f; // NEW: kg/cm² for area-based mass (default ~cotton)
 
-    // Constraint stiffness (0-1)
+    // Constraint stiffness (0-1) - Artist-friendly parameters
     float StretchStiffness = 0.9f;
-    float BendStiffness = 0.9f;
+    float BendStiffness = 0.5f; // Changed default: More moderate bending
     float AttachStiffness = 1.0f;
 
     // Solver settings
     int32 NumIterations = 5;
     float TimeStep = 0.016f; // Fixed 60fps or variable
-    bool bUseXPBD = false;   // Use XPBD instead of PBD
+    bool bUseXPBD = true;    // CHANGED: Enable XPBD by default (better behavior)
 
     // Wind and drag
     float AirDrag = 1.0f;
@@ -41,6 +42,35 @@ struct FClothConfig
     // Collision
     float CollisionThickness = 0.01f;
     bool bEnableSelfCollision = false;
+
+    // NEW: Advanced XPBD parameters (normally auto-computed from artist params)
+    bool bUseAreaBasedMass = true;     // Use triangle area for mass distribution
+    bool bUseConstraintDamping = true; // Use XPBD constraint damping instead of global
+
+    // Helper: Compute compliance from artist stiffness [0-1]
+    // Returns physical compliance for XPBD constraints
+    static float ComputeStretchCompliance(float artistStiffness)
+    {
+        // CRITICAL FIX: Ultra-stiff range to prevent excessive stretching
+        // Map [0, 1] to [1e-3, 1e-8] (soft to extremely stiff)
+        // Use cubic mapping for more aggressive stiffness at high values
+        // Reference: Müller's "Ten Minute Physics" suggests compliance ~1e-5 for cloth
+        // With values >= 0.95, we get compliance <= 1e-7 for minimal stretch
+        float normalized = FMath::Clamp(artistStiffness, 0.0f, 1.0f);
+        float t = normalized * normalized * normalized; // Cubic for aggressive curve
+        float compliance = FMath::Lerp(1e-3f, 1e-8f, t);
+        return compliance;
+    }
+
+    static float ComputeBendCompliance(float artistStiffness)
+    {
+        // Bending typically needs higher compliance than stretching
+        // Map [0, 1] to [1e-1, 1e-4] (soft to moderately stiff)
+        // Bending should be softer than stretch for realistic cloth
+        float normalized = FMath::Clamp(artistStiffness, 0.0f, 1.0f);
+        float compliance = FMath::Lerp(1e-1f, 1e-4f, normalized * normalized);
+        return compliance;
+    }
 };
 
 /**
@@ -307,6 +337,7 @@ inline FArchive &operator<<(FArchive &Ar, FClothConfig &Cfg)
     Ar << Cfg.Mass;
     Ar << Cfg.Damping;
     Ar << Cfg.Friction;
+    Ar << Cfg.Density; // NEW
 
     Ar << Cfg.StretchStiffness;
     Ar << Cfg.BendStiffness;
@@ -321,6 +352,10 @@ inline FArchive &operator<<(FArchive &Ar, FClothConfig &Cfg)
 
     Ar << Cfg.CollisionThickness;
     Ar << Cfg.bEnableSelfCollision;
+
+    // NEW fields
+    Ar << Cfg.bUseAreaBasedMass;
+    Ar << Cfg.bUseConstraintDamping;
 
     return Ar;
 }

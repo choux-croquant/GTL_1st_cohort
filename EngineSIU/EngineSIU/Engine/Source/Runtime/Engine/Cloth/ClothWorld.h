@@ -55,7 +55,7 @@ struct FClothGlobalForces
     TArray<FClothExplosionForce> Explosions; // Transient explosion forces
 
     FClothGlobalForces()
-        : GlobalGravity(0.0f, 0.0f, -1980.0f), GlobalWind(0.0f, 0.0f, 0.0f)
+        : GlobalGravity(0.0f, 0.0f, -980.0f), GlobalWind(0.0f, 0.0f, 0.0f)
     {
     }
 };
