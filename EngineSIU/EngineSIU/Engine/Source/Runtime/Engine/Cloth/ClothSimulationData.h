@@ -21,7 +21,7 @@ struct FClothConfig
 {
     // Global simulation settings
     float Mass = 1.0f;
-    float Damping = 0.05f;
+    float Damping = 0.5f;
     float Friction = 0.1f;
 
     // Constraint stiffness (0-1)
@@ -33,6 +33,13 @@ struct FClothConfig
     int32 NumIterations = 5;
     float TimeStep = 0.016f; // Fixed 60fps or variable
     bool bUseXPBD = false;   // Use XPBD instead of PBD
+
+    // NEW: Substep settings (Velvet-inspired)
+    int32 NumSubsteps = 4;              // How many substeps per frame time
+    float FixedSubstepTime = 1.0f / 240.0f;  // Target substep dt (120 Hz default)
+    int32 MaxSubstepsPerFrame = 5;      // Safety limit to prevent death spiral
+    float MaxSpeed = 50.0f;           // Velocity clamping (cm/s)
+    float RelaxationFactor = 1.0f;      // Jacobi convergence control
 
     // Wind and drag
     float AirDrag = 1.0f;
@@ -315,6 +322,13 @@ inline FArchive &operator<<(FArchive &Ar, FClothConfig &Cfg)
     Ar << Cfg.NumIterations;
     Ar << Cfg.TimeStep;
     Ar << Cfg.bUseXPBD;
+
+    // NEW: Substep parameters
+    Ar << Cfg.NumSubsteps;
+    Ar << Cfg.FixedSubstepTime;
+    Ar << Cfg.MaxSubstepsPerFrame;
+    Ar << Cfg.MaxSpeed;
+    Ar << Cfg.RelaxationFactor;
 
     Ar << Cfg.AirDrag;
     Ar << Cfg.WindStrength;

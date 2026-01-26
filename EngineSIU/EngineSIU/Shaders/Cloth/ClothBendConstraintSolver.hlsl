@@ -1,7 +1,14 @@
 /**
  * Cloth Bend Constraint Solver
- * Solves bend constraints using dihedral angle constraints
+ * Solves dihedral angle bending constraints using proper gradient derivation
  * Now supports batched simulation with per-instance parameters
+ * 
+ * PHASE 2 COMPLETE REWRITE (Velvet-inspired):
+ * - Proper gradient calculation matching Velvet's SolveBending_Kernel
+ * - XPBD compliance support
+ * - Accurate dihedral angle constraint solving
+ * 
+ * Based on: Velvet/VtClothSolverGPU.cu::SolveBending_Kernel (lines 117-189)
  */
 
 #include "ClothCommon.hlsli"
@@ -9,96 +16,139 @@
 // Read-only buffers
 StructuredBuffer<FClothParticle> PositionRead : register(t0);
 StructuredBuffer<FBendConstraint> BendConstraintBuffer : register(t1);
-StructuredBuffer<float> InvMassBuffer : register(t2);  // NEW: Separate inverse mass buffer
-StructuredBuffer<FClothInstanceParameters> InstanceParams : register(t3);  // NEW: Per-instance parameters
+StructuredBuffer<float> InvMassBuffer : register(t2);
+StructuredBuffer<FClothInstanceParameters> InstanceParams : register(t3);
 
 // Write buffers
 RWStructuredBuffer<int3> PositionDelta : register(u0);
 RWStructuredBuffer<int> PositionWeight : register(u1);
 
-static const float kScale = 1000.0f;
+static const float kScale = 10000.0f;
+static const float EPSILON = 1e-6f;
 
 [numthreads(64, 1, 1)]
 void SolveBendConstraintsCS(uint3 DTid : SV_DispatchThreadID)
 {
-    uint idx = DTid.x;
-    if (idx >= NumBendConstraints) return;
+    uint id = DTid.x;
+    if (id >= NumBendConstraints) return;
 
-    FBendConstraint constraint = BendConstraintBuffer[idx];
+    FBendConstraint constraint = BendConstraintBuffer[id];
 
-    // Load particle positions
-    FClothParticle pA = PositionRead[constraint.ParticleA];
-    FClothParticle pB = PositionRead[constraint.ParticleB];
-    FClothParticle pC = PositionRead[constraint.ParticleC];
-    FClothParticle pD = PositionRead[constraint.ParticleD];
+    // Load particle indices (Velvet naming)
+    uint idx0 = constraint.ParticleA;
+    uint idx1 = constraint.ParticleB;
+    uint idx2 = constraint.ParticleC;
+    uint idx3 = constraint.ParticleD;
+    float restAngle = constraint.RestAngle;
 
-    // Calculate current dihedral angle
-    float3 e = pB.Position - pA.Position;  // Shared edge
-    float3 n1 = cross(pC.Position - pA.Position, e);  // Normal of tri 1
-    float3 n2 = cross(e, pD.Position - pA.Position);  // Normal of tri 2
+    // Load inverse masses
+    float w0 = InvMassBuffer[idx0];
+    float w1 = InvMassBuffer[idx1];
+    float w2 = InvMassBuffer[idx2];
+    float w3 = InvMassBuffer[idx3];
 
-    float n1Len = length(n1);
-    float n2Len = length(n2);
+    // Load positions
+    float3 p0 = PositionRead[idx0].Position;
+    float3 p1 = PositionRead[idx1].Position;
+    float3 p2 = PositionRead[idx2].Position;
+    float3 p3 = PositionRead[idx3].Position;
 
-    if (n1Len < 1e-6f || n2Len < 1e-6f) return;  // Degenerate triangle
-
-    n1 /= n1Len;
-    n2 /= n2Len;
-
-    float currentAngle = acos(clamp(dot(n1, n2), -1.0f, 1.0f));
-
-    // Calculate error
-    float angleError = currentAngle - constraint.RestAngle;
-
-    // NEW: Get per-instance bend stiffness multiplier
-    uint instanceID = pA.InstanceID;
+    // Get instance parameters
+    uint instanceID = PositionRead[idx0].InstanceID;
     FClothInstanceParameters params = InstanceParams[instanceID];
     
-    // Skip if instance is inactive
     if (params.IsActive == 0) return;
+
+    // Compute shared edge e = p3 - p2 (Velvet formulation)
+    float3 e = p3 - p2;
+    float elen = length(e);
+    if (elen < EPSILON) return;  // Degenerate edge
     
-    // Apply per-instance bend stiffness multiplier
-    float stiffness = constraint.Stiffness * params.BendStiffness;
+    float invElen = 1.0f / elen;
 
-    // NEW: Load inverse masses from separate buffer
-    float w1 = InvMassBuffer[constraint.ParticleA];
-    float w2 = InvMassBuffer[constraint.ParticleB];
-    float w3 = InvMassBuffer[constraint.ParticleC];
-    float w4 = InvMassBuffer[constraint.ParticleD];
+    // Compute normals (NOT normalized yet)
+    // n1 = cross(p2 - p0, p3 - p0)
+    // n2 = cross(p3 - p1, p2 - p1)
+    float3 n1 = cross(p2 - p0, p3 - p0);
+    float3 n2 = cross(p3 - p1, p2 - p1);
+    
+    float n1LenSq = dot(n1, n1);
+    float n2LenSq = dot(n2, n2);
+    
+    if (n1LenSq < EPSILON || n2LenSq < EPSILON) return;  // Degenerate triangle
+    
+    // Normalize by squared length (Velvet's approach)
+    // This is part of the gradient formulation
+    n1 /= n1LenSq;
+    n2 /= n2LenSq;
 
-    // Gradient magnitudes (approximate, full derivation is complex)
-    float edgeLen = length(e);
-    float k = -stiffness * angleError / (edgeLen * (w1 + w2 + w3 + w4) + 1e-6f);
+    // Compute gradients (Velvet formulation)
+    float3 d0 = elen * n1;
+    float3 d1 = elen * n2;
+    float3 d2 = dot(p0 - p3, e) * invElen * n1 + dot(p1 - p3, e) * invElen * n2;
+    float3 d3 = dot(p2 - p0, e) * invElen * n1 + dot(p2 - p1, e) * invElen * n2;
 
-    // Compute corrections (cross products give gradient directions)
-    float3 corrA = k * w1 * cross(n2 - n1, e);
-    float3 corrB = k * w2 * cross(n1 - n2, e);
-    float3 corrC = k * w3 * n1 * edgeLen;
-    float3 corrD = k * w4 * n2 * edgeLen;
+    // Compute current dihedral angle
+    // Need normalized normals for angle calculation
+    float3 n1Norm = normalize(cross(p2 - p0, p3 - p0));
+    float3 n2Norm = normalize(cross(p3 - p1, p2 - p1));
+    float dotProduct = clamp(dot(n1Norm, n2Norm), -1.0f, 1.0f);
+    float phi = acos(dotProduct);
 
-    // Atomic accumulation (scaled integer)
-    int3 deltaA = int3(corrA * kScale);
-    int3 deltaB = int3(corrB * kScale);
-    int3 deltaC = int3(corrC * kScale);
-    int3 deltaD = int3(corrD * kScale);
+    // Compute lambda denominator (sum of weighted gradient magnitudes)
+    float lambda_denom =
+        w0 * dot(d0, d0) +
+        w1 * dot(d1, d1) +
+        w2 * dot(d2, d2) +
+        w3 * dot(d3, d3);
 
-    InterlockedAdd(PositionDelta[constraint.ParticleA].x, deltaA.x);
-    InterlockedAdd(PositionDelta[constraint.ParticleA].y, deltaA.y);
-    InterlockedAdd(PositionDelta[constraint.ParticleA].z, deltaA.z);
-    InterlockedAdd(PositionWeight[constraint.ParticleA], 1);
+    if (lambda_denom < EPSILON) return;
 
-    InterlockedAdd(PositionDelta[constraint.ParticleB].x, deltaB.x);
-    InterlockedAdd(PositionDelta[constraint.ParticleB].y, deltaB.y);
-    InterlockedAdd(PositionDelta[constraint.ParticleB].z, deltaB.z);
-    InterlockedAdd(PositionWeight[constraint.ParticleB], 1);
+    // XPBD compliance (Velvet pattern)
+    // bendCompliance / deltaTime^2
+    float bendCompliance = constraint.Compliance;
+    float xpbd_bend = bendCompliance / (DeltaTime * DeltaTime);
+    
+    // Compute lambda
+    float angleError = phi - restAngle;
+    float lambda = angleError / (lambda_denom + xpbd_bend);
 
-    InterlockedAdd(PositionDelta[constraint.ParticleC].x, deltaC.x);
-    InterlockedAdd(PositionDelta[constraint.ParticleC].y, deltaC.y);
-    InterlockedAdd(PositionDelta[constraint.ParticleC].z, deltaC.z);
-    InterlockedAdd(PositionWeight[constraint.ParticleC], 1);
+    // Determine sign based on normal orientation (Velvet check)
+    if (dot(cross(n1Norm, n2Norm), e) > 0.0f)
+        lambda = -lambda;
 
-    InterlockedAdd(PositionDelta[constraint.ParticleD].x, deltaD.x);
-    InterlockedAdd(PositionDelta[constraint.ParticleD].y, deltaD.y);
-    InterlockedAdd(PositionDelta[constraint.ParticleD].z, deltaD.z);
-    InterlockedAdd(PositionWeight[constraint.ParticleD], 1);
+    // Apply per-instance stiffness (our addition for per-instance materials)
+    lambda *= params.BendStiffness;
+
+    // Compute corrections (Velvet pattern)
+    float3 corr0 = -w0 * lambda * d0;
+    float3 corr1 = -w1 * lambda * d1;
+    float3 corr2 = -w2 * lambda * d2;
+    float3 corr3 = -w3 * lambda * d3;
+
+    // Atomic accumulation (scaled to int)
+    int3 delta0 = int3(corr0 * kScale);
+    int3 delta1 = int3(corr1 * kScale);
+    int3 delta2 = int3(corr2 * kScale);
+    int3 delta3 = int3(corr3 * kScale);
+
+    InterlockedAdd(PositionDelta[idx0].x, delta0.x);
+    InterlockedAdd(PositionDelta[idx0].y, delta0.y);
+    InterlockedAdd(PositionDelta[idx0].z, delta0.z);
+    InterlockedAdd(PositionWeight[idx0], 1);
+
+    InterlockedAdd(PositionDelta[idx1].x, delta1.x);
+    InterlockedAdd(PositionDelta[idx1].y, delta1.y);
+    InterlockedAdd(PositionDelta[idx1].z, delta1.z);
+    InterlockedAdd(PositionWeight[idx1], 1);
+
+    InterlockedAdd(PositionDelta[idx2].x, delta2.x);
+    InterlockedAdd(PositionDelta[idx2].y, delta2.y);
+    InterlockedAdd(PositionDelta[idx2].z, delta2.z);
+    InterlockedAdd(PositionWeight[idx2], 1);
+
+    InterlockedAdd(PositionDelta[idx3].x, delta3.x);
+    InterlockedAdd(PositionDelta[idx3].y, delta3.y);
+    InterlockedAdd(PositionDelta[idx3].z, delta3.z);
+    InterlockedAdd(PositionWeight[idx3], 1);
 }

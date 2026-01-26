@@ -91,12 +91,16 @@ public:
                        uint32 KinematicTargets, uint32 Triangles, uint32 Instances);
 
 private:
+    // Simulation methods
+    void SimulateSubstep(float SubstepDeltaTime);  // NEW: Substep simulation
+    
     // Dispatch methods
     void DispatchIntegration(uint32 ParticleCount);
     void DispatchConstraintSolver(uint32 ConstraintCount);
     void DispatchBendConstraintSolver(uint32 BendConstraintCount);
     void DispatchApplyDeltas(uint32 ParticleCount);
     void DispatchApplyKinematicTargets(uint32 TargetCount);
+    void DispatchFinalize(uint32 ParticleCount);  // NEW: Velocity finalization
     void DispatchClearNormals(uint32 ParticleCount);
     void DispatchUpdateNormals(uint32 TriangleCount);
     void DispatchNormalizeNormals(uint32 ParticleCount);
@@ -121,6 +125,7 @@ private:
     ID3D11ComputeShader *BendConstraintSolverCS;
     ID3D11ComputeShader *ApplyDeltasCS;
     ID3D11ComputeShader *ApplyKinematicTargetsCS;
+    ID3D11ComputeShader *FinalizeCS;  // NEW: Velocity finalization shader
     ID3D11ComputeShader *ClearNormalsCS;
     ID3D11ComputeShader *UpdateNormalsCS;
     ID3D11ComputeShader *NormalizeNormalsCS;
@@ -178,6 +183,9 @@ private:
 
     int32 CurrentBufferIndex;
     bool bInitialized;
+    
+    // NEW: Substep timing state
+    float AccumulatedTime;
 
     static constexpr uint32 THREAD_GROUP_SIZE = 64;
 };

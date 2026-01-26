@@ -20,7 +20,7 @@
     }
 
 FClothBatchedSolver::FClothBatchedSolver()
-    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), IntegrateCS(nullptr), ConstraintSolverCS(nullptr), BendConstraintSolverCS(nullptr), ApplyDeltasCS(nullptr), ApplyKinematicTargetsCS(nullptr), ClearNormalsCS(nullptr), UpdateNormalsCS(nullptr), NormalizeNormalsCS(nullptr), BatchSimConstantBuffer(nullptr), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), UsedParticleCount(0), UsedConstraintCount(0), UsedBendConstraintCount(0), UsedKinematicTargetCount(0), UsedTriangleCount(0), UsedInstanceCount(0), CurrentBufferIndex(0), bInitialized(false)
+    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), IntegrateCS(nullptr), ConstraintSolverCS(nullptr), BendConstraintSolverCS(nullptr), ApplyDeltasCS(nullptr), ApplyKinematicTargetsCS(nullptr), FinalizeCS(nullptr), ClearNormalsCS(nullptr), UpdateNormalsCS(nullptr), NormalizeNormalsCS(nullptr), BatchSimConstantBuffer(nullptr), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), UsedParticleCount(0), UsedConstraintCount(0), UsedBendConstraintCount(0), UsedKinematicTargetCount(0), UsedTriangleCount(0), UsedInstanceCount(0), CurrentBufferIndex(0), bInitialized(false), AccumulatedTime(0.0f)
 {
     // Initialize all buffer pointers to nullptr
     for (int32 i = 0; i < 2; ++i)
@@ -100,6 +100,7 @@ void FClothBatchedSolver::Release()
     BendConstraintSolverCS = nullptr;
     ApplyDeltasCS = nullptr;
     ApplyKinematicTargetsCS = nullptr;
+    FinalizeCS = nullptr;  // NEW
     ClearNormalsCS = nullptr;
     UpdateNormalsCS = nullptr;
     NormalizeNormalsCS = nullptr;
@@ -527,19 +528,36 @@ void FClothBatchedSolver::Simulate(float DeltaTime)
     if (UsedParticleCount == 0)
         return;
 
-    // DIAGNOSTIC: Log simulation state every 60 frames
-   /* static int simFrameCount = 0;
-    if (simFrameCount++ % 60 == 0)
-    {
-        UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver::Simulate - Particles:%d, Constraints:%d, BendConstraints:%d, KinematicTargets:%d, BufferIndex:%d"),
-               UsedParticleCount, UsedConstraintCount, UsedBendConstraintCount, UsedKinematicTargetCount, CurrentBufferIndex);
-    }*/
-
     // Clamp delta time for stability
     float clampedDT = FMath::Clamp(DeltaTime, 0.0001f, 0.033f);
 
-    // Update constant buffers
-    UpdateConstantBuffers(clampedDT);
+    // NEW: Fixed timestep accumulation with substeps (Velvet-inspired)
+    AccumulatedTime += clampedDT;
+    int32 NumSubstepsExecuted = 0;
+    
+    // Use fixed substep time from config
+    float SubstepTime = Config.FixedSubstepTime;
+    
+    while (AccumulatedTime >= SubstepTime && NumSubstepsExecuted < Config.MaxSubstepsPerFrame)
+    {
+        SimulateSubstep(SubstepTime);
+        AccumulatedTime -= SubstepTime;
+        NumSubstepsExecuted++;
+    }
+    
+    // Final normal update (once per frame, not per substep)
+    if (UsedTriangleCount > 0)
+    {
+        // DispatchClearNormals(UsedParticleCount);
+        // DispatchUpdateNormals(UsedTriangleCount);
+        // DispatchNormalizeNormals(UsedParticleCount);
+    }
+}
+
+void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
+{
+    // Update constant buffers with substep delta time
+    UpdateConstantBuffers(SubstepDeltaTime);
 
     // 1. Integration Pass - Apply forces and predict positions
     DispatchIntegration(UsedParticleCount);
@@ -554,6 +572,8 @@ void FClothBatchedSolver::Simulate(float DeltaTime)
     {
         DispatchApplyKinematicTargets(UsedKinematicTargetCount);
     }
+
+    // TODO Phase 3: Pre-stabilization collision would go here
 
     // 3. Constraint solver iterations
     for (int32 iter = 0; iter < Config.NumIterations; ++iter)
@@ -588,13 +608,11 @@ void FClothBatchedSolver::Simulate(float DeltaTime)
         CurrentBufferIndex = writeIdx;
     }
 
-    // 4. Update normals for rendering
-    if (UsedTriangleCount > 0)
-    {
-        // DispatchClearNormals(UsedParticleCount);
-        // DispatchUpdateNormals(UsedTriangleCount);
-        // DispatchNormalizeNormals(UsedParticleCount);
-    }
+    // TODO Phase 3: Per-substep collision would go here
+
+    // 4. Velocity Finalization (NEW - Velvet pattern)
+    // Derives velocity from position change, clamps max velocity, applies damping
+    DispatchFinalize(UsedParticleCount);
 }
 
 bool FClothBatchedSolver::LoadComputeShaders()
@@ -650,6 +668,15 @@ bool FClothBatchedSolver::LoadComputeShaders()
     }
     ApplyKinematicTargetsCS = ShaderManager->GetComputeShaderByKey(L"ClothApplyKinematicTargetsCS");
 
+    // NEW: Load or get Finalize shader (Velvet-inspired velocity finalization)
+    hr = ShaderManager->AddComputeShader(L"ClothFinalizeCS", L"Shaders/Cloth/ClothFinalize.hlsl", "FinalizeVelocityCS");
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to compile ClothFinalize shader"));
+        bSuccess = false;
+    }
+    FinalizeCS = ShaderManager->GetComputeShaderByKey(L"ClothFinalizeCS");
+
     // Load or get Normal Update shaders
     hr = ShaderManager->AddComputeShader(L"ClothClearNormalsCS", L"Shaders/Cloth/ClothUpdateNormals.hlsl", "ClearNormalsCS");
     if (FAILED(hr))
@@ -676,7 +703,7 @@ bool FClothBatchedSolver::LoadComputeShaders()
     NormalizeNormalsCS = ShaderManager->GetComputeShaderByKey(L"ClothNormalizeNormalsCS");
 
     // Verify critical shaders loaded
-    if (!IntegrateCS || !ConstraintSolverCS || !BendConstraintSolverCS || !ApplyDeltasCS)
+    if (!IntegrateCS || !ConstraintSolverCS || !BendConstraintSolverCS || !ApplyDeltasCS || !FinalizeCS)
     {
         UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to load required compute shaders"));
         bSuccess = false;
@@ -1046,20 +1073,19 @@ void FClothBatchedSolver::DispatchApplyDeltas(uint32 ParticleCount)
     // Bind constant buffer
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
 
-    // CRITICAL FIX: Bind SRVs to match shader registers
+    // Bind SRVs to match shader registers
     // ApplyDelta shader expects: t0 = PositionRead, t2 = InvMassBuffer
     Graphics->DeviceContext->CSSetShaderResources(0, 1, &UnifiedPositionSRV[readIdx]); // t0: PositionRead
     Graphics->DeviceContext->CSSetShaderResources(2, 1, &UnifiedInvMassSRV);           // t2: InvMassBuffer
 
-    // Bind UAVs
+    // Bind UAVs (REMOVED u3: VelocityUAV - velocity no longer updated here)
     ID3D11UnorderedAccessView *uavs[] = {
         UnifiedPositionDeltaUAV,      // u0
         UnifiedPositionWeightUAV,     // u1
-        UnifiedPositionUAV[writeIdx], // u2: Write to next buffer
-        UnifiedVelocityUAV            // u3: Update velocity
+        UnifiedPositionUAV[writeIdx]  // u2: Write to next buffer
     };
-    UINT initialCounts[4] = {0, 0, 0, 0};
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 4, uavs, initialCounts);
+    UINT initialCounts[3] = {0, 0, 0};
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 3, uavs, initialCounts);
 
     // Bind shader
     Graphics->DeviceContext->CSSetShader(ApplyDeltasCS, nullptr, 0);
@@ -1069,8 +1095,8 @@ void FClothBatchedSolver::DispatchApplyDeltas(uint32 ParticleCount)
     Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
 
     // Unbind
-    ID3D11UnorderedAccessView *nullUAVs[4] = {nullptr, nullptr, nullptr, nullptr};
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 4, nullUAVs, nullptr);
+    ID3D11UnorderedAccessView *nullUAVs[3] = {nullptr, nullptr, nullptr};
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 3, nullUAVs, nullptr);
     ID3D11ShaderResourceView *nullSRVs[3] = {nullptr, nullptr, nullptr};
     Graphics->DeviceContext->CSSetShaderResources(0, 1, nullSRVs);     // Unbind t0
     Graphics->DeviceContext->CSSetShaderResources(2, 1, &nullSRVs[1]); // Unbind t2
@@ -1104,6 +1130,53 @@ void FClothBatchedSolver::DispatchApplyKinematicTargets(uint32 TargetCount)
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
     ID3D11ShaderResourceView *nullSRV = nullptr;
     Graphics->DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
+}
+
+void FClothBatchedSolver::DispatchFinalize(uint32 ParticleCount)
+{
+    if (!Graphics || !Graphics->DeviceContext || !FinalizeCS)
+        return;
+
+    // Finalize operates on positions to derive velocity
+    // Reads from BOTH ping-pong buffers to get position delta
+    int32 oldIdx = 1 - CurrentBufferIndex;  // Position before constraints
+    int32 newIdx = CurrentBufferIndex;      // Position after constraints
+
+    // Bind constant buffer (contains DeltaTime, MaxSpeed)
+    Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
+    
+    // TODO: Bind additional FinalizeConstants buffer (SubstepDeltaTime, MaxSpeed)
+    // For now, we'll use values from main constant buffer
+
+    // Bind SRVs
+    ID3D11ShaderResourceView *srvs[] = {
+        UnifiedPositionSRV[oldIdx],  // t0: Old position (before substep)
+        UnifiedPositionSRV[newIdx],  // t1: New position (after constraints)
+        UnifiedInvMassSRV,           // t2: Inverse masses
+        InstanceParameterSRV         // t3: Instance parameters
+    };
+    Graphics->DeviceContext->CSSetShaderResources(0, 4, srvs);
+
+    // Bind UAVs
+    ID3D11UnorderedAccessView *uavs[] = {
+        UnifiedPositionUAV[newIdx],  // u0: Write position (may clamp if velocity exceeded)
+        UnifiedVelocityUAV           // u1: Write velocity
+    };
+    UINT initialCounts[2] = {0, 0};
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, initialCounts);
+
+    // Bind shader
+    Graphics->DeviceContext->CSSetShader(FinalizeCS, nullptr, 0);
+
+    // Dispatch
+    uint32 dispatchCount = GetDispatchCount(ParticleCount);
+    Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
+
+    // Unbind
+    ID3D11UnorderedAccessView *nullUAVs[2] = {nullptr, nullptr};
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
+    ID3D11ShaderResourceView *nullSRVs[4] = {nullptr, nullptr, nullptr, nullptr};
+    Graphics->DeviceContext->CSSetShaderResources(0, 4, nullSRVs);
 }
 
 void FClothBatchedSolver::DispatchClearNormals(uint32 ParticleCount)
@@ -1201,7 +1274,6 @@ void FClothBatchedSolver::UpdateConstantBuffers(float DeltaTime)
     if (!Graphics || !Graphics->DeviceContext || !BatchSimConstantBuffer)
         return;
 
-    // TODO: Update with proper batched constants
     FClothSimConstants constants = {};
     constants.NumParticles = UsedParticleCount;
     constants.NumConstraints = UsedConstraintCount;
@@ -1209,7 +1281,7 @@ void FClothBatchedSolver::UpdateConstantBuffers(float DeltaTime)
     constants.NumKinematicTargets = UsedKinematicTargetCount;
     constants.DeltaTime = DeltaTime;
     constants.Damping = Config.Damping;
-    constants.Gravity = FVector(0.0f, 0.0f, -1980.0f); // Default gravity
+    constants.Gravity = FVector(0.0f, 0.0f, -9.80f); // Default gravity
     constants.StretchStiffness = Config.StretchStiffness;
     constants.Wind = FVector::ZeroVector;
     constants.BendStiffness = Config.BendStiffness;
@@ -1217,6 +1289,11 @@ void FClothBatchedSolver::UpdateConstantBuffers(float DeltaTime)
     constants.NumIterations = Config.NumIterations;
     constants.CurrentIteration = 0;
     constants.UseXPBD = Config.bUseXPBD ? 1 : 0;
+    
+    // NEW: Velvet-inspired parameters
+    constants.RelaxationFactor = Config.RelaxationFactor;
+    constants.MaxSpeed = Config.MaxSpeed;
+    
     constants.WorldMatrix = FMatrix::Identity;
 
     D3D11_MAPPED_SUBRESOURCE msr;

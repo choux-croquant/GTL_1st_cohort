@@ -27,7 +27,8 @@ cbuffer ClothSimConstants : register(b0)
     
     uint CurrentIteration;
     uint UseXPBD;
-    float2 TempPadding;
+    float RelaxationFactor;  // NEW: Jacobi convergence control (Velvet-inspired)
+    float MaxSpeed;          // NEW: Velocity clamping (Velvet-inspired)
 
     float4x4 WorldMatrix;
 };

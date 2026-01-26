@@ -56,33 +56,33 @@ void ATestBatchedClothActor::Tick(float DeltaTime)
         return;
     }
 
-    for (int32 i = 0; i < NumClothInstances; ++i)
-    {
-        if (AttachmentDrivers[i])
-        {
-            float phaseOffset = (float)i / (float)NumClothInstances * 2.0f * PI;
-            const float Speed = 0.8f;
-            const float MoveRadius = 100.0f;
-            const float SwayAngleScale = 30.0f;
+    //for (int32 i = 0; i < NumClothInstances; ++i)
+    //{
+    //    if (AttachmentDrivers[i])
+    //    {
+    //        float phaseOffset = (float)i / (float)NumClothInstances * 2.0f * PI;
+    //        const float Speed = 2.8f;
+    //        const float MoveRadius = 200.0f;
+    //        const float SwayAngleScale = 30.0f;
 
-            float Time = AnimationTime * Speed + phaseOffset;
+    //        float Time = AnimationTime * Speed + phaseOffset;
 
-            // Different motion patterns based on instance index
-            float OffsetY = FMath::Sin(Time) * MoveRadius;
-            float OffsetX = FMath::Cos(Time * 2.0f) * (MoveRadius * 0.3f);
-            float OffsetZ = FMath::Sin(Time * 1.5f) * (MoveRadius * 0.15f);
+    //        // Different motion patterns based on instance index
+    //        float OffsetY = FMath::Sin(Time) * MoveRadius;
+    //        float OffsetX = FMath::Cos(Time * 2.0f) * (MoveRadius * 0.3f);
+    //        float OffsetZ = FMath::Sin(Time * 1.5f) * (MoveRadius * 0.15f);
 
-            FVector NewLocation = DriverInitialPositions[i] + FVector(OffsetX, OffsetY, OffsetZ);
+    //        FVector NewLocation = DriverInitialPositions[i] + FVector(OffsetX, OffsetY, OffsetZ);
 
-            float RollAngle = -FMath::Cos(Time) * SwayAngleScale;
-            float PitchAngle = FMath::Sin(Time * 1.5f) * (SwayAngleScale * 0.2f);
+    //        float RollAngle = -FMath::Cos(Time) * SwayAngleScale;
+    //        float PitchAngle = FMath::Sin(Time * 1.5f) * (SwayAngleScale * 0.2f);
 
-            FRotator NewRotation = FRotator(PitchAngle, 0.0f, RollAngle);
+    //        FRotator NewRotation = FRotator(PitchAngle, 0.0f, RollAngle);
 
-            AttachmentDrivers[i]->SetActorLocation(NewLocation);
-            AttachmentDrivers[i]->SetActorRotation(NewRotation);
-        }
-    }
+    //        AttachmentDrivers[i]->SetActorLocation(NewLocation);
+    //        AttachmentDrivers[i]->SetActorRotation(NewRotation);
+    //    }
+    //}
 
     // Accumulate animation time
     AnimationTime += DeltaTime;

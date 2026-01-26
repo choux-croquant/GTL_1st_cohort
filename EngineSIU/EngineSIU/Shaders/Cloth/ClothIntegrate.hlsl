@@ -3,6 +3,10 @@
  * Performs semi-implicit Euler integration for cloth particles
  * Applies external forces (gravity, wind, drag) and predicts new positions
  * Now supports batched simulation with per-instance parameters
+ *
+ * MODIFIED (Velvet-inspired):
+ * - Removed velocity damping (now in Finalize shader)
+ * - Uses MaxSpeed from constants for safety clamping
  */
 
 #include "ClothCommon.hlsli"
@@ -28,7 +32,7 @@ void IntegrateCS(uint3 DTid : SV_DispatchThreadID)
     // Load particle data
     FClothParticle particle = PositionRead[idx];
     FClothVelocity velocity = VelocityBuffer[idx];
-    float invMass = InvMassBuffer[idx];  // NEW: Load from separate buffer
+    float invMass = InvMassBuffer[idx];  // Load from separate buffer
 
     // Skip fixed particles
     if (invMass == 0.0f)
@@ -38,7 +42,7 @@ void IntegrateCS(uint3 DTid : SV_DispatchThreadID)
         return;
     }
 
-    // NEW: Get per-instance parameters
+    // Get per-instance parameters
     uint instanceID = particle.InstanceID;
     FClothInstanceParameters params = InstanceParams[instanceID];
     
@@ -62,20 +66,22 @@ void IntegrateCS(uint3 DTid : SV_DispatchThreadID)
     // Acceleration
     float3 acceleration = force * invMass;
 
-    // Semi-implicit Euler
+    // Semi-implicit Euler (velocity first, then position)
     velocity.Velocity += acceleration * DeltaTime;
 
-    // Velocity damping (per-instance)
-    velocity.Velocity *= (1.0f - params.Damping);
+    // REMOVED: Velocity damping (now in Finalize shader after constraints)
+    // velocity.Velocity *= (1.0f - params.Damping);
 
-    // Clamp velocity
-    float maxVelocity = 10000.0f;
+    // Safety clamp velocity (generous limit, real clamping in Finalize)
+    // This is a safety measure to prevent initial explosions
+    float maxVelocity = MaxSpeed * 2.0f;  // 2x max speed as safety margin
     float velMagnitude = length(velocity.Velocity);
     if (velMagnitude > maxVelocity)
     {
         velocity.Velocity = (velocity.Velocity / velMagnitude) * maxVelocity;
     }
 
+    // Update position from velocity
     particle.Position += velocity.Velocity * DeltaTime;
 
     PositionWrite[idx] = particle;
