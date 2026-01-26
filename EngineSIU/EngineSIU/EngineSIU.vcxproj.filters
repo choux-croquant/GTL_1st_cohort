@@ -1658,8 +1658,6 @@
       <Filter>Engine\Source\Runtime\Engine\Classes\Actors</Filter>
     </ClCompile>
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Engine\TimerManager.cpp" />
-    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothSolver.cpp" />
-    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothInstance.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothWorld.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Engine\ClothAsset.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Components\ClothComponent.cpp" />
@@ -1841,9 +1839,7 @@
       <Filter>Engine\Source\Runtime\Engine\Classes\Actors</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Engine\TimerManager.h" />
-    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothSolver.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothSimulationData.h" />
-    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothInstance.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothWorld.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Engine\ClothAsset.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Components\ClothComponent.h" />

@@ -6,7 +6,6 @@
 
 #include "ClothComponent.h"
 #include "Engine/ClothAsset.h"
-#include "Cloth/ClothInstance.h"
 #include "Cloth/ClothInstanceHandle.h"
 #include "Cloth/ClothWorld.h"
 #include "World/World.h"
@@ -14,7 +13,7 @@
 #include "Cloth/ClothPhysicsManager.h"
 
 UClothComponent::UClothComponent()
-    : ClothAsset(nullptr), ClothInstance(nullptr), ClothInstanceHandle(nullptr), bIsSimulating(false), bUseBatchedMode(false), bDebugDrawEnabled(false), AccumulatedForce(FVector::ZeroVector)
+    : ClothAsset(nullptr), ClothInstanceHandle(nullptr), bIsSimulating(false), bUseBatchedMode(false), bDebugDrawEnabled(false), AccumulatedForce(FVector::ZeroVector)
 {
 }
 
@@ -29,11 +28,6 @@ UClothComponent::~UClothComponent()
     {
         ClothWorld->UnregisterClothInstanceBatched(ClothInstanceHandle);
         ClothInstanceHandle = nullptr;
-    }
-    else if (ClothInstance)
-    {
-        ClothWorld->UnregisterClothInstance(ClothInstance);
-        ClothInstance = nullptr;
     }
 }
 
@@ -71,21 +65,6 @@ void UClothComponent::TickComponent(float DeltaTime)
         // which reads attachment data directly from the ClothAsset each frame.
         // The simulation system owns the attachment update flow.
     }
-    else if (ClothInstance)
-    {
-        // Legacy mode
-        if (AccumulatedForce.SizeSquared() > 0.0f)
-        {
-            ClothInstance->AddExternalForce(AccumulatedForce);
-            AccumulatedForce = FVector::ZeroVector;
-        }
-
-        // Legacy mode still uses manual attachment updates
-        if (Attachments.Num() > 0)
-        {
-            ClothInstance->UpdateAttachments(Attachments);
-        }
-    }
 }
 
 void UClothComponent::BeginPlay()
@@ -114,11 +93,6 @@ void UClothComponent::SetClothAsset(UClothAsset *InAsset)
         {
             ClothWorld->UnregisterClothInstanceBatched(ClothInstanceHandle);
             ClothInstanceHandle = nullptr;
-        }
-        else if (ClothInstance)
-        {
-            ClothWorld->UnregisterClothInstance(ClothInstance);
-            ClothInstance = nullptr;
         }
     }
 
@@ -162,22 +136,6 @@ void UClothComponent::StartSimulation()
         bIsSimulating = true;
         UE_LOG(ELogLevel::Display, TEXT("ClothComponent: Batched simulation started"));
     }
-    else
-    {
-        // Legacy mode registration
-        ClothInstance = ClothWorld->RegisterClothInstance(this, ClothAsset, ClothAsset->GetConfig());
-
-        if (!ClothInstance)
-        {
-            UE_LOG(ELogLevel::Error, TEXT("ClothComponent: Failed to register in legacy mode"));
-            return;
-        }
-
-        ClothInstance->SetActive(true);
-        bUseBatchedMode = false;
-        bIsSimulating = true;
-        UE_LOG(ELogLevel::Display, TEXT("ClothComponent: Legacy simulation started"));
-    }
 }
 
 void UClothComponent::StopSimulation()
@@ -185,10 +143,6 @@ void UClothComponent::StopSimulation()
     if (bUseBatchedMode && ClothInstanceHandle)
     {
         ClothInstanceHandle->SetActive(false);
-    }
-    else if (ClothInstance)
-    {
-        ClothInstance->SetActive(false);
     }
 
     bIsSimulating = false;
@@ -202,10 +156,6 @@ void UClothComponent::ResetSimulation()
     {
         // Batched mode reset not yet implemented
         UE_LOG(ELogLevel::Warning, TEXT("ClothComponent: Reset not yet implemented for batched mode"));
-    }
-    else if (ClothInstance)
-    {
-        ClothInstance->Reset();
     }
 
     AccumulatedForce = FVector::ZeroVector;
@@ -224,10 +174,6 @@ void UClothComponent::AddImpulse(const FVector &Impulse)
     {
         // Batched mode - not yet implemented
     }
-    else if (ClothInstance)
-    {
-        ClothInstance->AddExternalForce(Impulse);
-    }
 }
 
 void UClothComponent::SetWind(const FVector &WindVelocity)
@@ -240,10 +186,6 @@ void UClothComponent::SetWind(const FVector &WindVelocity)
         params.Wind = WindVelocity;
         ClothInstanceHandle->SetParameters(params);
     }
-    else if (ClothInstance)
-    {
-        ClothInstance->SetWind(WindVelocity);
-    }
 }
 
 void UClothComponent::SetGravity(const FVector &InGravity)
@@ -255,10 +197,6 @@ void UClothComponent::SetGravity(const FVector &InGravity)
         FClothInstanceParameters params = ClothInstanceHandle->GetParameters();
         params.Gravity = InGravity;
         ClothInstanceHandle->SetParameters(params);
-    }
-    else if (ClothInstance)
-    {
-        ClothInstance->SetGravity(InGravity);
     }
 }
 
@@ -285,10 +223,6 @@ const FClothConfig &UClothComponent::GetClothConfig() const
         // Batched mode - would need to store config or retrieve from batch manager
         static FClothConfig DefaultConfig;
         return DefaultConfig;
-    }
-    else if (ClothInstance)
-    {
-        return ClothInstance->GetConfig();
     }
 
     static FClothConfig DefaultConfig;

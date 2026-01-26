@@ -1,6 +1,4 @@
 #include "ClothMeshComponent.h"
-#include "Cloth/ClothSolver.h"
-#include "Cloth/ClothInstance.h"
 #include "Cloth/ClothInstanceHandle.h"
 #include "Cloth/ClothBatchManager.h"
 #include "Cloth/ClothBatchedSolver.h"
@@ -31,11 +29,9 @@ void UClothMeshComponent::TickComponent(float DeltaTime)
 
     // Update world transform from component hierarchy every frame
     // This ensures the cloth follows its parent component/actor transforms
-    if (!ClothInstance)
-        return;
-    WorldTransform = GetWorldMatrix();
+    /*WorldTransform = GetWorldMatrix();
     FVector gravity = FTransform(WorldTransform).InverseTransformDirection(ClothInstance->GetClothWorld()->GetGlobalForces().GlobalGravity);
-    ClothInstance->SetGravity(gravity);
+    ClothInstance->SetGravity(gravity);*/
 }
 
 void UClothMeshComponent::GetRenderData(FClothRenderData &OutData) const
@@ -82,25 +78,6 @@ void UClothMeshComponent::GetRenderData(FClothRenderData &OutData) const
         // No per-instance index buffer in batched mode (indices are in unified buffer)
         OutData.Indices = nullptr;
         OutData.IndexBufferSRV = nullptr;
-    }
-    else if (ClothInstance && ClothInstance->GetSolver() && ClothInstance->GetSolver()->IsInitialized())
-    {
-        // Legacy mode - get data from per-instance solver
-        FClothSolver *Solver = ClothInstance->GetSolver();
-        OutData.PositionBufferSRV = Solver->GetPositionBufferSRV();
-        OutData.NormalBufferSRV = Solver->GetNormalBufferSRV();
-        OutData.IndexBufferSRV = nullptr;
-        OutData.NumVertices = Solver->GetNumParticles();
-        OutData.NumTriangles = Solver->GetNumParticles() > 0 ? ClothInstance->GetIndices().Num() / 3 : 0;
-        OutData.Indices = &ClothInstance->GetIndices();
-        OutData.UnifiedIndexBuffer = nullptr;
-        OutData.ParticleOffset = 0;
-        OutData.IndexOffset = 0;
-        OutData.bIsBatchedMode = false;
-
-        // Legacy mode: Use component's world transform
-        // Particles are in LOCAL space, need transformation to world
-        OutData.WorldTransform = WorldTransform;
     }
 }
 

@@ -9,8 +9,6 @@
 #pragma once
 
 #include "HAL/PlatformType.h"
-#include "ClothInstance.h"
-#include "ClothSolver.h"
 #include "ClothBatchTypes.h"
 #include "Container/Array.h"
 
@@ -19,6 +17,7 @@ class FGraphicsDevice;
 class FDXDBufferManager;
 class FDXDShaderManager;
 class UClothComponent;
+class UClothAsset;
 class UWorld;
 class FClothBatchManager;
 class FClothInstanceHandle;
@@ -87,12 +86,6 @@ public:
     void Update(float DeltaTime);
 
     /**
-     * Registration API for components - Legacy mode
-     */
-    FClothInstance *RegisterClothInstance(UClothComponent *Component, UClothAsset *Asset, const FClothConfig &Config);
-    void UnregisterClothInstance(FClothInstance *Instance);
-
-    /**
      * Registration API for components - Batched mode
      */
     FClothInstanceHandle *RegisterClothInstanceBatched(UClothComponent *Component, UClothAsset *Asset,
@@ -102,14 +95,7 @@ public:
     /**
      * Query
      */
-    int32 GetNumActiveInstances() const;
     bool IsInitialized() const { return bIsInitialized; }
-
-    /**
-     * Get solver for direct access (rendering, debug)
-     */
-    FClothSolver *GetSolver() { return Solver; }
-    const FClothSolver *GetSolver() const { return Solver; }
 
     /**
      * Global force API - Forces applied to all cloth instances in world-space
@@ -133,21 +119,7 @@ public:
     int32 GetNumInstancesInLOD(EClothLODLevel LOD) const;
 
 private:
-    /**
-     * Update all instances before simulation
-     */
-    void UpdateKinematicData(float DeltaTime);
-
-    /**
-     * Run GPU simulation for all instances
-     */
-    void SimulateAllInstances(float DeltaTime);
     void SimulateAllBatches(float DeltaTime);
-
-    /**
-     * Clean up destroyed instances
-     */
-    void CleanupDestroyedInstances();
 
     /**
      * Process LOD transitions
@@ -168,11 +140,6 @@ private:
 
     // System mode
     EClothSystemMode SystemMode;
-
-    // Legacy mode resources
-    FClothSolver *Solver;
-    TArray<FClothInstance *> ActiveInstances;
-    TArray<FClothInstance *> PendingRemoval;
 
     // Batched mode resources
     FClothBatchManager *LODBatches[static_cast<int32>(EClothLODLevel::Max)];

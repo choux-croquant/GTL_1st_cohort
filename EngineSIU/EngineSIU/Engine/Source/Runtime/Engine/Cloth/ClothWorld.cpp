@@ -5,8 +5,6 @@
  */
 
 #include "ClothWorld.h"
-#include "ClothInstance.h"
-#include "ClothSolver.h"
 #include "ClothBatchManager.h"
 #include "ClothInstanceHandle.h"
 #include "Engine/ClothAsset.h"
@@ -21,7 +19,7 @@
 static EClothSystemMode GClothSystemMode = EClothSystemMode::Batched;
 
 FClothWorld::FClothWorld()
-    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), SystemMode(GClothSystemMode), Solver(nullptr), bIsInitialized(false), TotalParticleCount(0), TotalConstraintCount(0)
+    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), SystemMode(GClothSystemMode), bIsInitialized(false), TotalParticleCount(0), TotalConstraintCount(0)
 {
     // Initialize batch manager array to nullptr
     for (int32 i = 0; i < static_cast<int32>(EClothLODLevel::Max); ++i)
@@ -41,14 +39,6 @@ void FClothWorld::Initialize(FGraphicsDevice *InGraphics, FDXDBufferManager *InB
     BufferManager = InBufferManager;
     ShaderManager = InShaderManager;
 
-    if (SystemMode == EClothSystemMode::Legacy)
-    {
-        // Create shared solver for legacy mode
-        Solver = new FClothSolver();
-        Solver->Initialize(Graphics, BufferManager, ShaderManager);
-        UE_LOG(ELogLevel::Display, TEXT("ClothWorld: Initialized in Legacy mode"));
-    }
-    else if (SystemMode == EClothSystemMode::Batched)
     {
         // Initialize batch managers for batched mode
         InitializeBatchManagers();
@@ -60,27 +50,6 @@ void FClothWorld::Initialize(FGraphicsDevice *InGraphics, FDXDBufferManager *InB
 
 void FClothWorld::Release()
 {
-    // Clean up legacy instances
-    for (FClothInstance *Instance : ActiveInstances)
-    {
-        if (Instance)
-        {
-            Instance->Release();
-            delete Instance;
-        }
-    }
-    ActiveInstances.Empty();
-
-    for (FClothInstance *Instance : PendingRemoval)
-    {
-        if (Instance)
-        {
-            Instance->Release();
-            delete Instance;
-        }
-    }
-    PendingRemoval.Empty();
-
     // Clean up batched instances
     for (FClothInstanceHandle *Handle : BatchedInstances)
     {
@@ -100,14 +69,6 @@ void FClothWorld::Release()
     }
     BatchedPendingRemoval.Empty();
 
-    // Release solver (legacy mode)
-    if (Solver)
-    {
-        Solver->Release();
-        delete Solver;
-        Solver = nullptr;
-    }
-
     // Release batch managers (batched mode)
     ReleaseBatchManagers();
 
@@ -122,8 +83,6 @@ void FClothWorld::Update(float DeltaTime)
         return;
 
     // Early out if no instances
-    if (SystemMode == EClothSystemMode::Legacy && ActiveInstances.Num() == 0)
-        return;
     if (SystemMode == EClothSystemMode::Batched && BatchedInstances.Num() == 0)
         return;
 
@@ -140,13 +99,7 @@ void FClothWorld::Update(float DeltaTime)
         }
     }
 
-    if (SystemMode == EClothSystemMode::Legacy)
-    {
-        UpdateKinematicData(DeltaTime);
-        SimulateAllInstances(DeltaTime);
-        CleanupDestroyedInstances();
-    }
-    else if (SystemMode == EClothSystemMode::Batched)
+   
     {
         // Process LOD transitions first
         ProcessLODTransitions();
@@ -164,95 +117,6 @@ void FClothWorld::Update(float DeltaTime)
     }
 }
 
-FClothInstance *FClothWorld::RegisterClothInstance(UClothComponent *Component, UClothAsset *Asset, const FClothConfig &Config)
-{
-    if (!bIsInitialized || !Component || !Asset)
-    {
-        UE_LOG(ELogLevel::Warning, TEXT("ClothWorld: Cannot register cloth - invalid parameters"));
-        return nullptr;
-    }
-
-    // Create new instance with graphics resources
-    FClothInstance *Instance = new FClothInstance();
-
-    if (!Instance->Initialize(Asset, Config, Graphics, BufferManager, ShaderManager))
-    {
-        UE_LOG(ELogLevel::Error, TEXT("ClothWorld: Failed to initialize cloth instance"));
-        delete Instance;
-        return nullptr;
-    }
-
-    // Link to component and world
-    Instance->SetOwnerComponent(Component);
-    Instance->SetClothWorld(this);
-
-    // Add to active list
-    ActiveInstances.Add(Instance);
-
-    // Update statistics
-    TotalParticleCount += Instance->GetNumParticles();
-    TotalConstraintCount += Instance->GetNumConstraints();
-
-    UE_LOG(ELogLevel::Display, TEXT("ClothWorld: Registered cloth instance (%d particles) - Total: %d instances, %d particles"),
-           Instance->GetNumParticles(), ActiveInstances.Num(), TotalParticleCount);
-
-    return Instance;
-}
-
-void FClothWorld::UnregisterClothInstance(FClothInstance *Instance)
-{
-    if (!Instance)
-        return;
-
-    int32 Index = ActiveInstances.Find(Instance);
-
-    if (Index != INDEX_NONE)
-    {
-        ActiveInstances.RemoveAt(Index);
-
-        // Update statistics
-        TotalParticleCount -= Instance->GetNumParticles();
-        TotalConstraintCount -= Instance->GetNumConstraints();
-
-        PendingRemoval.Add(Instance);
-
-        UE_LOG(ELogLevel::Display, TEXT("ClothWorld: Unregistered cloth instance - Remaining: %d instances"), ActiveInstances.Num());
-    }
-}
-
-int32 FClothWorld::GetNumActiveInstances() const
-{
-    return ActiveInstances.Num();
-}
-
-void FClothWorld::UpdateKinematicData(float DeltaTime)
-{
-    // Update kinematic data for all instances
-    // This is called before simulation
-    for (FClothInstance *Instance : ActiveInstances)
-    {
-        if (Instance && Instance->IsActive())
-        {
-            Instance->UpdateKinematicData(DeltaTime);
-        }
-    }
-}
-
-void FClothWorld::SimulateAllInstances(float DeltaTime)
-{
-    // Legacy mode: Simulate all active cloth instances
-    // Each instance owns its own solver and GPU resources
-
-    for (FClothInstance *Instance : ActiveInstances)
-    {
-        if (Instance && Instance->IsActive() && Instance->IsValid())
-        {
-            // Each instance simulates itself with its own solver
-            Instance->Simulate(DeltaTime);
-        }
-    }
-}
-
 void FClothWorld::SimulateAllBatches(float DeltaTime)
 {
     // Batched mode: Simulate all LOD batches
@@ -263,20 +127,6 @@ void FClothWorld::SimulateAllBatches(float DeltaTime)
             LODBatches[i]->Update(DeltaTime);
         }
     }
-}
-
-void FClothWorld::CleanupDestroyedInstances()
-{
-    // Delete instances that were unregistered this frame
-    for (FClothInstance *Instance : PendingRemoval)
-    {
-        if (Instance)
-        {
-            Instance->Release();
-            delete Instance;
-        }
-    }
-    PendingRemoval.Empty();
 }
 
 void FClothWorld::SetGlobalGravity(const FVector &InGravity)

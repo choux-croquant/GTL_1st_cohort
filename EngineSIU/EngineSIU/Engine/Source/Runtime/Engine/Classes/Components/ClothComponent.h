@@ -12,7 +12,6 @@
 
 // Forward declarations
 class UClothAsset;
-class FClothInstance;
 class FClothInstanceHandle;
 class USceneComponent;
 class USkeletalMeshComponent;
@@ -66,9 +65,6 @@ protected:
     // Cloth asset
     UClothAsset *ClothAsset;
 
-    // Cloth instance (registered with ClothWorld) - Legacy mode
-    FClothInstance *ClothInstance;
-
     // Cloth instance handle - Batched mode
     FClothInstanceHandle *ClothInstanceHandle;
 
@@ -85,9 +81,6 @@ protected:
     FVector AccumulatedForce;
 
 public:
-    // Access to cloth instance for rendering (Legacy mode)
-    FClothInstance *GetClothInstance() const { return ClothInstance; }
-
     // Access to cloth instance handle (Batched mode)
     FClothInstanceHandle *GetClothInstanceHandle() const { return ClothInstanceHandle; }
 
