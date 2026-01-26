@@ -27,13 +27,35 @@ cbuffer ClothSimConstants : register(b0)
     
     uint CurrentIteration;
     uint UseXPBD;
-    float RelaxationFactor;        // NEW: Jacobi convergence control (Velvet-inspired)
-    float MaxSpeed;                // NEW: Velocity clamping (Velvet-inspired)
+    float RelaxationFactor;        // Jacobi convergence control
+    float MaxSpeed;                // Velocity clamping
     
-    float LongRangeStretchiness;   // NEW: LRA slack multiplier (Velvet default: 1.2)
+    float LongRangeStretchiness;   // LRA slack multiplier (default: 1.2)
     float Padding3;
 
     float4x4 WorldMatrix;
+    
+    // NEW: PhysixStudio-style per-constraint-type parameters
+    uint NumShearConstraints;      // 4 bytes
+    uint NumAreaConstraints;       // 4 bytes
+    uint NumLRAEntries;            // 4 bytes
+    uint NumSubsteps;              // 4 bytes
+    
+    float ComplianceStretch;       // 4 bytes - Per-type XPBD compliance
+    float ComplianceShear;         // 4 bytes
+    float ComplianceBend;          // 4 bytes
+    float ComplianceArea;          // 4 bytes
+    
+    float BetaStretch;             // 4 bytes - Velocity-level damping parameter
+    float BetaBend;                // 4 bytes
+    float Thickness;               // 4 bytes - Collision thickness
+    float Friction;                // 4 bytes - Ground/collision friction
+    
+    // Ensure total size is multiple of 16 bytes
+    float Padding4;
+    float Padding5;
+    float Padding6;
+    float Padding7;
 };
 
 /**
@@ -70,8 +92,8 @@ struct FDistanceConstraint
 
     float Compliance; // XPBD
     float Lambda;     // XPBD
+    uint ColorGroup;  // Graph coloring group
     float Padding0;
-    float Padding1;
 };
 
 /**
@@ -89,6 +111,31 @@ struct FBendConstraint
     float Stiffness;
     float Compliance; // XPBD
     float Lambda;     // XPBD
+};
+
+/**
+ * Shear constraint structure (32 bytes)
+ * Must match FClothShearConstraintGPU in C++ exactly
+ */
+struct FShearConstraint
+{
+    uint ParticleA, ParticleB, ParticleC;
+    float RestDot;
+    float Compliance;
+    float Lambda;
+    float Padding0, Padding1;
+};
+
+/**
+ * Area constraint structure (32 bytes)
+ * Must match FClothAreaConstraintGPU in C++ exactly
+ */
+struct FAreaConstraint
+{
+    uint ParticleA, ParticleB, ParticleC;
+    float RestArea;
+    float3 RestNormal;
+    float Lambda;
 };
 
 /**

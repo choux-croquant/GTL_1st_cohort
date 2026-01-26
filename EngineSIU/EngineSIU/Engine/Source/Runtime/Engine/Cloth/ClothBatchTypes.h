@@ -73,16 +73,28 @@ struct FClothInstanceParameters
     uint32 TriangleOffset; // 4 bytes
     uint32 TriangleCount;  // 4 bytes
     uint32 IsActive;       // 4 bytes - Enable/disable flag
-    uint32 Padding;        // 4 bytes
+    uint32 Padding0;       // 4 bytes
+
+    // NEW: PhysixStudio constraint types
+    uint32 ShearConstraintOffset; // 4 bytes
+    uint32 ShearConstraintCount;  // 4 bytes
+    uint32 AreaConstraintOffset;  // 4 bytes
+    uint32 AreaConstraintCount;   // 4 bytes
+
+    uint32 LRAOffset; // 4 bytes - Long Range Attachment offset
+    uint32 LRACount;  // 4 bytes - K * ParticleCount (typically K=2)
+    uint32 NumColors; // 4 bytes - For graph-colored distance constraints
+    uint32 Padding1;  // 4 bytes
+    // Total: 96 + 32 = 128 bytes
 
     FClothInstanceParameters()
-        : Gravity(0.0f, 0.0f, -9.80f), GravityMultiplier(1.0f), Wind(0.0f, 0.0f, 0.0f), WindStrength(1.0f), AirDrag(1.0f), Damping(0.05f), StretchStiffness(0.9f), BendStiffness(0.9f), ParticleOffset(0), ParticleCount(0), ConstraintOffset(0), ConstraintCount(0), BendConstraintOffset(0), BendConstraintCount(0), KinematicTargetOffset(0), KinematicTargetCount(0), TriangleOffset(0), TriangleCount(0), IsActive(1), Padding(0)
+        : Gravity(0.0f, 0.0f, -9.80f), GravityMultiplier(1.0f), Wind(0.0f, 0.0f, 0.0f), WindStrength(1.0f), AirDrag(1.0f), Damping(0.05f), StretchStiffness(0.9f), BendStiffness(0.9f), ParticleOffset(0), ParticleCount(0), ConstraintOffset(0), ConstraintCount(0), BendConstraintOffset(0), BendConstraintCount(0), KinematicTargetOffset(0), KinematicTargetCount(0), TriangleOffset(0), TriangleCount(0), IsActive(1), Padding0(0), ShearConstraintOffset(0), ShearConstraintCount(0), AreaConstraintOffset(0), AreaConstraintCount(0), LRAOffset(0), LRACount(0), NumColors(0), Padding1(0)
     {
     }
 };
 
 // Verify structure size for GPU compatibility
-static_assert(sizeof(FClothInstanceParameters) == 96, "FClothInstanceParameters must be 96 bytes");
+static_assert(sizeof(FClothInstanceParameters) == 128, "FClothInstanceParameters must be 128 bytes");
 
 /**
  * Instance metadata for tracking buffer ranges
@@ -101,6 +113,15 @@ struct FClothInstanceMetadata
     uint32 TriangleOffset;
     uint32 TriangleCount;
 
+    // NEW: PhysixStudio constraint types
+    uint32 ShearConstraintOffset;
+    uint32 ShearConstraintCount;
+    uint32 AreaConstraintOffset;
+    uint32 AreaConstraintCount;
+    uint32 LRAOffset; // Offset into unified LRA id/distance buffers
+    uint32 LRACount;  // K * ParticleCount (typically K=2)
+    uint32 NumColors; // Number of color groups for distance constraints
+
     // Instance ID in parameter buffer
     uint32 InstanceParameterIndex;
 
@@ -109,7 +130,7 @@ struct FClothInstanceMetadata
     EClothLODLevel CurrentLOD;
 
     FClothInstanceMetadata()
-        : ParticleOffset(0), ParticleCount(0), ConstraintOffset(0), ConstraintCount(0), BendConstraintOffset(0), BendConstraintCount(0), KinematicTargetOffset(0), KinematicTargetCount(0), TriangleOffset(0), TriangleCount(0), InstanceParameterIndex(0), bIsActive(true), CurrentLOD(EClothLODLevel::LOD_0)
+        : ParticleOffset(0), ParticleCount(0), ConstraintOffset(0), ConstraintCount(0), BendConstraintOffset(0), BendConstraintCount(0), KinematicTargetOffset(0), KinematicTargetCount(0), TriangleOffset(0), TriangleCount(0), ShearConstraintOffset(0), ShearConstraintCount(0), AreaConstraintOffset(0), AreaConstraintCount(0), LRAOffset(0), LRACount(0), NumColors(0), InstanceParameterIndex(0), bIsActive(true), CurrentLOD(EClothLODLevel::LOD_0)
     {
     }
 };
@@ -126,6 +147,11 @@ struct FClothInstanceCreationParams
     TArray<FClothDistanceConstraint> Constraints;
     TArray<FClothBendConstraint> BendConstraints;
     TArray<FClothAttachmentData> Attachments;
+
+    // NEW: PhysixStudio constraint types
+    TArray<FClothShearConstraint> ShearConstraints;
+    TArray<FClothAreaConstraint> AreaConstraints;
+    TArray<FClothLRAEntry> LRAEntries; // K entries per particle (K=2)
 
     // Configuration
     FClothConfig Config;

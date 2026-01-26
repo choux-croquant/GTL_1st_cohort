@@ -90,6 +90,8 @@ private:
     uint32 TotalParticleCount;
     uint32 TotalConstraintCount;
     uint32 TotalBendConstraintCount;
+    uint32 TotalShearConstraintCount; // NEW: Phase 3
+    uint32 TotalAreaConstraintCount;  // NEW: Phase 4
     uint32 TotalKinematicTargetCount;
     uint32 TotalTriangleCount;
 

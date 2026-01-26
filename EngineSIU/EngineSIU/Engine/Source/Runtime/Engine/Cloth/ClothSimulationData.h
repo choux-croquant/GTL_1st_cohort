@@ -28,7 +28,7 @@ struct FClothConfig
     float StretchStiffness = 0.9f;
     float BendStiffness = 0.9f;
     float AttachStiffness = 1.0f;
-    float LongRangeStretchiness = 1.2f;  // NEW: LRA slack multiplier (Velvet default)
+    float LongRangeStretchiness = 1.2f; // NEW: LRA slack multiplier (Velvet default)
 
     // Solver settings
     int32 NumIterations = 5;
@@ -36,11 +36,11 @@ struct FClothConfig
     bool bUseXPBD = false;   // Use XPBD instead of PBD
 
     // NEW: Substep settings (Velvet-inspired)
-    int32 NumSubsteps = 10;              // How many substeps per frame time
-    float FixedSubstepTime = 1.0f / 600.0f;  // Target substep dt (120 Hz default)
-    int32 MaxSubstepsPerFrame = 10;      // Safety limit to prevent death spiral
-    float MaxSpeed = 100.0f;           // Velocity clamping (cm/s)
-    float RelaxationFactor = 1.0f;      // Jacobi convergence control
+    int32 NumSubsteps = 10;                 // How many substeps per frame time
+    float FixedSubstepTime = 1.0f / 600.0f; // Target substep dt (120 Hz default)
+    int32 MaxSubstepsPerFrame = 10;         // Safety limit to prevent death spiral
+    float MaxSpeed = 100.0f;                // Velocity clamping (cm/s)
+    float RelaxationFactor = 1.0f;          // Jacobi convergence control
 
     // Wind and drag
     float AirDrag = 1.0f;
@@ -58,26 +58,25 @@ struct FClothDistanceConstraint
 {
     uint32 ParticleA;
     uint32 ParticleB;
-    float RestLength; // For distance constraints
-    float Stiffness;  // Per-constraint stiffness
-    float Compliance; // XPBD용
-    float Lambda;     // XPBD용 상태
+    float RestLength;  // For distance constraints
+    float Stiffness;   // Per-constraint stiffness
+    float Compliance;  // XPBD용
+    float Lambda;      // XPBD용 상태
+    uint32 ColorGroup; // NEW: Graph coloring group (0 to NumColors-1)
 
     FClothDistanceConstraint()
-        : ParticleA(0), ParticleB(0), RestLength(0.0f), Stiffness(1.0f), Compliance(0.0f), Lambda(0.0f)
+        : ParticleA(0), ParticleB(0), RestLength(0.0f), Stiffness(1.0f), Compliance(0.0f), Lambda(0.0f), ColorGroup(0)
     {
     }
 
     FClothDistanceConstraint(uint32 InA, uint32 InB, float InRestLength, float InStiffness = 1.0f)
-        : ParticleA(InA), ParticleB(InB), RestLength(InRestLength), Stiffness(InStiffness), Compliance(0.0f) // 기본값: hard constraint
-          ,
-          Lambda(0.0f) // 누적값 초기화
+        : ParticleA(InA), ParticleB(InB), RestLength(InRestLength), Stiffness(InStiffness), Compliance(0.0f), Lambda(0.0f), ColorGroup(0)
     {
     }
 
     // 선택: XPBD 파라미터를 직접 지정하는 생성자
     FClothDistanceConstraint(uint32 InA, uint32 InB, float InRestLength, float InStiffness, float InCompliance)
-        : ParticleA(InA), ParticleB(InB), RestLength(InRestLength), Stiffness(InStiffness), Compliance(InCompliance), Lambda(0.0f) // 누적값은 항상 0으로 시작
+        : ParticleA(InA), ParticleB(InB), RestLength(InRestLength), Stiffness(InStiffness), Compliance(InCompliance), Lambda(0.0f), ColorGroup(0)
     {
     }
 };
@@ -109,6 +108,73 @@ struct FClothBendConstraint
     {
     }
 };
+
+/**
+ * Shear constraint - Prevents triangle shearing/skewing
+ * Based on PhysixStudio Shear struct (cloth_sim_data.h line 91)
+ * Constraint: dot(e1_current, e2_current) = rest_dot
+ */
+struct FClothShearConstraint
+{
+    uint32 ParticleA; // Triangle vertex 0 (i0)
+    uint32 ParticleB; // Triangle vertex 1 (i1)
+    uint32 ParticleC; // Triangle vertex 2 (i2)
+    float RestDot;    // Rest dot product: dot(e1, e2) where e1=p1-p0, e2=p2-p0
+    float Compliance; // XPBD compliance (default 1e-6)
+    float Lambda;     // XPBD accumulated lambda
+
+    FClothShearConstraint()
+        : ParticleA(0), ParticleB(0), ParticleC(0), RestDot(0.0f), Compliance(1e-6f), Lambda(0.0f)
+    {
+    }
+
+    FClothShearConstraint(uint32 A, uint32 B, uint32 C, float InRestDot)
+        : ParticleA(A), ParticleB(B), ParticleC(C), RestDot(InRestDot), Compliance(1e-6f), Lambda(0.0f)
+    {
+    }
+};
+
+/**
+ * Area constraint - Preserves triangle area
+ * Based on PhysixStudio Area struct (cloth_sim_data.h line 113)
+ * Prevents volume loss and maintains cloth thickness
+ */
+struct FClothAreaConstraint
+{
+    uint32 ParticleA;   // Triangle vertex 0 (i0)
+    uint32 ParticleB;   // Triangle vertex 1 (i1)
+    uint32 ParticleC;   // Triangle vertex 2 (i2)
+    float RestArea;     // Rest triangle area (0.5 * |cross(e0,e1)|)
+    FVector RestNormal; // Normalized rest normal = cross(e0,e1) / (2*area)
+    float Compliance;   // XPBD compliance (default 1e-2)
+    float Lambda;       // XPBD accumulated lambda
+
+    FClothAreaConstraint()
+        : ParticleA(0), ParticleB(0), ParticleC(0), RestArea(0.0f), RestNormal(FVector::ZeroVector), Compliance(1e-2f), Lambda(0.0f)
+    {
+    }
+};
+
+/**
+ * Long Range Attachment Entry
+ * Based on PhysixStudio's LRA system (cloth_sim_data.h line 146)
+ * Each particle has K entries (K=2 default) pointing to nearest anchors
+ */
+struct FClothLRAEntry
+{
+    uint32 AnchorParticleIndex; // Index of anchor particle (0xFFFFFFFF = invalid)
+    float RestDistance;         // Graph distance in rest pose * slack (1.1 default)
+
+    FClothLRAEntry()
+        : AnchorParticleIndex(0xFFFFFFFF), RestDistance(0.0f)
+    {
+    }
+};
+
+// Note: LRA data stored as flat arrays:
+// - lra_ids[particleCount * K]
+// - lra_distances[particleCount * K]
+// Access pattern: particle i, anchor k → index = i*K + k
 
 /**
  * Per-vertex authoring parameters for painted vertex data
@@ -218,7 +284,7 @@ struct FClothAttachmentData
     // Constraint properties
     float Stiffness = 1.0f;
     bool bIsKinematic = true;
-    float AttachDistance = 0.0f;  // NEW: LRA support - 0 = hard kinematic, >0 = max distance
+    float AttachDistance = 0.0f; // NEW: LRA support - 0 = hard kinematic, >0 = max distance
 
     FClothAttachmentData()
         : ClothVertexIndex(0), Type(EClothAttachmentType::WorldPosition), DriverComponent(nullptr), DriverActor(nullptr), BoneName(FName()), BoneIndex(-1), LocalOffset(FTransform::Identity), WorldPosition(FVector::ZeroVector), Stiffness(1.0f), bIsKinematic(true), AttachDistance(0.0f)
@@ -429,7 +495,7 @@ inline FArchive &operator<<(FArchive &Ar, FClothAttachmentData &A)
     Ar << A.WorldPosition;
     Ar << A.Stiffness;
     Ar << A.bIsKinematic;
-    Ar << A.AttachDistance;  // NEW: LRA support
+    Ar << A.AttachDistance; // NEW: LRA support
     return Ar;
 }
 

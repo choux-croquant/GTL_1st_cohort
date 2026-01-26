@@ -59,6 +59,12 @@ public:
     void UploadBendConstraintData(const TArray<FClothBendConstraintGPU> &BendConstraints,
                                   uint32 DestOffset);
 
+    void UploadShearConstraintData(const TArray<FClothShearConstraintGPU> &ShearConstraints,
+                                   uint32 DestOffset); // NEW: Phase 3
+
+    void UploadAreaConstraintData(const TArray<FClothAreaConstraintGPU> &AreaConstraints,
+                                  uint32 DestOffset); // NEW: Phase 4
+
     void UploadKinematicTargets(const TArray<FClothKinematicTargetGPU> &Targets,
                                 uint32 DestOffset);
 
@@ -88,19 +94,23 @@ public:
 
     // Update tracking counts
     void SetUsedCounts(uint32 Particles, uint32 Constraints, uint32 BendConstraints,
+                       uint32 ShearConstraints, // NEW: Phase 3
+                       uint32 AreaConstraints,  // NEW: Phase 4
                        uint32 KinematicTargets, uint32 Triangles, uint32 Instances);
 
 private:
     // Simulation methods
-    void SimulateSubstep(float SubstepDeltaTime);  // NEW: Substep simulation
-    
+    void SimulateSubstep(float SubstepDeltaTime); // NEW: Substep simulation
+
     // Dispatch methods
     void DispatchIntegration(uint32 ParticleCount);
     void DispatchConstraintSolver(uint32 ConstraintCount);
     void DispatchBendConstraintSolver(uint32 BendConstraintCount);
+    void DispatchShearConstraintSolver(uint32 ShearConstraintCount); // NEW: Phase 3
+    void DispatchAreaConstraintSolver(uint32 AreaConstraintCount);   // NEW: Phase 4
     void DispatchApplyDeltas(uint32 ParticleCount);
     void DispatchApplyKinematicTargets(uint32 TargetCount);
-    void DispatchFinalize(uint32 ParticleCount, int32 OldPositionBufferIndex);  // NEW: Velocity finalization
+    void DispatchFinalize(uint32 ParticleCount, int32 OldPositionBufferIndex); // NEW: Velocity finalization
     void DispatchClearNormals(uint32 ParticleCount);
     void DispatchUpdateNormals(uint32 TriangleCount);
     void DispatchNormalizeNormals(uint32 ParticleCount);
@@ -123,9 +133,11 @@ private:
     ID3D11ComputeShader *IntegrateCS;
     ID3D11ComputeShader *ConstraintSolverCS;
     ID3D11ComputeShader *BendConstraintSolverCS;
+    ID3D11ComputeShader *ShearConstraintSolverCS; // NEW: Phase 3
+    ID3D11ComputeShader *AreaConstraintSolverCS;  // NEW: Phase 4
     ID3D11ComputeShader *ApplyDeltasCS;
     ID3D11ComputeShader *ApplyKinematicTargetsCS;
-    ID3D11ComputeShader *FinalizeCS;  // NEW: Velocity finalization shader
+    ID3D11ComputeShader *FinalizeCS; // NEW: Velocity finalization shader
     ID3D11ComputeShader *ClearNormalsCS;
     ID3D11ComputeShader *UpdateNormalsCS;
     ID3D11ComputeShader *NormalizeNormalsCS;
@@ -136,6 +148,8 @@ private:
     ID3D11Buffer *UnifiedInvMassBuffer;
     ID3D11Buffer *UnifiedConstraintBuffer;
     ID3D11Buffer *UnifiedBendConstraintBuffer;
+    ID3D11Buffer *UnifiedShearConstraintBuffer; // NEW: Shear constraints (Phase 3)
+    ID3D11Buffer *UnifiedAreaConstraintBuffer;  // NEW: Area constraints (Phase 4)
     ID3D11Buffer *UnifiedKinematicTargetBuffer;
     ID3D11Buffer *UnifiedIndexBuffer;
     ID3D11Buffer *UnifiedNormalBuffer;
@@ -148,12 +162,18 @@ private:
     ID3D11UnorderedAccessView *UnifiedNormalUAV;
     ID3D11UnorderedAccessView *UnifiedPositionDeltaUAV;
     ID3D11UnorderedAccessView *UnifiedPositionWeightUAV;
+    ID3D11UnorderedAccessView *UnifiedConstraintUAV; // NEW: For lambda updates
 
     ID3D11ShaderResourceView *UnifiedPositionSRV[2];
     ID3D11ShaderResourceView *UnifiedVelocitySRV;
     ID3D11ShaderResourceView *UnifiedInvMassSRV;
     ID3D11ShaderResourceView *UnifiedConstraintSRV;
     ID3D11ShaderResourceView *UnifiedBendConstraintSRV;
+    ID3D11UnorderedAccessView *UnifiedBendConstraintUAV;  // NEW: For lambda updates (Phase 5)
+    ID3D11ShaderResourceView *UnifiedShearConstraintSRV;  // NEW: Shear (Phase 3)
+    ID3D11UnorderedAccessView *UnifiedShearConstraintUAV; // NEW: For lambda updates
+    ID3D11ShaderResourceView *UnifiedAreaConstraintSRV;   // NEW: Area (Phase 4)
+    ID3D11UnorderedAccessView *UnifiedAreaConstraintUAV;  // NEW: For lambda updates
     ID3D11ShaderResourceView *UnifiedKinematicTargetSRV;
     ID3D11ShaderResourceView *UnifiedIndexSRV;
     ID3D11ShaderResourceView *UnifiedNormalSRV;
@@ -170,6 +190,8 @@ private:
     uint32 AllocatedParticleCapacity;
     uint32 AllocatedConstraintCapacity;
     uint32 AllocatedBendConstraintCapacity;
+    uint32 AllocatedShearConstraintCapacity; // NEW: Phase 3
+    uint32 AllocatedAreaConstraintCapacity;  // NEW: Phase 4
     uint32 AllocatedKinematicTargetCapacity;
     uint32 AllocatedTriangleCapacity;
     uint32 AllocatedInstanceCapacity;
@@ -177,13 +199,15 @@ private:
     uint32 UsedParticleCount;
     uint32 UsedConstraintCount;
     uint32 UsedBendConstraintCount;
+    uint32 UsedShearConstraintCount; // NEW: Phase 3
+    uint32 UsedAreaConstraintCount;  // NEW: Phase 4
     uint32 UsedKinematicTargetCount;
     uint32 UsedTriangleCount;
     uint32 UsedInstanceCount;
 
     int32 CurrentBufferIndex;
     bool bInitialized;
-    
+
     // NEW: Substep timing state
     float AccumulatedTime;
 
