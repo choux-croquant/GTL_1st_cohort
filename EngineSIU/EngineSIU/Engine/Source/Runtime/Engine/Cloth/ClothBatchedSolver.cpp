@@ -36,6 +36,8 @@ FClothBatchedSolver::FClothBatchedSolver()
     UnifiedBendConstraintBuffer = nullptr;
     UnifiedShearConstraintBuffer = nullptr; // NEW: Phase 3
     UnifiedAreaConstraintBuffer = nullptr;  // NEW: Phase 4
+    UnifiedLRAIdsBuffer = nullptr;          // NEW: Phase 6
+    UnifiedLRADistancesBuffer = nullptr;    // NEW: Phase 6
     UnifiedKinematicTargetBuffer = nullptr;
     UnifiedIndexBuffer = nullptr;
     UnifiedNormalBuffer = nullptr;
@@ -57,6 +59,8 @@ FClothBatchedSolver::FClothBatchedSolver()
     UnifiedShearConstraintUAV = nullptr; // NEW: Phase 3
     UnifiedAreaConstraintSRV = nullptr;  // NEW: Phase 4
     UnifiedAreaConstraintUAV = nullptr;  // NEW: Phase 4
+    UnifiedLRAIdsSRV = nullptr;          // NEW: Phase 6
+    UnifiedLRADistancesSRV = nullptr;    // NEW: Phase 6
     UnifiedKinematicTargetSRV = nullptr;
     UnifiedIndexSRV = nullptr;
     UnifiedNormalSRV = nullptr;
@@ -108,6 +112,7 @@ void FClothBatchedSolver::Release()
     BendConstraintSolverCS = nullptr;
     ShearConstraintSolverCS = nullptr; // NEW: Phase 3
     AreaConstraintSolverCS = nullptr;  // NEW: Phase 4
+    LRAConstraintSolverCS = nullptr;   // NEW: Phase 6
     ApplyDeltasCS = nullptr;
     ApplyKinematicTargetsCS = nullptr;
     FinalizeCS = nullptr; // NEW
@@ -145,6 +150,11 @@ void FClothBatchedSolver::Release()
     SAFE_RELEASE(UnifiedAreaConstraintBuffer); // NEW: Phase 4
     SAFE_RELEASE(UnifiedAreaConstraintSRV);
     SAFE_RELEASE(UnifiedAreaConstraintUAV);
+
+    SAFE_RELEASE(UnifiedLRAIdsBuffer); // NEW: Phase 6
+    SAFE_RELEASE(UnifiedLRAIdsSRV);
+    SAFE_RELEASE(UnifiedLRADistancesBuffer);
+    SAFE_RELEASE(UnifiedLRADistancesSRV);
 
     SAFE_RELEASE(UnifiedKinematicTargetBuffer);
     SAFE_RELEASE(UnifiedKinematicTargetSRV);
@@ -442,6 +452,54 @@ bool FClothBatchedSolver::AllocateBuffers(uint32 MaxParticles, uint32 MaxConstra
         }
 
         AllocatedAreaConstraintCapacity = MaxAreaConstraints;
+    }
+
+    // NEW: Create LRA buffers (Phase 6) - K=2 entries per particle
+    uint32 MaxLRAEntries = MaxParticles * 2; // K=2 anchors per particle
+    if (MaxLRAEntries > 0)
+    {
+        // LRA IDs buffer (uint32)
+        bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+        bufferDesc.ByteWidth = sizeof(uint32) * MaxLRAEntries;
+        bufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        bufferDesc.StructureByteStride = sizeof(uint32);
+        bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+
+        hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &UnifiedLRAIdsBuffer);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to create LRA IDs buffer"));
+        }
+        else
+        {
+            srvDesc.Buffer.NumElements = MaxLRAEntries;
+            hr = Graphics->Device->CreateShaderResourceView(UnifiedLRAIdsBuffer, &srvDesc, &UnifiedLRAIdsSRV);
+            if (FAILED(hr))
+            {
+                UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to create LRA IDs SRV"));
+            }
+        }
+
+        // LRA Distances buffer (float)
+        bufferDesc.ByteWidth = sizeof(float) * MaxLRAEntries;
+        bufferDesc.StructureByteStride = sizeof(float);
+
+        hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &UnifiedLRADistancesBuffer);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to create LRA distances buffer"));
+        }
+        else
+        {
+            srvDesc.Buffer.NumElements = MaxLRAEntries;
+            hr = Graphics->Device->CreateShaderResourceView(UnifiedLRADistancesBuffer, &srvDesc, &UnifiedLRADistancesSRV);
+            if (FAILED(hr))
+            {
+                UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to create LRA distances SRV"));
+            }
+        }
+
+        AllocatedLRACapacity = MaxLRAEntries;
     }
 
     // Create kinematic target buffer (dynamic)
@@ -743,7 +801,13 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
         CurrentBufferIndex = writeIdx;
     }
 
-    // TODO Phase 3: Per-substep collision would go here
+    // Long range attachments (once per substep, after iterations) - NEW: Phase 6
+    if (UsedLRACount > 0)
+    {
+        //DispatchLRAConstraints(UsedParticleCount);
+    }
+
+    // TODO Phase 7: Per-substep collision would go here
 
     // 4. Velocity Finalization (NEW - Velvet pattern)
     // Derives velocity from position change, clamps max velocity, applies damping
@@ -803,6 +867,14 @@ bool FClothBatchedSolver::LoadComputeShaders()
         bSuccess = false;
     }
     AreaConstraintSolverCS = ShaderManager->GetComputeShaderByKey(L"ClothSolveAreaCS");
+
+    // NEW: Load or get LRA Constraint Solver shader (Phase 6)
+    hr = ShaderManager->AddComputeShader(L"ClothSolveLRACS", L"Shaders/Cloth/ClothSolveLRA.hlsl", "SolveLRAConstraintsCS");
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to compile ClothSolveLRA shader (optional)"));
+    }
+    LRAConstraintSolverCS = ShaderManager->GetComputeShaderByKey(L"ClothSolveLRACS");
 
     // Load or get Apply Deltas shader
     hr = ShaderManager->AddComputeShader(L"ClothApplyConstraintDeltasCS", L"Shaders/Cloth/ClothApplyDelta.hlsl", "ApplyConstraintDeltasCS");
@@ -1055,6 +1127,39 @@ void FClothBatchedSolver::UploadAreaConstraintData(const TArray<FClothAreaConstr
 
     Graphics->DeviceContext->UpdateSubresource(UnifiedAreaConstraintBuffer, 0, &destBox,
                                                AreaConstraints.GetData(), 0, 0);
+}
+
+void FClothBatchedSolver::UploadLRAData(const TArray<uint32> &LRAIds, const TArray<float> &LRADistances,
+                                        uint32 DestOffset)
+{
+    if (!Graphics || !Graphics->DeviceContext)
+        return;
+
+    if (LRAIds.Num() != LRADistances.Num() || LRAIds.Num() == 0)
+        return;
+
+    if (!UnifiedLRAIdsBuffer || !UnifiedLRADistancesBuffer)
+        return;
+
+    D3D11_BOX destBox;
+
+    // Upload IDs
+    destBox.left = DestOffset * sizeof(uint32);
+    destBox.right = destBox.left + LRAIds.Num() * sizeof(uint32);
+    destBox.top = 0;
+    destBox.bottom = 1;
+    destBox.front = 0;
+    destBox.back = 1;
+
+    Graphics->DeviceContext->UpdateSubresource(UnifiedLRAIdsBuffer, 0, &destBox,
+                                               LRAIds.GetData(), 0, 0);
+
+    // Upload Distances
+    destBox.left = DestOffset * sizeof(float);
+    destBox.right = destBox.left + LRADistances.Num() * sizeof(float);
+
+    Graphics->DeviceContext->UpdateSubresource(UnifiedLRADistancesBuffer, 0, &destBox,
+                                               LRADistances.GetData(), 0, 0);
 }
 
 // ClothBatchedSolver.cpp

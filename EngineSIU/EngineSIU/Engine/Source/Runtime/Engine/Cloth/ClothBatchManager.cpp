@@ -140,7 +140,11 @@ static uint32 ColorConstraintsGreedy(
 
     // Vertex mask: bit i = 1 means particle is used by color i
     TArray<uint32> VertexMask;
-    VertexMask.SetNumZeroed(NumParticles);
+    VertexMask.SetNum(NumParticles);
+    for (uint32 i = 0; i < NumParticles; ++i)
+    {
+        VertexMask[i] = 0;
+    }
 
     uint32 MaxColorUsed = 0;
 
@@ -292,6 +296,146 @@ static void BuildAreaConstraints(
 }
 
 /**
+ * Dijkstra shortest path on constraint graph
+ * Based on PhysixStudio implementation
+ */
+static TArray<float> ComputeGraphDistances(
+    const TArray<FClothDistanceConstraint> &Edges,
+    uint32 SourceParticle,
+    uint32 NumParticles)
+{
+    const float INF = TNumericLimits<float>::Max();
+    TArray<float> Distance;
+    Distance.SetNum(NumParticles);
+    for (uint32 i = 0; i < NumParticles; ++i)
+    {
+        Distance[i] = INF;
+    }
+    Distance[SourceParticle] = 0.0f;
+
+    // Build adjacency list
+    TArray<TArray<TPair<uint32, float>>> Adj;
+    Adj.SetNum(NumParticles);
+
+    for (const FClothDistanceConstraint &E : Edges)
+    {
+        uint32 u = E.ParticleA;
+        uint32 v = E.ParticleB;
+        float w = E.RestLength;
+
+        Adj[u].Add(TPair<uint32, float>(v, w));
+        Adj[v].Add(TPair<uint32, float>(u, w));
+    }
+
+    // Priority queue (min-heap)
+    struct FNode
+    {
+        float Dist;
+        uint32 Vertex;
+
+        bool operator<(const FNode &Other) const
+        {
+            return Dist > Other.Dist; // Min-heap
+        }
+    };
+
+    TArray<FNode> PQ;
+    PQ.Add(FNode{0.0f, SourceParticle});
+
+    while (PQ.Num() > 0)
+    {
+        // Extract min
+        int32 MinIdx = 0;
+        for (int32 i = 1; i < PQ.Num(); ++i)
+        {
+            if (PQ[i].Dist < PQ[MinIdx].Dist)
+                MinIdx = i;
+        }
+        FNode Current = PQ[MinIdx];
+        PQ.RemoveAt(MinIdx);
+
+        if (Current.Dist != Distance[Current.Vertex])
+            continue; // Outdated entry
+
+        for (const TPair<uint32, float> &Neighbor : Adj[Current.Vertex])
+        {
+            uint32 v = Neighbor.Key;
+            float w = Neighbor.Value;
+            float newDist = Current.Dist + w;
+
+            if (newDist < Distance[v])
+            {
+                Distance[v] = newDist;
+                PQ.Add(FNode{newDist, v});
+            }
+        }
+    }
+
+    return Distance;
+}
+
+/**
+ * Build Long Range Attachment constraints
+ * Each particle gets K=2 nearest anchor particles by graph distance
+ * Based on PhysixStudio BuildLRAConstraints
+ */
+static void BuildLRAConstraints(
+    const TArray<FVector> &RestPositions,
+    const TArray<FClothDistanceConstraint> &DistanceConstraints,
+    const TArray<uint32> &AnchorParticles,
+    TArray<FClothLRAEntry> &OutLRAEntries)
+{
+    const uint32 K = 2;       // Number of anchors per particle
+    const float Slack = 1.1f; // PhysixStudio default slack multiplier
+
+    uint32 NumParticles = RestPositions.Num();
+    OutLRAEntries.SetNum(NumParticles * K);
+
+    // Initialize all entries as invalid
+    for (FClothLRAEntry &Entry : OutLRAEntries)
+    {
+        Entry.AnchorParticleIndex = 0xFFFFFFFF;
+        Entry.RestDistance = TNumericLimits<float>::Max();
+    }
+
+    // For each anchor, compute distances to all particles
+    for (uint32 AnchorGlobal : AnchorParticles)
+    {
+        TArray<float> Distances = ComputeGraphDistances(
+            DistanceConstraints,
+            AnchorGlobal,
+            NumParticles);
+
+        // For each particle, try to insert this anchor into best-K
+        for (uint32 i = 0; i < NumParticles; ++i)
+        {
+            float dist = Distances[i];
+            if (!FMath::IsFinite(dist))
+                continue;
+
+            // Find worst of current K anchors for particle i
+            int32 WorstSlot = 0;
+            for (uint32 k = 1; k < K; ++k)
+            {
+                uint32 slotIdx = i * K + k;
+                if (OutLRAEntries[slotIdx].RestDistance > OutLRAEntries[i * K + WorstSlot].RestDistance)
+                {
+                    WorstSlot = k;
+                }
+            }
+
+            // Replace if this anchor is better
+            uint32 slot = i * K + WorstSlot;
+            if (dist < OutLRAEntries[slot].RestDistance)
+            {
+                OutLRAEntries[slot].AnchorParticleIndex = AnchorGlobal;
+                OutLRAEntries[slot].RestDistance = dist * Slack; // Add slack
+            }
+        }
+    }
+}
+
+/**
  * Compute rest dihedral angle for bending constraint
  * Based on PhysixStudio ComputeRestBendAngle (cloth_sim_data.h lines 153-178)
  */
@@ -341,12 +485,14 @@ static void BuildBendConstraints(
         {
             return A == Other.A && B == Other.B;
         }
-
-        friend uint32 GetTypeHash(const FEdgeKey &Key)
-        {
-            return HashCombine(GetTypeHash(Key.A), GetTypeHash(Key.B));
-        }
     };
+
+    // Hash function for FEdgeKey (must be outside struct)
+    //auto GetEdgeKeyHash = [](const FEdgeKey &Key) -> uint32
+    //{
+    //    // Simple hash combine: XOR with bit shift
+    //    return GetTypeHash(Key.A) ^ (GetTypeHash(Key.B) << 1);
+    //};
 
     struct FTriRef
     {
@@ -354,15 +500,31 @@ static void BuildBendConstraints(
         uint32 OppVertex;
     };
 
-    // Build edge-to-triangle map
-    TMap<FEdgeKey, TPair<FTriRef, FTriRef>> EdgeMap;
+    // Build edge-to-triangle map using manual hashing
+    // TMap requires proper hash function, we'll use a simpler approach
+    struct FEdgeData
+    {
+        FEdgeKey Key;
+        TPair<FTriRef, FTriRef> Value;
+    };
+    TArray<FEdgeData> EdgeArray;
 
     uint32 NumTriangles = Indices.Num() / 3;
-    EdgeMap.Reserve(Indices.Num()); // Rough estimate
+    EdgeArray.Reserve(Indices.Num()); // Rough estimate
 
     auto MakeEdge = [](uint32 i, uint32 j) -> FEdgeKey
     {
         return (i < j) ? FEdgeKey{i, j} : FEdgeKey{j, i};
+    };
+
+    auto FindEdge = [&EdgeArray](const FEdgeKey &E) -> FEdgeData *
+    {
+        for (FEdgeData &Data : EdgeArray)
+        {
+            if (Data.Key == E)
+                return &Data;
+        }
+        return nullptr;
     };
 
     for (uint32 t = 0; t < NumTriangles; ++t)
@@ -379,16 +541,20 @@ static void BuildBendConstraints(
         FTriRef r1{t, i0}; // Edge e12, opposite vertex i0
         FTriRef r2{t, i1}; // Edge e20, opposite vertex i1
 
-        auto InsertRef = [&EdgeMap](const FEdgeKey &E, const FTriRef &R)
+        auto InsertRef = [&EdgeArray, &FindEdge](const FEdgeKey &E, const FTriRef &R)
         {
-            TPair<FTriRef, FTriRef> *Found = EdgeMap.Find(E);
+            FEdgeData *Found = FindEdge(E);
             if (!Found)
             {
-                EdgeMap.Add(E, TPair<FTriRef, FTriRef>(R, FTriRef{0xFFFFFFFF, 0xFFFFFFFF}));
+                FEdgeData NewData;
+                NewData.Key = E;
+                NewData.Value.Key = R;
+                NewData.Value.Value = FTriRef{0xFFFFFFFF, 0xFFFFFFFF};
+                EdgeArray.Add(NewData);
             }
-            else if (Found->Value.TriIndex == 0xFFFFFFFF)
+            else if (Found->Value.Value.TriIndex == 0xFFFFFFFF)
             {
-                Found->Value = R;
+                Found->Value.Value = R;
             }
         };
 
@@ -398,13 +564,13 @@ static void BuildBendConstraints(
     }
 
     // Create bend constraints for shared edges
-    OutConstraints.Reserve(EdgeMap.Num());
+    OutConstraints.Reserve(EdgeArray.Num());
 
-    for (const auto &Pair : EdgeMap)
+    for (const FEdgeData &Data : EdgeArray)
     {
-        const FEdgeKey &E = Pair.Key;
-        const FTriRef &T0 = Pair.Value.Key;
-        const FTriRef &T1 = Pair.Value.Value;
+        const FEdgeKey &E = Data.Key;
+        const FTriRef &T0 = Data.Value.Key;
+        const FTriRef &T1 = Data.Value.Value;
 
         // Skip boundary edges (only one adjacent triangle)
         if (T1.TriIndex == 0xFFFFFFFF)

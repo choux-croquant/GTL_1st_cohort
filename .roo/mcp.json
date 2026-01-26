@@ -1,1 +1,17 @@
-{"mcpServers":{"filesystem":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","C:/Users/choif/source/repos"],"disabledTools":[]}}}
+{
+	"mcpServers": {
+		"filesystem": {
+			"command": "npx",
+			"args": [
+				"-y",
+				"@modelcontextprotocol/server-filesystem",
+				"C:/Users/choif/source/repos"
+			],
+			"disabledTools": [],
+			"alwaysAllow": [
+				"read_text_file",
+				"search_files"
+			]
+		}
+	}
+}
