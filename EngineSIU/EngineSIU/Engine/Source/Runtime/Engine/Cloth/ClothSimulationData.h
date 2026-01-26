@@ -28,6 +28,7 @@ struct FClothConfig
     float StretchStiffness = 0.9f;
     float BendStiffness = 0.9f;
     float AttachStiffness = 1.0f;
+    float LongRangeStretchiness = 1.2f;  // NEW: LRA slack multiplier (Velvet default)
 
     // Solver settings
     int32 NumIterations = 5;
@@ -35,10 +36,10 @@ struct FClothConfig
     bool bUseXPBD = false;   // Use XPBD instead of PBD
 
     // NEW: Substep settings (Velvet-inspired)
-    int32 NumSubsteps = 4;              // How many substeps per frame time
-    float FixedSubstepTime = 1.0f / 240.0f;  // Target substep dt (120 Hz default)
-    int32 MaxSubstepsPerFrame = 5;      // Safety limit to prevent death spiral
-    float MaxSpeed = 50.0f;           // Velocity clamping (cm/s)
+    int32 NumSubsteps = 10;              // How many substeps per frame time
+    float FixedSubstepTime = 1.0f / 600.0f;  // Target substep dt (120 Hz default)
+    int32 MaxSubstepsPerFrame = 10;      // Safety limit to prevent death spiral
+    float MaxSpeed = 100.0f;           // Velocity clamping (cm/s)
     float RelaxationFactor = 1.0f;      // Jacobi convergence control
 
     // Wind and drag
@@ -217,9 +218,10 @@ struct FClothAttachmentData
     // Constraint properties
     float Stiffness = 1.0f;
     bool bIsKinematic = true;
+    float AttachDistance = 0.0f;  // NEW: LRA support - 0 = hard kinematic, >0 = max distance
 
     FClothAttachmentData()
-        : ClothVertexIndex(0), Type(EClothAttachmentType::WorldPosition), DriverComponent(nullptr), DriverActor(nullptr), BoneName(FName()), BoneIndex(-1), LocalOffset(FTransform::Identity), WorldPosition(FVector::ZeroVector), Stiffness(1.0f), bIsKinematic(true)
+        : ClothVertexIndex(0), Type(EClothAttachmentType::WorldPosition), DriverComponent(nullptr), DriverActor(nullptr), BoneName(FName()), BoneIndex(-1), LocalOffset(FTransform::Identity), WorldPosition(FVector::ZeroVector), Stiffness(1.0f), bIsKinematic(true), AttachDistance(0.0f)
     {
     }
 
@@ -427,6 +429,7 @@ inline FArchive &operator<<(FArchive &Ar, FClothAttachmentData &A)
     Ar << A.WorldPosition;
     Ar << A.Stiffness;
     Ar << A.bIsKinematic;
+    Ar << A.AttachDistance;  // NEW: LRA support
     return Ar;
 }
 

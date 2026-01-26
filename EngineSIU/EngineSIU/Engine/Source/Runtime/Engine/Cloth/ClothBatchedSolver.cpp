@@ -556,6 +556,9 @@ void FClothBatchedSolver::Simulate(float DeltaTime)
 
 void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
 {
+    // CRITICAL: Save the starting buffer index for velocity calculation in Finalize
+    int32 substepStartBufferIndex = CurrentBufferIndex;
+    
     // Update constant buffers with substep delta time
     UpdateConstantBuffers(SubstepDeltaTime);
 
@@ -612,7 +615,8 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
 
     // 4. Velocity Finalization (NEW - Velvet pattern)
     // Derives velocity from position change, clamps max velocity, applies damping
-    DispatchFinalize(UsedParticleCount);
+    // CRITICAL: Pass substepStartBufferIndex to get correct velocity baseline
+    DispatchFinalize(UsedParticleCount, substepStartBufferIndex);
 }
 
 bool FClothBatchedSolver::LoadComputeShaders()
@@ -1107,16 +1111,28 @@ void FClothBatchedSolver::DispatchApplyKinematicTargets(uint32 TargetCount)
     if (!Graphics || !Graphics->DeviceContext || !ApplyKinematicTargetsCS || TargetCount == 0)
         return;
 
+    int32 readIdx = CurrentBufferIndex;
     int32 writeIdx = 1 - CurrentBufferIndex;
 
     // Bind constant buffer
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
 
-    // Bind kinematic target buffer (t0)
-    Graphics->DeviceContext->CSSetShaderResources(0, 1, &UnifiedKinematicTargetSRV);
+    // NEW: Bind additional SRVs for LRA support (matches shader registers)
+    ID3D11ShaderResourceView* srvs[] = {
+        UnifiedKinematicTargetSRV,      // t0: Kinematic targets
+        UnifiedPositionSRV[readIdx],    // t1: Current positions (for LRA distance check)
+        UnifiedInvMassSRV               // t2: Inverse masses (for LRA)
+    };
+    Graphics->DeviceContext->CSSetShaderResources(0, 3, srvs);
 
-    // Bind position buffer for write (u0)
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &UnifiedPositionUAV[writeIdx], nullptr);
+    // NEW: Bind UAVs for delta accumulation (LRA mode) and direct write (hard kinematic mode)
+    ID3D11UnorderedAccessView* uavs[] = {
+        UnifiedPositionDeltaUAV,        // u0: Delta accumulation
+        UnifiedPositionWeightUAV,       // u1: Weight accumulation
+        UnifiedPositionUAV[writeIdx]    // u2: Direct write for hard kinematic
+    };
+    UINT initialCounts[3] = {0, 0, 0};
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 3, uavs, initialCounts);
 
     // Set shader
     Graphics->DeviceContext->CSSetShader(ApplyKinematicTargetsCS, nullptr, 0);
@@ -1126,21 +1142,21 @@ void FClothBatchedSolver::DispatchApplyKinematicTargets(uint32 TargetCount)
     Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
 
     // Unbind
-    ID3D11UnorderedAccessView *nullUAV = nullptr;
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
-    ID3D11ShaderResourceView *nullSRV = nullptr;
-    Graphics->DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
+    ID3D11UnorderedAccessView* nullUAVs[3] = {nullptr, nullptr, nullptr};
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 3, nullUAVs, nullptr);
+    ID3D11ShaderResourceView* nullSRVs[3] = {nullptr, nullptr, nullptr};
+    Graphics->DeviceContext->CSSetShaderResources(0, 3, nullSRVs);
 }
 
-void FClothBatchedSolver::DispatchFinalize(uint32 ParticleCount)
+void FClothBatchedSolver::DispatchFinalize(uint32 ParticleCount, int32 OldPositionBufferIndex)
 {
     if (!Graphics || !Graphics->DeviceContext || !FinalizeCS)
         return;
 
-    // Finalize operates on positions to derive velocity
-    // Reads from BOTH ping-pong buffers to get position delta
-    int32 oldIdx = 1 - CurrentBufferIndex;  // Position before constraints
-    int32 newIdx = CurrentBufferIndex;      // Position after constraints
+    // CRITICAL FIX: Use the position from START of substep, not just before constraints
+    // This preserves the velocity from integration step correctly
+    int32 oldIdx = OldPositionBufferIndex;  // Position at START of substep (before integration)
+    int32 newIdx = CurrentBufferIndex;       // Position after constraints
 
     // Bind constant buffer (contains DeltaTime, MaxSpeed)
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
@@ -1293,6 +1309,7 @@ void FClothBatchedSolver::UpdateConstantBuffers(float DeltaTime)
     // NEW: Velvet-inspired parameters
     constants.RelaxationFactor = Config.RelaxationFactor;
     constants.MaxSpeed = Config.MaxSpeed;
+    constants.LongRangeStretchiness = Config.LongRangeStretchiness;
     
     constants.WorldMatrix = FMatrix::Identity;
 

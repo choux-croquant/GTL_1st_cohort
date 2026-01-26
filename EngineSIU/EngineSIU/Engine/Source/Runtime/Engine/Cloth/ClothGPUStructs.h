@@ -74,16 +74,17 @@ struct FClothBendConstraintGPU
 /**
  * Kinematic target structure (32 bytes, aligned)
  * Used for pinning cloth vertices to kinematic targets (e.g., flag on pole, cape on shoulders)
+ * Supports both hard kinematic attachment and Long Range Attachment (LRA)
  */
 struct FClothKinematicTargetGPU
 {
     uint32 ParticleIndex; // 4 bytes - Which particle to constrain
     float Stiffness;      // 4 bytes - 1.0 = hard kinematic, <1.0 = soft spring
+    float AttachDistance; // 4 bytes - NEW: Max distance for LRA (0 = hard kinematic)
     float Padding0;       // 4 bytes
-    float Padding1;       // 4 bytes
 
     FVector TargetPosition; // 12 bytes - World-space target position
-    float Padding2;         // 4 bytes
+    float Padding1;         // 4 bytes
     // Total: 32 bytes
 };
 

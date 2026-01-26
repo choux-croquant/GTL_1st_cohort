@@ -73,14 +73,14 @@ void SolveDistanceConstraintsCS(uint3 DTid : SV_DispatchThreadID)
         float3 common = lambda * gradient;
         
         // Compute corrections (Velvet pattern)
+        // CRITICAL FIX: Do NOT multiply by stiffness here!
+        // Velvet uses pure PBD with compliance=0, meaning stiffness is implicitly 1.0
+        // Multiplying by stiffness < 1.0 weakens constraints and causes stretching
         float3 correction1 = -w1 * common;
         float3 correction2 =  w2 * common;
         
-        // Apply per-instance stiffness as multiplier (not in Velvet's kernel, but in ours)
-        // This allows per-instance material properties
-        float stiffness = constraint.Stiffness * params.StretchStiffness;
-        correction1 *= stiffness;
-        correction2 *= stiffness;
+        // NOTE: Stiffness/compliance would be handled via XPBD compliance parameter
+        // For now, we use hard constraints (stiffness = 1.0) like Velvet
         
         // Atomic accumulation (scaled to int for InterlockedAdd)
         int3 delta1Int = int3(correction1 * kScale);

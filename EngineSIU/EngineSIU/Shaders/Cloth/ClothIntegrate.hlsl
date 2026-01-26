@@ -74,12 +74,12 @@ void IntegrateCS(uint3 DTid : SV_DispatchThreadID)
 
     // Safety clamp velocity (generous limit, real clamping in Finalize)
     // This is a safety measure to prevent initial explosions
-    float maxVelocity = MaxSpeed * 2.0f;  // 2x max speed as safety margin
-    float velMagnitude = length(velocity.Velocity);
-    if (velMagnitude > maxVelocity)
-    {
-        velocity.Velocity = (velocity.Velocity / velMagnitude) * maxVelocity;
-    }
+    //float maxVelocity = MaxSpeed * 2.0f;  // 2x max speed as safety margin
+    //float velMagnitude = length(velocity.Velocity);
+    //if (velMagnitude > maxVelocity)
+    //{
+    //    velocity.Velocity = (velocity.Velocity / velMagnitude) * maxVelocity;
+    //}
 
     // Update position from velocity
     particle.Position += velocity.Velocity * DeltaTime;

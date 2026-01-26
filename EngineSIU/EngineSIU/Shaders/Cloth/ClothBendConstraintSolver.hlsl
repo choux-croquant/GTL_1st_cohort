@@ -23,7 +23,7 @@ StructuredBuffer<FClothInstanceParameters> InstanceParams : register(t3);
 RWStructuredBuffer<int3> PositionDelta : register(u0);
 RWStructuredBuffer<int> PositionWeight : register(u1);
 
-static const float kScale = 10000.0f;
+static const float kScale = 10000.0f;  // FIXED: Match distance constraint scaling
 static const float EPSILON = 1e-6f;
 
 [numthreads(64, 1, 1)]
@@ -117,8 +117,10 @@ void SolveBendConstraintsCS(uint3 DTid : SV_DispatchThreadID)
     if (dot(cross(n1Norm, n2Norm), e) > 0.0f)
         lambda = -lambda;
 
-    // Apply per-instance stiffness (our addition for per-instance materials)
-    lambda *= params.BendStiffness;
+    // CRITICAL FIX: Do NOT multiply by stiffness - causes weak bending!
+    // Velvet uses compliance parameter to control bending strength
+    // Per-instance tuning should be via compliance, not stiffness multiplier
+    // lambda *= params.BendStiffness;  // REMOVED - weakens constraints
 
     // Compute corrections (Velvet pattern)
     float3 corr0 = -w0 * lambda * d0;

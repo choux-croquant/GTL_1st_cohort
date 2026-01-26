@@ -225,6 +225,9 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, ECloth
     // Set up attachments for top row by configuring them directly on the cloth asset.
     // The simulation system will automatically resolve world positions each frame
     // based on these driver references - no manual updates needed!
+    
+    // OPTION 1: Hard Kinematic Attachments (Top Row Only)
+    // These are the primary attachment points that the cloth is pinned to
     for (int32 x = 0; x < GridSize; ++x)
     {
         FClothAttachmentData attachment;
@@ -240,13 +243,52 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, ECloth
         float Offset = (15.0f / float(GridSize - 1)) * x;
         attachment.LocalOffset = FTransform(FVector(0.0f, 0.0f, Offset));
 
-        // Attachment properties
-        attachment.Stiffness = 0.98f;
+        // Hard kinematic attachment (no distance tolerance)
+        attachment.Stiffness = 1.0f;
         attachment.bIsKinematic = true;
+        attachment.AttachDistance = 0.0f;  // NEW: 0 = hard kinematic (no LRA)
 
         // Add to asset - this is the single source of truth for attachments
         ClothAssets[Index]->AddAttachmentData(attachment);
     }
+    
+    // OPTION 2: Long Range Attachments (LRA) - OPTIONAL
+    // Create LRA constraints for all free particles to prevent global stretching
+    // Uncomment to enable full LRA behavior (Velvet pattern)
+    /*
+    FVector attachmentCenter = FVector::ZeroVector;
+    
+    // Calculate center of attachment points (average of top row)
+    for (int32 x = 0; x < GridSize; ++x)
+    {
+        attachmentCenter += positions[x];  // Top row positions
+    }
+    attachmentCenter /= static_cast<float>(GridSize);
+    
+    // Create LRA for all non-pinned particles
+    for (int32 y = 1; y < GridSize; ++y)  // Skip top row (already pinned)
+    {
+        for (int32 x = 0; x < GridSize; ++x)
+        {
+            int32 particleIdx = y * GridSize + x;
+            FVector particlePos = positions[particleIdx];
+            
+            // Compute rest distance from this particle to attachment center
+            float restDistance = FVector::Distance(particlePos, attachmentCenter);
+            
+            FClothAttachmentData lraAttachment;
+            lraAttachment.ClothVertexIndex = particleIdx;
+            lraAttachment.Type = EClothAttachmentType::ActorTransform;
+            lraAttachment.DriverComponent = AttachmentDrivers[Index]->GetStaticMeshComponent();
+            lraAttachment.LocalOffset = FTransform(FVector::ZeroVector);  // Use center
+            lraAttachment.Stiffness = 1.0f;
+            lraAttachment.bIsKinematic = false;  // Not kinematic, just distance limited
+            lraAttachment.AttachDistance = restDistance;  // LRA: max distance from attachment
+            
+            ClothAssets[Index]->AddAttachmentData(lraAttachment);
+        }
+    }
+    */
 
     // Set cloth asset data
     ClothAssets[Index]->SetRestPositions(positions);

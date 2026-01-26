@@ -100,7 +100,7 @@ private:
     void DispatchBendConstraintSolver(uint32 BendConstraintCount);
     void DispatchApplyDeltas(uint32 ParticleCount);
     void DispatchApplyKinematicTargets(uint32 TargetCount);
-    void DispatchFinalize(uint32 ParticleCount);  // NEW: Velocity finalization
+    void DispatchFinalize(uint32 ParticleCount, int32 OldPositionBufferIndex);  // NEW: Velocity finalization
     void DispatchClearNormals(uint32 ParticleCount);
     void DispatchUpdateNormals(uint32 TriangleCount);
     void DispatchNormalizeNormals(uint32 ParticleCount);

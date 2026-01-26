@@ -27,8 +27,11 @@ cbuffer ClothSimConstants : register(b0)
     
     uint CurrentIteration;
     uint UseXPBD;
-    float RelaxationFactor;  // NEW: Jacobi convergence control (Velvet-inspired)
-    float MaxSpeed;          // NEW: Velocity clamping (Velvet-inspired)
+    float RelaxationFactor;        // NEW: Jacobi convergence control (Velvet-inspired)
+    float MaxSpeed;                // NEW: Velocity clamping (Velvet-inspired)
+    
+    float LongRangeStretchiness;   // NEW: LRA slack multiplier (Velvet default: 1.2)
+    float Padding3;
 
     float4x4 WorldMatrix;
 };
@@ -91,16 +94,17 @@ struct FBendConstraint
 /**
  * Kinematic target structure
  * Used for pinning cloth vertices to kinematic targets (e.g., flag on pole)
+ * Supports both hard kinematic attachment and Long Range Attachment (LRA)
  */
 struct FKinematicTarget
 {
     uint ParticleIndex;    // Which particle to constrain
-    float Stiffness;       // 1.0 = hard kinematic
+    float Stiffness;       // 1.0 = hard kinematic, <1.0 = soft spring
+    float AttachDistance;  // NEW: Max distance for LRA (0 = hard kinematic)
     float Padding0;
-    float Padding1;
     
     float3 TargetPosition; // World-space target position
-    float Padding2;
+    float Padding1;
 };
 
 /**

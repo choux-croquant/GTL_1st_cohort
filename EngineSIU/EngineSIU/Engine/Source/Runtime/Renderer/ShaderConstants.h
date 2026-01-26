@@ -279,8 +279,11 @@ struct alignas(16) FClothSimConstants
 
     uint32 CurrentIteration;
     uint32 UseXPBD;
-    float RelaxationFactor;  // NEW: Jacobi convergence control (Velvet-inspired)
-    float MaxSpeed;          // NEW: Velocity clamping (Velvet-inspired)
+    float RelaxationFactor;        // NEW: Jacobi convergence control (Velvet-inspired)
+    float MaxSpeed;                // NEW: Velocity clamping (Velvet-inspired)
+    
+    float LongRangeStretchiness;   // NEW: LRA slack multiplier (Velvet default: 1.2)
+    float Padding3;
 
     alignas(16) FMatrix WorldMatrix;
 };

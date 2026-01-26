@@ -626,7 +626,6 @@ void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
             target.Stiffness = attachment.Stiffness;
             target.Padding0 = 0.0f;
             target.Padding1 = 0.0f;
-            target.Padding2 = 0.0f;
 
             allTargets.Add(target);
         }
