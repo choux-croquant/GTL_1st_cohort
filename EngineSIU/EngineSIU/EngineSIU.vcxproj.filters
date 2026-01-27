@@ -430,6 +430,12 @@
     <ClInclude Include="Engine\Source\Editor\LevelEditor\SLevelEditor.h">
       <Filter>Engine\Source\Editor\LevelEditor</Filter>
     </ClInclude>
+    <ClCompile Include="Engine\Source\Editor\PropertyEditor\ClothConfigPanel.cpp">
+      <Filter>Engine\Source\Editor\PropertyEditor</Filter>
+    </ClCompile>
+    <ClInclude Include="Engine\Source\Editor\PropertyEditor\ClothConfigPanel.h">
+      <Filter>Engine\Source\Editor\PropertyEditor</Filter>
+    </ClInclude>
     <ClCompile Include="Engine\Source\Editor\PropertyEditor\ControlEditorPanel.cpp">
       <Filter>Engine\Source\Editor\PropertyEditor</Filter>
     </ClCompile>
