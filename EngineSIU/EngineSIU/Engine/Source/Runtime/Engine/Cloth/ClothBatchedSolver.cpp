@@ -621,10 +621,10 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
         }
 
         // Solve bend constraints
-        /*if (UsedBendConstraintCount > 0)
+        if (UsedBendConstraintCount > 0)
         {
             DispatchBendConstraintSolver(UsedBendConstraintCount);
-        }*/
+        }
 
         // Apply accumulated deltas to PredictedBuffer IN-PLACE
         // Reads: PredictedBuffer, DeltaBuffer, WeightBuffer
@@ -1060,10 +1060,17 @@ void FClothBatchedSolver::DispatchBendConstraintSolver(uint32 BendConstraintCoun
     // Bind constant buffer
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
 
-    // Bind predicted buffer as SRV
-    Graphics->DeviceContext->CSSetShaderResources(0, 1, &UnifiedPredictedSRV);      // t0
-    Graphics->DeviceContext->CSSetShaderResources(1, 1, &UnifiedBendConstraintSRV); // t1
-    Graphics->DeviceContext->CSSetShaderResources(2, 1, &UnifiedInvMassSRV);        // t2
+    // Bind SRVs (match ClothBendConstraintSolver.hlsl):
+    // t0: Predicted positions (read)
+    // t1: Bend constraints
+    // t2: InvMass
+    // t3: Instance parameters
+    ID3D11ShaderResourceView *srvs[4] = {
+        UnifiedPredictedSRV,
+        UnifiedBendConstraintSRV,
+        UnifiedInvMassSRV,
+        InstanceParameterSRV};
+    Graphics->DeviceContext->CSSetShaderResources(0, 4, srvs);
 
     // Bind delta accumulation UAVs
     ID3D11UnorderedAccessView *uavs[] = {
@@ -1082,8 +1089,8 @@ void FClothBatchedSolver::DispatchBendConstraintSolver(uint32 BendConstraintCoun
     // Unbind
     ID3D11UnorderedAccessView *nullUAVs[2] = {nullptr, nullptr};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
-    ID3D11ShaderResourceView *nullSRVs[3] = {nullptr, nullptr, nullptr};
-    Graphics->DeviceContext->CSSetShaderResources(0, 3, nullSRVs);
+    ID3D11ShaderResourceView *nullSRVs[4] = {nullptr, nullptr, nullptr, nullptr};
+    Graphics->DeviceContext->CSSetShaderResources(0, 4, nullSRVs);
 }
 
 void FClothBatchedSolver::DispatchApplyDeltas(uint32 ParticleCount)

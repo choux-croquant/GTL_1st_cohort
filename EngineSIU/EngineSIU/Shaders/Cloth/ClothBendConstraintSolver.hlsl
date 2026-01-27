@@ -6,6 +6,7 @@
  * - Reads from PredictedBuffer (working buffer)
  * - Accumulates deltas to PositionDelta/PositionWeight buffers
  * - XPBD compliance support
+ * - Uses same InstanceParams pattern as ClothConstraintSolver.hlsl
  */
 
 #include "ClothCommon.hlsli"
@@ -14,6 +15,7 @@
 StructuredBuffer<FClothParticle> PredictedRead : register(t0);  // Read predicted positions
 StructuredBuffer<FBendConstraint> BendConstraints : register(t1);
 StructuredBuffer<float> InvMass : register(t2);
+StructuredBuffer<FClothInstanceParameters> InstanceParams : register(t3);
 
 // Write buffers
 RWStructuredBuffer<int3> PositionDelta : register(u0);
@@ -94,24 +96,43 @@ void SolveBendConstraintsCS(uint3 DTid : SV_DispatchThreadID)
 
     if (lambda_denom < EPSILON) return;
 
+    // Per-instance bend stiffness (all particles in a bend constraint belong to the same instance)
+    uint instanceID = PredictedRead[idx0].InstanceID;
+    FClothInstanceParameters params = InstanceParams[instanceID];
+
+    // Combine stiffness: global (constant buffer), per-instance, per-constraint
+    float combinedStiffness = clamp(BendStiffness * params.BendStiffness * constraint.Stiffness, 0.0f, 1.0f);
+
     // XPBD compliance (Velvet pattern)
-    // bendCompliance / deltaTime^2
-    float bendCompliance = constraint.Compliance;
-    float xpbd_bend = bendCompliance / (DeltaTime * DeltaTime);
+    // If UseXPBD is enabled, use compliance; otherwise use PBD with stiffness
+    float xpbd_compliance = 0.0f;
+    if (UseXPBD > 0)
+    {
+        // XPBD mode: use constraint compliance scaled by dt^2
+        float bendCompliance = constraint.Compliance;
+        xpbd_compliance = bendCompliance / (DeltaTime * DeltaTime);
+    }
     
-    // Compute lambda
+    // Compute lambda (angle error divided by denominator)
     float angleError = phi - restAngle;
-    float lambda = angleError / (lambda_denom + xpbd_bend);
+    float lambda = angleError / (lambda_denom + xpbd_compliance);
+
+    // Apply stiffness scaling (for PBD mode or as additional control for XPBD)
+    lambda *= combinedStiffness;
 
     // Determine sign based on normal orientation
     if (dot(cross(n1Norm, n2Norm), e) > 0.0f)
         lambda = -lambda;
 
     // Compute corrections
-    float3 corr0 = -w0 * lambda * d0;
+    /*float3 corr0 = -w0 * lambda * d0;
     float3 corr1 = -w1 * lambda * d1;
     float3 corr2 = -w2 * lambda * d2;
-    float3 corr3 = -w3 * lambda * d3;
+    float3 corr3 = -w3 * lambda * d3;*/
+    float3 corr0 = -w0 * lambda * d0;
+    float3 corr1 = w1 * lambda * d1;
+    float3 corr2 = -w2 * lambda * d2;
+    float3 corr3 = w3 * lambda * d3;
 
     // Atomic accumulation (scaled to int)
     int3 delta0 = int3(corr0 * kScale);
