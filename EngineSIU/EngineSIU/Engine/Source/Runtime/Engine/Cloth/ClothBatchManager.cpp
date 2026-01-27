@@ -210,7 +210,7 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
            Params.WorldTransform.GetTranslation().X,
            Params.WorldTransform.GetTranslation().Y,
            Params.WorldTransform.GetTranslation().Z);
-
+    
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Instance %d Metadata - ParticleOffset=%d, ParticleCount=%d, ConstraintOffset=%d, TotalParticlesBefore=%d"),
            static_cast<int32>(LODLevel), Instances.Num(), metadata.ParticleOffset, metadata.ParticleCount,
            metadata.ConstraintOffset, TotalParticleCount - particleCount);
@@ -624,6 +624,7 @@ void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
 
             target.TargetPosition = worldPosition;
             target.Stiffness = attachment.Stiffness;
+            target.AttachDistance = attachment.AttachDistance;  // CRITICAL FIX: Initialize AttachDistance field
             target.Padding0 = 0.0f;
             target.Padding1 = 0.0f;
 
