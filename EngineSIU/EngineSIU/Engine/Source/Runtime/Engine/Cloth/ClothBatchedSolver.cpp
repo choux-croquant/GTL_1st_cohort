@@ -536,14 +536,18 @@ void FClothBatchedSolver::Simulate(float DeltaTime)
     int32 NumSubstepsExecuted = 0;
     
     // Use fixed substep time from config
-    float SubstepTime = Config.FixedSubstepTime;
+    float SubstepTime = Config.TimeStep / Config.NumSubsteps;
     
-    while (AccumulatedTime >= SubstepTime && NumSubstepsExecuted < Config.MaxSubstepsPerFrame)
+    for (int substep = 0; substep < Config.NumSubsteps; substep++)
+    {
+        SimulateSubstep(SubstepTime);
+    }
+    /*while (AccumulatedTime >= SubstepTime && NumSubstepsExecuted < Config.MaxSubstepsPerFrame)
     {
         SimulateSubstep(SubstepTime);
         AccumulatedTime -= SubstepTime;
         NumSubstepsExecuted++;
-    }
+    }*/
     
     // Final normal update (once per frame, not per substep)
     if (UsedTriangleCount > 0)
@@ -592,6 +596,8 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
 
         // Apply accumulated deltas
         DispatchApplyDeltas(UsedParticleCount);
+
+        DispatchFinalize(UsedParticleCount, substepStartBufferIndex);
 
         // Update buffer indices for next iteration
         readIdx = writeIdx;
