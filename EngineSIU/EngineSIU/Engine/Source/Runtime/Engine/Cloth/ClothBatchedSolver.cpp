@@ -26,7 +26,7 @@ FClothBatchedSolver::FClothBatchedSolver()
     UnifiedPositionBuffer = nullptr;
     UnifiedPositionUAV = nullptr;
     UnifiedPositionSRV = nullptr;
-    
+
     UnifiedPredictedBuffer = nullptr;
     UnifiedPredictedUAV = nullptr;
     UnifiedPredictedSRV = nullptr;
@@ -101,7 +101,7 @@ void FClothBatchedSolver::Release()
     BendConstraintSolverCS = nullptr;
     ApplyDeltasCS = nullptr;
     ApplyKinematicTargetsCS = nullptr;
-    FinalizeCS = nullptr;  // NEW
+    FinalizeCS = nullptr; // NEW
     ClearNormalsCS = nullptr;
     UpdateNormalsCS = nullptr;
     NormalizeNormalsCS = nullptr;
@@ -110,7 +110,7 @@ void FClothBatchedSolver::Release()
     SAFE_RELEASE(UnifiedPositionBuffer);
     SAFE_RELEASE(UnifiedPositionUAV);
     SAFE_RELEASE(UnifiedPositionSRV);
-    
+
     SAFE_RELEASE(UnifiedPredictedBuffer);
     SAFE_RELEASE(UnifiedPredictedUAV);
     SAFE_RELEASE(UnifiedPredictedSRV);
@@ -570,10 +570,10 @@ void FClothBatchedSolver::Simulate(float DeltaTime)
     // NEW: Fixed timestep accumulation with substeps (Velvet-inspired)
     AccumulatedTime += clampedDT;
     int32 NumSubstepsExecuted = 0;
-    
+
     // Use fixed substep time from config
     float SubstepTime = Config.TimeStep / Config.NumSubsteps;
-    
+
     for (int substep = 0; substep < Config.NumSubsteps; substep++)
     {
         SimulateSubstep(SubstepTime);
@@ -584,7 +584,7 @@ void FClothBatchedSolver::Simulate(float DeltaTime)
         AccumulatedTime -= SubstepTime;
         NumSubstepsExecuted++;
     }*/
-    
+
     // Final normal update (once per frame, not per substep)
     if (UsedTriangleCount > 0)
     {
@@ -640,8 +640,8 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
         DispatchApplyKinematicTargets(UsedKinematicTargetCount);
     }
 
-    // Step 5: Finalize - derive velocity and write final positions
-    // Reads: PositionBuffer (old), PredictedBuffer (new)
+    // Step 5: Finalize - derive velocity and write final positions (in-place)
+    // Reads: PositionBuffer (old) via UAV, PredictedBuffer (new) via SRV
     // Writes: VelocityBuffer, PositionBuffer (overwrite with new positions)
     DispatchFinalize(UsedParticleCount);
 
@@ -986,13 +986,13 @@ void FClothBatchedSolver::DispatchIntegration(uint32 ParticleCount)
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
 
     // Bind SRVs
-    Graphics->DeviceContext->CSSetShaderResources(0, 1, &UnifiedPositionSRV);    // t0: Old positions
-    Graphics->DeviceContext->CSSetShaderResources(1, 1, &UnifiedVelocitySRV);    // t1: Velocities
-    Graphics->DeviceContext->CSSetShaderResources(2, 1, &UnifiedInvMassSRV);     // t2: Inverse mass
-    Graphics->DeviceContext->CSSetShaderResources(3, 1, &InstanceParameterSRV);  // t3: Instance parameters
+    Graphics->DeviceContext->CSSetShaderResources(0, 1, &UnifiedPositionSRV);   // t0: Old positions
+    Graphics->DeviceContext->CSSetShaderResources(1, 1, &UnifiedVelocitySRV);   // t1: Velocities
+    Graphics->DeviceContext->CSSetShaderResources(2, 1, &UnifiedInvMassSRV);    // t2: Inverse mass
+    Graphics->DeviceContext->CSSetShaderResources(3, 1, &InstanceParameterSRV); // t3: Instance parameters
 
     // Bind predicted buffer as UAV (write predicted positions)
-    ID3D11UnorderedAccessView *uavs[] = {UnifiedPredictedUAV};  // u0: Predicted (write)
+    ID3D11UnorderedAccessView *uavs[] = {UnifiedPredictedUAV}; // u0: Predicted (write)
     UINT initialCounts[] = {0};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, uavs, initialCounts);
 
@@ -1019,16 +1019,16 @@ void FClothBatchedSolver::DispatchConstraintSolver(uint32 ConstraintCount)
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
 
     // Bind predicted buffer as SRV (read predicted positions)
-    Graphics->DeviceContext->CSSetShaderResources(0, 1, &UnifiedPredictedSRV);  // t0: Predicted (read)
+    Graphics->DeviceContext->CSSetShaderResources(0, 1, &UnifiedPredictedSRV); // t0: Predicted (read)
 
     // Bind constraint data as SRV
-    Graphics->DeviceContext->CSSetShaderResources(1, 1, &UnifiedConstraintSRV);  // t1: Constraints
-    Graphics->DeviceContext->CSSetShaderResources(2, 1, &UnifiedInvMassSRV);     // t2: InvMass
+    Graphics->DeviceContext->CSSetShaderResources(1, 1, &UnifiedConstraintSRV); // t1: Constraints
+    Graphics->DeviceContext->CSSetShaderResources(2, 1, &UnifiedInvMassSRV);    // t2: InvMass
 
     // Bind delta accumulation buffers as UAV
     ID3D11UnorderedAccessView *uavs[] = {
-        UnifiedPositionDeltaUAV,   // u0: Delta accumulation
-        UnifiedPositionWeightUAV   // u1: Weight accumulation
+        UnifiedPositionDeltaUAV, // u0: Delta accumulation
+        UnifiedPositionWeightUAV // u1: Weight accumulation
     };
     UINT initialCounts[2] = {0, 0};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, initialCounts);
@@ -1056,15 +1056,14 @@ void FClothBatchedSolver::DispatchBendConstraintSolver(uint32 BendConstraintCoun
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
 
     // Bind predicted buffer as SRV
-    Graphics->DeviceContext->CSSetShaderResources(0, 1, &UnifiedPredictedSRV);       // t0
-    Graphics->DeviceContext->CSSetShaderResources(1, 1, &UnifiedBendConstraintSRV);  // t1
-    Graphics->DeviceContext->CSSetShaderResources(2, 1, &UnifiedInvMassSRV);         // t2
+    Graphics->DeviceContext->CSSetShaderResources(0, 1, &UnifiedPredictedSRV);      // t0
+    Graphics->DeviceContext->CSSetShaderResources(1, 1, &UnifiedBendConstraintSRV); // t1
+    Graphics->DeviceContext->CSSetShaderResources(2, 1, &UnifiedInvMassSRV);        // t2
 
     // Bind delta accumulation UAVs
     ID3D11UnorderedAccessView *uavs[] = {
         UnifiedPositionDeltaUAV,
-        UnifiedPositionWeightUAV
-    };
+        UnifiedPositionWeightUAV};
     UINT initialCounts[2] = {0, 0};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, initialCounts);
 
@@ -1092,9 +1091,9 @@ void FClothBatchedSolver::DispatchApplyDeltas(uint32 ParticleCount)
 
     // Bind predicted buffer as UAV (read-modify-write IN-PLACE)
     ID3D11UnorderedAccessView *uavs[] = {
-        UnifiedPredictedUAV,       // u0: Predicted buffer (in-place modification)
-        UnifiedPositionDeltaUAV,   // u1: Delta buffer (cleared after use)
-        UnifiedPositionWeightUAV   // u2: Weight buffer (cleared after use)
+        UnifiedPredictedUAV,     // u0: Predicted buffer (in-place modification)
+        UnifiedPositionDeltaUAV, // u1: Delta buffer (cleared after use)
+        UnifiedPositionWeightUAV // u2: Weight buffer (cleared after use)
     };
     UINT initialCounts[3] = {0, 0, 0};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 3, uavs, initialCounts);
@@ -1148,16 +1147,21 @@ void FClothBatchedSolver::DispatchFinalize(uint32 ParticleCount)
     // Bind constant buffer (contains DeltaTime, MaxSpeed, Damping)
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
 
-    // Bind SRVs
-    Graphics->DeviceContext->CSSetShaderResources(0, 1, &UnifiedPositionSRV);    // t0: Old positions
-    Graphics->DeviceContext->CSSetShaderResources(1, 1, &UnifiedPredictedSRV);   // t1: Predicted (final)
-    Graphics->DeviceContext->CSSetShaderResources(2, 1, &UnifiedInvMassSRV);     // t2: Inverse masses
-    Graphics->DeviceContext->CSSetShaderResources(3, 1, &InstanceParameterSRV);  // t3: Instance parameters
+    // Bind SRVs (match ClothFinalize.hlsl):
+    // t0: Predicted positions (read-only)
+    // t1: InvMass
+    // t2: Instance parameters
+    ID3D11ShaderResourceView *srvs[3] = {
+        UnifiedPredictedSRV, // t0
+        UnifiedInvMassSRV,   // t1
+        InstanceParameterSRV // t2
+    };
+    Graphics->DeviceContext->CSSetShaderResources(0, 3, srvs);
 
-    // Bind velocity and position buffers as UAV (write)
+    // Bind velocity and position buffers as UAV (read/write)
     ID3D11UnorderedAccessView *uavs[] = {
-        UnifiedVelocityUAV,    // u0: Velocity write
-        UnifiedPositionUAV     // u1: Position write (overwrite with new positions)
+        UnifiedVelocityUAV, // u0: Velocity write
+        UnifiedPositionUAV  // u1: Position write (overwrite with new positions)
     };
     UINT initialCounts[2] = {0, 0};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, initialCounts);
@@ -1172,8 +1176,8 @@ void FClothBatchedSolver::DispatchFinalize(uint32 ParticleCount)
     // Unbind
     ID3D11UnorderedAccessView *nullUAVs[2] = {nullptr, nullptr};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
-    ID3D11ShaderResourceView *nullSRVs[4] = {nullptr, nullptr, nullptr, nullptr};
-    Graphics->DeviceContext->CSSetShaderResources(0, 4, nullSRVs);
+    ID3D11ShaderResourceView *nullSRVs[3] = {nullptr, nullptr, nullptr};
+    Graphics->DeviceContext->CSSetShaderResources(0, 3, nullSRVs);
 }
 
 void FClothBatchedSolver::DispatchClearNormals(uint32 ParticleCount)
@@ -1209,8 +1213,8 @@ void FClothBatchedSolver::DispatchUpdateNormals(uint32 TriangleCount)
 
     // Bind SRVs - use position buffer (final positions after finalize)
     ID3D11ShaderResourceView *srvs[] = {
-        UnifiedPositionSRV,  // t0: Final positions
-        UnifiedIndexSRV      // t1: Index buffer
+        UnifiedPositionSRV, // t0: Final positions
+        UnifiedIndexSRV     // t1: Index buffer
     };
     Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
 
@@ -1286,12 +1290,12 @@ void FClothBatchedSolver::UpdateConstantBuffers(float DeltaTime)
     constants.NumIterations = Config.NumIterations;
     constants.CurrentIteration = 0;
     constants.UseXPBD = Config.bUseXPBD ? 1 : 0;
-    
+
     // NEW: Velvet-inspired parameters
     constants.RelaxationFactor = Config.RelaxationFactor;
     constants.MaxSpeed = Config.MaxSpeed;
     constants.LongRangeStretchiness = Config.LongRangeStretchiness;
-    
+
     constants.WorldMatrix = FMatrix::Identity;
 
     D3D11_MAPPED_SUBRESOURCE msr;
