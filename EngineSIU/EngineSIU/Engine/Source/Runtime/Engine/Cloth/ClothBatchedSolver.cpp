@@ -1018,12 +1018,17 @@ void FClothBatchedSolver::DispatchConstraintSolver(uint32 ConstraintCount)
     // Bind constant buffer
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
 
-    // Bind predicted buffer as SRV (read predicted positions)
-    Graphics->DeviceContext->CSSetShaderResources(0, 1, &UnifiedPredictedSRV); // t0: Predicted (read)
-
-    // Bind constraint data as SRV
-    Graphics->DeviceContext->CSSetShaderResources(1, 1, &UnifiedConstraintSRV); // t1: Constraints
-    Graphics->DeviceContext->CSSetShaderResources(2, 1, &UnifiedInvMassSRV);    // t2: InvMass
+    // Bind SRVs (match ClothConstraintSolver.hlsl):
+    // t0: Predicted positions (read)
+    // t1: Constraints
+    // t2: InvMass
+    // t3: Instance parameters
+    ID3D11ShaderResourceView *srvs[4] = {
+        UnifiedPredictedSRV,
+        UnifiedConstraintSRV,
+        UnifiedInvMassSRV,
+        InstanceParameterSRV};
+    Graphics->DeviceContext->CSSetShaderResources(0, 4, srvs);
 
     // Bind delta accumulation buffers as UAV
     ID3D11UnorderedAccessView *uavs[] = {
@@ -1043,8 +1048,8 @@ void FClothBatchedSolver::DispatchConstraintSolver(uint32 ConstraintCount)
     // Unbind
     ID3D11UnorderedAccessView *nullUAVs[2] = {nullptr, nullptr};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
-    ID3D11ShaderResourceView *nullSRVs[3] = {nullptr, nullptr, nullptr};
-    Graphics->DeviceContext->CSSetShaderResources(0, 3, nullSRVs);
+    ID3D11ShaderResourceView *nullSRVs[4] = {nullptr, nullptr, nullptr, nullptr};
+    Graphics->DeviceContext->CSSetShaderResources(0, 4, nullSRVs);
 }
 
 void FClothBatchedSolver::DispatchBendConstraintSolver(uint32 BendConstraintCount)
@@ -1089,6 +1094,9 @@ void FClothBatchedSolver::DispatchApplyDeltas(uint32 ParticleCount)
     // Bind constant buffer
     Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
 
+    // Bind per-instance params (t0) for relaxation scaling in shader
+    Graphics->DeviceContext->CSSetShaderResources(0, 1, &InstanceParameterSRV);
+
     // Bind predicted buffer as UAV (read-modify-write IN-PLACE)
     ID3D11UnorderedAccessView *uavs[] = {
         UnifiedPredictedUAV,     // u0: Predicted buffer (in-place modification)
@@ -1108,6 +1116,9 @@ void FClothBatchedSolver::DispatchApplyDeltas(uint32 ParticleCount)
     // Unbind
     ID3D11UnorderedAccessView *nullUAVs[3] = {nullptr, nullptr, nullptr};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 3, nullUAVs, nullptr);
+
+    ID3D11ShaderResourceView *nullSRVs[1] = {nullptr};
+    Graphics->DeviceContext->CSSetShaderResources(0, 1, nullSRVs);
 }
 
 void FClothBatchedSolver::DispatchApplyKinematicTargets(uint32 TargetCount)

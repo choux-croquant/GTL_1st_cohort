@@ -58,7 +58,7 @@ void IntegrateCS(uint3 DTid : SV_DispatchThreadID)
     float3 force = float3(0, 0, 0);
     
     // Add per-instance gravity
-    force += params.Gravity * params.GravityMultiplier;
+    force += params.Gravity * params.GravityMultiplier * 100.0f;
     
     // Add per-instance wind with air drag
     force += params.Wind * params.WindStrength * params.AirDrag;
