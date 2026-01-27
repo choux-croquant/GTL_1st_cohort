@@ -61,7 +61,7 @@ void ATestBatchedClothActor::Tick(float DeltaTime)
     //    if (AttachmentDrivers[i])
     //    {
     //        float phaseOffset = (float)i / (float)NumClothInstances * 2.0f * PI;
-    //        const float Speed = 2.8f;
+    //        const float Speed = 0.8f;
     //        const float MoveRadius = 200.0f;
     //        const float SwayAngleScale = 30.0f;
 
@@ -196,7 +196,7 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, ECloth
 
             // Calculate rest angle (initially flat = PI radians)
             float restAngle = PI;   // Flat cloth
-            float stiffness = 1.0f; // Moderate bend resistance
+            float stiffness = 2.0f; // Moderate bend resistance
 
             bendConstraints.Add(FClothBendConstraint(pA, pB, pC, pD, restAngle, stiffness));
         }
@@ -215,7 +215,7 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, ECloth
 
             // Calculate rest angle (initially flat = PI radians)
             float restAngle = PI;   // Flat cloth
-            float stiffness = 1.0f; // Moderate bend resistance
+            float stiffness = 2.0f; // Moderate bend resistance
 
             bendConstraints.Add(FClothBendConstraint(pA, pB, pC, pD, restAngle, stiffness));
         }

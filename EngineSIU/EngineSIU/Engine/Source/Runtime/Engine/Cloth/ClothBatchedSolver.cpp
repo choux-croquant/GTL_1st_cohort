@@ -570,15 +570,9 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
     int32 writeIdx = 1 - CurrentBufferIndex;
     CurrentBufferIndex = writeIdx;
 
-    // 2. Apply kinematic targets after integration
-    if (UsedKinematicTargetCount > 0)
-    {
-        DispatchApplyKinematicTargets(UsedKinematicTargetCount);
-    }
-
     // TODO Phase 3: Pre-stabilization collision would go here
 
-    // 3. Constraint solver iterations
+    // 2. Constraint solver iterations
     for (int32 iter = 0; iter < Config.NumIterations; ++iter)
     {
         // Clear delta accumulation buffers
@@ -591,19 +585,13 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
         }
 
         // Solve bend constraints
-        if (UsedBendConstraintCount > 0)
+        /*if (UsedBendConstraintCount > 0)
         {
             DispatchBendConstraintSolver(UsedBendConstraintCount);
-        }
+        }*/
 
         // Apply accumulated deltas
         DispatchApplyDeltas(UsedParticleCount);
-
-        // Reapply kinematic targets to enforce attachment
-        if (UsedKinematicTargetCount > 0)
-        {
-            DispatchApplyKinematicTargets(UsedKinematicTargetCount);
-        }
 
         // Update buffer indices for next iteration
         readIdx = writeIdx;
@@ -611,12 +599,25 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
         CurrentBufferIndex = writeIdx;
     }
 
+    // 3. Apply kinematic targets AFTER all iterations (once per substep)
+    // CRITICAL: Apply to BOTH buffers to keep them synchronized
+    if (UsedKinematicTargetCount > 0)
+    {
+        // Apply to current buffer
+        DispatchApplyKinematicTargets(UsedKinematicTargetCount);
+        
+        // Apply to the other buffer to ensure synchronization
+        CurrentBufferIndex = 1 - CurrentBufferIndex;
+        DispatchApplyKinematicTargets(UsedKinematicTargetCount);
+        CurrentBufferIndex = 1 - CurrentBufferIndex;  // Restore original index
+    }
+
     // TODO Phase 3: Per-substep collision would go here
 
     // 4. Velocity Finalization (NEW - Velvet pattern)
     // Derives velocity from position change, clamps max velocity, applies damping
     // CRITICAL: Pass substepStartBufferIndex to get correct velocity baseline
-    DispatchFinalize(UsedParticleCount, substepStartBufferIndex);
+    //DispatchFinalize(UsedParticleCount, substepStartBufferIndex);
 }
 
 bool FClothBatchedSolver::LoadComputeShaders()
