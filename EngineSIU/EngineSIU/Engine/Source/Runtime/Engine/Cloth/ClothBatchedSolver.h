@@ -92,15 +92,15 @@ public:
 
 private:
     // Simulation methods
-    void SimulateSubstep(float SubstepDeltaTime);  // NEW: Substep simulation
-    
+    void SimulateSubstep(float SubstepDeltaTime); // NEW: Substep simulation
+
     // Dispatch methods
     void DispatchIntegration(uint32 ParticleCount);
     void DispatchConstraintSolver(uint32 ConstraintCount);
     void DispatchBendConstraintSolver(uint32 BendConstraintCount);
     void DispatchApplyDeltas(uint32 ParticleCount);
     void DispatchApplyKinematicTargets(uint32 TargetCount);
-    void DispatchFinalize(uint32 ParticleCount);  // NEW: Velocity finalization
+    void DispatchFinalize(uint32 ParticleCount); // NEW: Velocity finalization
     void DispatchClearNormals(uint32 ParticleCount);
     void DispatchUpdateNormals(uint32 TriangleCount);
     void DispatchNormalizeNormals(uint32 ParticleCount);
@@ -125,14 +125,14 @@ private:
     ID3D11ComputeShader *BendConstraintSolverCS;
     ID3D11ComputeShader *ApplyDeltasCS;
     ID3D11ComputeShader *ApplyKinematicTargetsCS;
-    ID3D11ComputeShader *FinalizeCS;  // NEW: Velocity finalization shader
+    ID3D11ComputeShader *FinalizeCS; // NEW: Velocity finalization shader
     ID3D11ComputeShader *ClearNormalsCS;
     ID3D11ComputeShader *UpdateNormalsCS;
     ID3D11ComputeShader *NormalizeNormalsCS;
 
     // Unified GPU buffers (Velvet pattern - single working buffer)
-    ID3D11Buffer *UnifiedPositionBuffer;    // Final position buffer (for rendering)
-    ID3D11Buffer *UnifiedPredictedBuffer;   // Working buffer (for constraint solving)
+    ID3D11Buffer *UnifiedPositionBuffer;  // Final position buffer (for rendering)
+    ID3D11Buffer *UnifiedPredictedBuffer; // Working buffer (for constraint solving)
     ID3D11Buffer *UnifiedVelocityBuffer;
     ID3D11Buffer *UnifiedInvMassBuffer;
     ID3D11Buffer *UnifiedConstraintBuffer;
@@ -150,6 +150,7 @@ private:
     ID3D11UnorderedAccessView *UnifiedNormalUAV;
     ID3D11UnorderedAccessView *UnifiedPositionDeltaUAV;
     ID3D11UnorderedAccessView *UnifiedPositionWeightUAV;
+    ID3D11UnorderedAccessView *UnifiedBendConstraintUAV; // NEW: For XPBD lambda write-back
 
     ID3D11ShaderResourceView *UnifiedPositionSRV;
     ID3D11ShaderResourceView *UnifiedPredictedSRV;
@@ -185,7 +186,7 @@ private:
     uint32 UsedInstanceCount;
 
     bool bInitialized;
-    
+
     // NEW: Substep timing state
     float AccumulatedTime;
 

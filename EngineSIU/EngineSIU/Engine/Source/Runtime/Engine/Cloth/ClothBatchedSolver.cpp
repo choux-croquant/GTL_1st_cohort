@@ -45,6 +45,7 @@ FClothBatchedSolver::FClothBatchedSolver()
     UnifiedNormalUAV = nullptr;
     UnifiedPositionDeltaUAV = nullptr;
     UnifiedPositionWeightUAV = nullptr;
+    UnifiedBendConstraintUAV = nullptr; // NEW: XPBD lambda write-back
 
     UnifiedVelocitySRV = nullptr;
     UnifiedInvMassSRV = nullptr;
@@ -126,6 +127,7 @@ void FClothBatchedSolver::Release()
     SAFE_RELEASE(UnifiedConstraintSRV);
 
     SAFE_RELEASE(UnifiedBendConstraintBuffer);
+    SAFE_RELEASE(UnifiedBendConstraintUAV); // NEW
     SAFE_RELEASE(UnifiedBendConstraintSRV);
 
     SAFE_RELEASE(UnifiedKinematicTargetBuffer);
@@ -338,16 +340,29 @@ bool FClothBatchedSolver::AllocateBuffers(uint32 MaxParticles, uint32 MaxConstra
         }
     }
 
-    // Create bend constraint buffer
+    // Create bend constraint buffer (needs UAV for XPBD lambda write-back)
     if (MaxBendConstraints > 0)
     {
+        bufferDesc.Usage = D3D11_USAGE_DEFAULT;
         bufferDesc.ByteWidth = sizeof(FClothBendConstraintGPU) * MaxBendConstraints;
+        bufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE; // NEW: Added UAV flag
         bufferDesc.StructureByteStride = sizeof(FClothBendConstraintGPU);
+        bufferDesc.CPUAccessFlags = 0;
+        bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
 
         hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &UnifiedBendConstraintBuffer);
         if (FAILED(hr))
         {
             UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create bend constraint buffer"));
+            return false;
+        }
+
+        // Create UAV for XPBD lambda write-back
+        uavDesc.Buffer.NumElements = MaxBendConstraints;
+        hr = Graphics->Device->CreateUnorderedAccessView(UnifiedBendConstraintBuffer, &uavDesc, &UnifiedBendConstraintUAV);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create bend constraint UAV"));
             return false;
         }
 
@@ -1062,22 +1077,25 @@ void FClothBatchedSolver::DispatchBendConstraintSolver(uint32 BendConstraintCoun
 
     // Bind SRVs (match ClothBendConstraintSolver.hlsl):
     // t0: Predicted positions (read)
-    // t1: Bend constraints
     // t2: InvMass
     // t3: Instance parameters
     ID3D11ShaderResourceView *srvs[4] = {
-        UnifiedPredictedSRV,
-        UnifiedBendConstraintSRV,
-        UnifiedInvMassSRV,
-        InstanceParameterSRV};
+        UnifiedPredictedSRV,   // t0
+        nullptr,               // t1 (unused - constraint is now UAV)
+        UnifiedInvMassSRV,     // t2
+        InstanceParameterSRV}; // t3
     Graphics->DeviceContext->CSSetShaderResources(0, 4, srvs);
 
-    // Bind delta accumulation UAVs
+    // Bind UAVs (NEW: bend constraints need write access for lambda)
+    // u0: Bend constraints (read-write for XPBD lambda)
+    // u1: Position delta accumulation
+    // u2: Position weight accumulation
     ID3D11UnorderedAccessView *uavs[] = {
-        UnifiedPositionDeltaUAV,
-        UnifiedPositionWeightUAV};
-    UINT initialCounts[2] = {0, 0};
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, initialCounts);
+        UnifiedBendConstraintUAV,  // u0: NEW - for lambda write-back
+        UnifiedPositionDeltaUAV,   // u1
+        UnifiedPositionWeightUAV}; // u2
+    UINT initialCounts[3] = {0, 0, 0};
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 3, uavs, initialCounts);
 
     // Bind shader
     Graphics->DeviceContext->CSSetShader(BendConstraintSolverCS, nullptr, 0);
@@ -1087,8 +1105,8 @@ void FClothBatchedSolver::DispatchBendConstraintSolver(uint32 BendConstraintCoun
     Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
 
     // Unbind
-    ID3D11UnorderedAccessView *nullUAVs[2] = {nullptr, nullptr};
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
+    ID3D11UnorderedAccessView *nullUAVs[3] = {nullptr, nullptr, nullptr};
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 3, nullUAVs, nullptr);
     ID3D11ShaderResourceView *nullSRVs[4] = {nullptr, nullptr, nullptr, nullptr};
     Graphics->DeviceContext->CSSetShaderResources(0, 4, nullSRVs);
 }

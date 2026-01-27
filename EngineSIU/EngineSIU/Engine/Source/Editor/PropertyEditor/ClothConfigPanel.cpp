@@ -94,9 +94,9 @@ void ClothConfigPanel::RenderClothConfig()
     // Global Simulation Settings
     if (ImGui::TreeNodeEx("Global Settings", ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen))
     {
-        bConfigChanged |= ImGui::SliderFloat("Mass", &Config.Mass, 0.1f, 10.0f, "%.2f");
+        //bConfigChanged |= ImGui::SliderFloat("Mass", &Config.Mass, 0.1f, 10.0f, "%.2f");
         bConfigChanged |= ImGui::SliderFloat("Damping", &Config.Damping, 0.0f, 1.0f, "%.3f");
-        bConfigChanged |= ImGui::SliderFloat("Friction", &Config.Friction, 0.0f, 1.0f, "%.3f");
+        //bConfigChanged |= ImGui::SliderFloat("Friction", &Config.Friction, 0.0f, 1.0f, "%.3f");
 
         ImGui::TreePop();
     }
@@ -110,13 +110,13 @@ void ClothConfigPanel::RenderClothConfig()
             ImGui::SetTooltip("Controls fabric stretching resistance");
         }
 
-        bConfigChanged |= ImGui::SliderFloat("Bend Stiffness", &Config.BendStiffness, 0.0f, 1.0f, "%.3f");
+        bConfigChanged |= ImGui::SliderFloat("Bend Stiffness", &Config.BendStiffness, 0.0f, 10.0f, "%.3f");
         if (ImGui::IsItemHovered())
         {
             ImGui::SetTooltip("Controls fabric bending/folding resistance");
         }
 
-        bConfigChanged |= ImGui::SliderFloat("Attach Stiffness", &Config.AttachStiffness, 0.0f, 1.0f, "%.3f");
+       /* bConfigChanged |= ImGui::SliderFloat("Attach Stiffness", &Config.AttachStiffness, 0.0f, 1.0f, "%.3f");
         if (ImGui::IsItemHovered())
         {
             ImGui::SetTooltip("Controls attachment point stiffness");
@@ -126,7 +126,7 @@ void ClothConfigPanel::RenderClothConfig()
         if (ImGui::IsItemHovered())
         {
             ImGui::SetTooltip("Long-range attachment slack multiplier");
-        }
+        }*/
 
         ImGui::TreePop();
     }
@@ -146,7 +146,7 @@ void ClothConfigPanel::RenderClothConfig()
             ImGui::SetTooltip("Simulation substeps per frame");
         }
 
-        bConfigChanged |= ImGui::SliderFloat("Fixed Substep Time", &Config.FixedSubstepTime, 1.0f / 1200.0f, 1.0f / 60.0f, "%.6f");
+       /* bConfigChanged |= ImGui::SliderFloat("Fixed Substep Time", &Config.FixedSubstepTime, 1.0f / 1200.0f, 1.0f / 60.0f, "%.6f");
         if (ImGui::IsItemHovered())
         {
             ImGui::SetTooltip("Target time per substep (lower = more accurate)");
@@ -156,7 +156,7 @@ void ClothConfigPanel::RenderClothConfig()
         if (ImGui::IsItemHovered())
         {
             ImGui::SetTooltip("Safety limit to prevent performance issues");
-        }
+        }*/
 
         bConfigChanged |= ImGui::SliderFloat("Max Speed", &Config.MaxSpeed, 100.0f, 5000.0f, "%.0f cm/s");
         if (ImGui::IsItemHovered())
@@ -170,7 +170,7 @@ void ClothConfigPanel::RenderClothConfig()
             ImGui::SetTooltip("Jacobi solver convergence control");
         }
 
-        bool bUseXPBD = Config.bUseXPBD;
+        /*bool bUseXPBD = Config.bUseXPBD;
         if (ImGui::Checkbox("Use XPBD", &bUseXPBD))
         {
             Config.bUseXPBD = bUseXPBD;
@@ -179,7 +179,7 @@ void ClothConfigPanel::RenderClothConfig()
         if (ImGui::IsItemHovered())
         {
             ImGui::SetTooltip("Extended Position-Based Dynamics (more stable)");
-        }
+        }*/
 
         ImGui::TreePop();
     }

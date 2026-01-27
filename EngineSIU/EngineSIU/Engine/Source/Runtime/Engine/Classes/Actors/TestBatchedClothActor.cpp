@@ -56,14 +56,14 @@ void ATestBatchedClothActor::Tick(float DeltaTime)
         return;
     }
 
-    //for (int32 i = 0; i < NumClothInstances; ++i)
+    // for (int32 i = 0; i < NumClothInstances; ++i)
     //{
-    //    if (AttachmentDrivers[i])
-    //    {
-    //        float phaseOffset = (float)i / (float)NumClothInstances * 2.0f * PI;
-    //        const float Speed = 1.8f;
-    //        const float MoveRadius = 200.0f;
-    //        const float SwayAngleScale = 30.0f;
+    //     if (AttachmentDrivers[i])
+    //     {
+    //         float phaseOffset = (float)i / (float)NumClothInstances * 2.0f * PI;
+    //         const float Speed = 1.8f;
+    //         const float MoveRadius = 200.0f;
+    //         const float SwayAngleScale = 30.0f;
 
     //        float Time = AnimationTime * Speed + phaseOffset;
 
@@ -181,43 +181,105 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, ECloth
         }
     }
 
-    // Generate bend constraints (simplified for test)
+    // Generate bend constraints - PURE XPBD WITH CPU-GPU CONSISTENCY
+    // CRITICAL: Must match GPU shader convention EXACTLY
+    //
+    // CONVENTION (matches ClothBendConstraintSolver.hlsl):
+    // - A and B form the shared edge
+    // - Triangle 1: (A, B, C) with normal n1 = cross(B-A, C-A)
+    // - Triangle 2: (A, B, D) with normal n2 = cross(B-A, D-A)
+    // - RestAngle computed using same signed dihedral angle as GPU
+
     TArray<FClothBendConstraint> bendConstraints;
-    // Horizontal bend constraints (connect triangles across horizontal edges)
-    for (int32 y = 0; y < GridSize - 1; ++y)
+
+    // Helper lambda to compute signed dihedral angle (matches GPU)
+    auto ComputeDihedralAngle = [](const FVector &pA, const FVector &pB,
+                                   const FVector &pC, const FVector &pD) -> float
     {
-        for (int32 x = 0; x < GridSize - 2; ++x)
-        {
-            // Two quads sharing a vertical edge
-            int32 pA = y * GridSize + x;       // Left-top
-            int32 pB = (y + 1) * GridSize + x; // Left-bottom (shared edge with pA)
-            int32 pC = y * GridSize + (x + 1); // Middle-top (opposite in left quad)
-            int32 pD = y * GridSize + (x + 2); // Right-top (opposite in right quad)
+        // Shared edge
+        FVector e = pB - pA;
+        float eLen = e.Length();
+        if (eLen < 1e-6f)
+            return 0.0f;
+        FVector eNorm = e / eLen;
 
-            // Calculate rest angle (initially flat = PI radians)
-            float restAngle = PI;   // Flat cloth
-            float stiffness = 2.0f; // Moderate bend resistance
+        // Triangle normals (same as GPU)
+        FVector n1 = FVector::CrossProduct(pB - pA, pC - pA);
+        FVector n2 = FVector::CrossProduct(pB - pA, pD - pA);
 
-            bendConstraints.Add(FClothBendConstraint(pA, pB, pC, pD, restAngle, stiffness));
-        }
-    }
+        float n1Len = n1.Length();
+        float n2Len = n2.Length();
+        if (n1Len < 1e-6f || n2Len < 1e-6f)
+            return 0.0f;
 
-    // Vertical bend constraints (connect triangles across vertical edges)
-    for (int32 y = 0; y < GridSize - 2; ++y)
+        FVector n1Norm = n1 / n1Len;
+        FVector n2Norm = n2 / n2Len;
+
+        // Compute angle
+        float cosAngle = FMath::Clamp(FVector::DotProduct(n1Norm, n2Norm), -1.0f, 1.0f);
+        float phi = FMath::Acos(cosAngle);
+
+        // Apply sign (same as GPU)
+        FVector crossNormals = FVector::CrossProduct(n1Norm, n2Norm);
+        float angleSign = FVector::DotProduct(crossNormals, eNorm);
+        if (angleSign < 0.0f)
+            phi = -phi;
+
+        return phi;
+    };
+
+    // Generate bend constraints for grid edges
+    for (int32 y = 0; y < GridSize - 1; ++y)
     {
         for (int32 x = 0; x < GridSize - 1; ++x)
         {
-            // Two quads sharing a horizontal edge
-            int32 pA = y * GridSize + x;       // Top-left (shared edge)
-            int32 pB = y * GridSize + (x + 1); // Top-right (shared edge)
-            int32 pC = (y + 1) * GridSize + x; // Middle-left (opposite in top quad)
-            int32 pD = (y + 2) * GridSize + x; // Bottom-left (opposite in bottom quad)
+            int32 i0 = y * GridSize + x;
+            int32 i1 = y * GridSize + (x + 1);
+            int32 i2 = (y + 1) * GridSize + x;
+            int32 i3 = (y + 1) * GridSize + (x + 1);
 
-            // Calculate rest angle (initially flat = PI radians)
-            float restAngle = PI;   // Flat cloth
-            float stiffness = 2.0f; // Moderate bend resistance
+            // --- HORIZONTAL EDGE: i0-i1 ---
+            // Shared edge: i0 (A) to i1 (B)
+            // Triangle 1: (i0, i1, i2) → C = i2
+            // Triangle 2: (i0, i1, i3) → D = i3
+            if (x < GridSize - 1)
+            {
+                FVector pA = positions[i0];
+                FVector pB = positions[i1];
+                FVector pC = positions[i2]; // Below the edge
+                FVector pD = positions[i3]; // Diagonal opposite
 
-            bendConstraints.Add(FClothBendConstraint(pA, pB, pC, pD, restAngle, stiffness));
+                // Compute rest angle from current (flat) configuration
+                float restAngle = ComputeDihedralAngle(pA, pB, pC, pD);
+
+                // Pure XPBD: control via compliance only
+                // Lower compliance = stiffer (0.0 = rigid)
+                // Higher compliance = softer
+                float bendCompliance = 1e-4;  // Moderate flexibility
+                float unusedStiffness = 1.0f; // Kept for data compatibility, not used in solve
+
+                bendConstraints.Add(FClothBendConstraint(i0, i1, i2, i3, restAngle, unusedStiffness, bendCompliance));
+            }
+
+            // --- VERTICAL EDGE: i0-i2 ---
+            // Shared edge: i0 (A) to i2 (B)
+            // Triangle 1: (i0, i2, i1) → C = i1
+            // Triangle 2: (i0, i2, i3) → D = i3
+            if (y < GridSize - 1)
+            {
+                FVector pA = positions[i0];
+                FVector pB = positions[i2]; // Note: i2 is now B (vertical edge)
+                FVector pC = positions[i1]; // Right of edge
+                FVector pD = positions[i3]; // Diagonal opposite
+
+                // Compute rest angle
+                float restAngle = ComputeDihedralAngle(pA, pB, pC, pD);
+
+                float bendCompliance = 1e-4;
+                float unusedStiffness = 1.0f;
+
+                bendConstraints.Add(FClothBendConstraint(i0, i2, i1, i3, restAngle, unusedStiffness, bendCompliance));
+            }
         }
     }
 
@@ -225,7 +287,7 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, ECloth
     // Set up attachments for top row by configuring them directly on the cloth asset.
     // The simulation system will automatically resolve world positions each frame
     // based on these driver references - no manual updates needed!
-    
+
     // OPTION 1: Hard Kinematic Attachments (Top Row Only)
     // These are the primary attachment points that the cloth is pinned to
     for (int32 x = 0; x < GridSize; ++x)
@@ -246,25 +308,25 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, ECloth
         // Hard kinematic attachment (no distance tolerance)
         attachment.Stiffness = 1.0f;
         attachment.bIsKinematic = true;
-        attachment.AttachDistance = 0.0f;  // NEW: 0 = hard kinematic (no LRA)
+        attachment.AttachDistance = 0.0f; // NEW: 0 = hard kinematic (no LRA)
 
         // Add to asset - this is the single source of truth for attachments
         ClothAssets[Index]->AddAttachmentData(attachment);
     }
-    
+
     // OPTION 2: Long Range Attachments (LRA) - OPTIONAL
     // Create LRA constraints for all free particles to prevent global stretching
     // Uncomment to enable full LRA behavior (Velvet pattern)
     /*
     FVector attachmentCenter = FVector::ZeroVector;
-    
+
     // Calculate center of attachment points (average of top row)
     for (int32 x = 0; x < GridSize; ++x)
     {
         attachmentCenter += positions[x];  // Top row positions
     }
     attachmentCenter /= static_cast<float>(GridSize);
-    
+
     // Create LRA for all non-pinned particles
     for (int32 y = 1; y < GridSize; ++y)  // Skip top row (already pinned)
     {
@@ -272,10 +334,10 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, ECloth
         {
             int32 particleIdx = y * GridSize + x;
             FVector particlePos = positions[particleIdx];
-            
+
             // Compute rest distance from this particle to attachment center
             float restDistance = FVector::Distance(particlePos, attachmentCenter);
-            
+
             FClothAttachmentData lraAttachment;
             lraAttachment.ClothVertexIndex = particleIdx;
             lraAttachment.Type = EClothAttachmentType::ActorTransform;
@@ -284,7 +346,7 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, ECloth
             lraAttachment.Stiffness = 1.0f;
             lraAttachment.bIsKinematic = false;  // Not kinematic, just distance limited
             lraAttachment.AttachDistance = restDistance;  // LRA: max distance from attachment
-            
+
             ClothAssets[Index]->AddAttachmentData(lraAttachment);
         }
     }
@@ -310,11 +372,13 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, ECloth
     config.Mass = 1.0f;
     config.Damping = 0.6f + (Index * 0.05f); // Vary damping slightly
     config.StretchStiffness = 0.9f + (Index * 0.01f);
-    config.BendStiffness = 0.2f;
+    config.BendStiffness = 0.5f; // INCREASED: Global bend stiffness multiplier
     config.NumIterations = 5;
     config.TimeStep = 0.016f;
-    config.bUseXPBD = false;
+    config.bUseXPBD = true;                 // CHANGED: Enable XPBD for proper bend constraint handling
     config.AirDrag = 0.5f + (Index * 0.1f); // Vary air drag
+    config.NumSubsteps = 3;                 // Multiple substeps for stability
+    config.RelaxationFactor = 1.0f;         // Full relaxation (Gauss-Seidel)
 
     ClothAssets[Index]->SetConfig(config);
 
@@ -348,7 +412,7 @@ void ATestBatchedClothActor::PostSpawnInitialize()
         DriverInitialPositions[i] = instanceLocation;
 
         UE_LOG(ELogLevel::Display, TEXT("  Instance %d will be positioned at (%f, %f, %f)"),
-            i, instanceLocation.X, instanceLocation.Y, instanceLocation.Z);
+               i, instanceLocation.X, instanceLocation.Y, instanceLocation.Z);
     }
 
     UWorld *world = GetWorld();

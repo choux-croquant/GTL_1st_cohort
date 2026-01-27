@@ -1,28 +1,37 @@
 /**
- * Cloth Bend Constraint Solver
- * Solves dihedral angle bending constraints using proper gradient derivation
- *
- * VELVET PATTERN (Single Working Buffer):
- * - Reads from PredictedBuffer (working buffer)
- * - Accumulates deltas to PositionDelta/PositionWeight buffers
- * - XPBD compliance support
- * - Uses same InstanceParams pattern as ClothConstraintSolver.hlsl
+ * Cloth Bend Constraint Solver - Pure XPBD Edition
+ * 
+ * Implements dihedral angle bending constraints using pure XPBD formulation.
+ * No stiffness mixing - material behavior controlled solely by compliance and iterations.
+ * 
+ * CONSTRAINT CONVENTION:
+ * - ParticleA and ParticleB form the shared edge (edge = B - A)
+ * - ParticleC is opposite vertex in Triangle 1 (A, B, C)
+ * - ParticleD is opposite vertex in Triangle 2 (A, B, D)
+ * - RestAngle is computed on CPU with same convention
+ * 
+ * GRADIENT FORMULATION:
+ * Based on Macklin et al. XPBD and Bender's PBD survey
  */
 
 #include "ClothCommon.hlsli"
 
 // Read-only buffers
-StructuredBuffer<FClothParticle> PredictedRead : register(t0);  // Read predicted positions
-StructuredBuffer<FBendConstraint> BendConstraints : register(t1);
+StructuredBuffer<FClothParticle> PredictedRead : register(t0);
 StructuredBuffer<float> InvMass : register(t2);
 StructuredBuffer<FClothInstanceParameters> InstanceParams : register(t3);
 
-// Write buffers
-RWStructuredBuffer<int3> PositionDelta : register(u0);
-RWStructuredBuffer<int> PositionWeight : register(u1);
+// Read-write buffers (XPBD requires writing back lambda)
+RWStructuredBuffer<FBendConstraint> BendConstraints : register(u0);
+RWStructuredBuffer<int3> PositionDelta : register(u1);
+RWStructuredBuffer<int> PositionWeight : register(u2);
 
 static const float kScale = 10000.0f;
 static const float EPSILON = 1e-6f;
+
+// Debug mode - set to 1 to enable debug output for specific constraint
+#define DEBUG_BEND 0
+#define DEBUG_ID 0
 
 [numthreads(256, 1, 1)]
 void SolveBendConstraintsCS(uint3 DTid : SV_DispatchThreadID)
@@ -32,131 +41,150 @@ void SolveBendConstraintsCS(uint3 DTid : SV_DispatchThreadID)
 
     FBendConstraint constraint = BendConstraints[id];
 
-    // Load particle indices (Velvet naming)
-    uint idx0 = constraint.ParticleA;
-    uint idx1 = constraint.ParticleB;
-    uint idx2 = constraint.ParticleC;
-    uint idx3 = constraint.ParticleD;
+    // Load particle indices
+    // CONVENTION: A-B is shared edge, C opposite in tri1, D opposite in tri2
+    uint idxA = constraint.ParticleA;  // Edge vertex 1
+    uint idxB = constraint.ParticleB;  // Edge vertex 2
+    uint idxC = constraint.ParticleC;  // Opposite in triangle 1 (A,B,C)
+    uint idxD = constraint.ParticleD;  // Opposite in triangle 2 (A,B,D)
+    
     float restAngle = constraint.RestAngle;
 
     // Load inverse masses
-    float w0 = InvMass[idx0];
-    float w1 = InvMass[idx1];
-    float w2 = InvMass[idx2];
-    float w3 = InvMass[idx3];
+    float wA = InvMass[idxA];
+    float wB = InvMass[idxB];
+    float wC = InvMass[idxC];
+    float wD = InvMass[idxD];
 
     // Load predicted positions
-    float3 p0 = PredictedRead[idx0].Position;
-    float3 p1 = PredictedRead[idx1].Position;
-    float3 p2 = PredictedRead[idx2].Position;
-    float3 p3 = PredictedRead[idx3].Position;
+    float3 pA = PredictedRead[idxA].Position;
+    float3 pB = PredictedRead[idxB].Position;
+    float3 pC = PredictedRead[idxC].Position;
+    float3 pD = PredictedRead[idxD].Position;
 
-    // Compute shared edge e = p3 - p2 (Velvet formulation)
-    float3 e = p3 - p2;
-    float elen = length(e);
-    if (elen < EPSILON) return;  // Degenerate edge
+    // === STEP 1: Compute edge and triangle normals ===
+    // Shared edge
+    float3 e = pB - pA;
+    float eLen = length(e);
+    if (eLen < EPSILON) return;  // Degenerate edge
     
-    float invElen = 1.0f / elen;
+    float3 eNorm = e / eLen;
 
-    // Compute normals (NOT normalized yet)
-    // n1 = cross(p2 - p0, p3 - p0)
-    // n2 = cross(p3 - p1, p2 - p1)
-    float3 n1 = cross(p2 - p0, p3 - p0);
-    float3 n2 = cross(p3 - p1, p2 - p1);
+    // Triangle normals (unnormalized initially)
+    // Triangle 1: A, B, C → normal n1
+    // Triangle 2: A, B, D → normal n2
+    float3 n1 = cross(pB - pA, pC - pA);
+    float3 n2 = cross(pB - pA, pD - pA);
     
     float n1LenSq = dot(n1, n1);
     float n2LenSq = dot(n2, n2);
     
     if (n1LenSq < EPSILON || n2LenSq < EPSILON) return;  // Degenerate triangle
     
-    // Normalize by squared length (Velvet's approach)
-    // This is part of the gradient formulation
-    n1 /= n1LenSq;
-    n2 /= n2LenSq;
-
-    // Compute gradients (Velvet formulation)
-    float3 d0 = elen * n1;
-    float3 d1 = elen * n2;
-    float3 d2 = dot(p0 - p3, e) * invElen * n1 + dot(p1 - p3, e) * invElen * n2;
-    float3 d3 = dot(p2 - p0, e) * invElen * n1 + dot(p2 - p1, e) * invElen * n2;
-
-    // Compute current dihedral angle
-    // Need normalized normals for angle calculation
-    float3 n1Norm = normalize(cross(p2 - p0, p3 - p0));
-    float3 n2Norm = normalize(cross(p3 - p1, p2 - p1));
-    float dotProduct = clamp(dot(n1Norm, n2Norm), -1.0f, 1.0f);
-    float phi = acos(dotProduct);
-
-    // Compute lambda denominator (sum of weighted gradient magnitudes)
-    float lambda_denom =
-        w0 * dot(d0, d0) +
-        w1 * dot(d1, d1) +
-        w2 * dot(d2, d2) +
-        w3 * dot(d3, d3);
-
-    if (lambda_denom < EPSILON) return;
-
-    // Per-instance bend stiffness (all particles in a bend constraint belong to the same instance)
-    uint instanceID = PredictedRead[idx0].InstanceID;
-    FClothInstanceParameters params = InstanceParams[instanceID];
-
-    // Combine stiffness: global (constant buffer), per-instance, per-constraint
-    float combinedStiffness = clamp(BendStiffness * params.BendStiffness * constraint.Stiffness, 0.0f, 1.0f);
-
-    // XPBD compliance (Velvet pattern)
-    // If UseXPBD is enabled, use compliance; otherwise use PBD with stiffness
-    float xpbd_compliance = 0.0f;
-    if (UseXPBD > 0)
-    {
-        // XPBD mode: use constraint compliance scaled by dt^2
-        float bendCompliance = constraint.Compliance;
-        xpbd_compliance = bendCompliance / (DeltaTime * DeltaTime);
-    }
+    float n1Len = sqrt(n1LenSq);
+    float n2Len = sqrt(n2LenSq);
     
-    // Compute lambda (angle error divided by denominator)
-    float angleError = phi - restAngle;
-    float lambda = angleError / (lambda_denom + xpbd_compliance);
+    // Normalized normals for angle computation
+    float3 n1Norm = n1 / n1Len;
+    float3 n2Norm = n2 / n2Len;
 
-    // Apply stiffness scaling (for PBD mode or as additional control for XPBD)
-    lambda *= combinedStiffness;
+    // === STEP 2: Compute signed dihedral angle ===
+    // Angle between normals
+    float cosAngle = clamp(dot(n1Norm, n2Norm), -1.0f, 1.0f);
+    float phi = acos(cosAngle);
+    
+    // Determine sign: if normals point away from each other, angle is positive
+    float3 crossNormals = cross(n1Norm, n2Norm);
+    float angleSign = dot(crossNormals, eNorm);
+    
+    // Apply sign to get signed dihedral angle
+    if (angleSign < 0.0f)
+        phi = -phi;
 
-    // Determine sign based on normal orientation
-    if (dot(cross(n1Norm, n2Norm), e) > 0.0f)
-        lambda = -lambda;
+    // === STEP 3: Compute constraint error ===
+    float C = BendStiffness * (phi - restAngle);
 
-    // Compute corrections
-    /*float3 corr0 = -w0 * lambda * d0;
-    float3 corr1 = -w1 * lambda * d1;
-    float3 corr2 = -w2 * lambda * d2;
-    float3 corr3 = -w3 * lambda * d3;*/
-    float3 corr0 = -w0 * lambda * d0;
-    float3 corr1 = w1 * lambda * d1;
-    float3 corr2 = -w2 * lambda * d2;
-    float3 corr3 = w3 * lambda * d3;
+    // === STEP 4: Compute constraint gradients ===
+    // Standard dihedral angle gradients (from Macklin/Bender)
+    // Gradients for opposite vertices (simple):
+    float3 gradC = (eLen / n1LenSq) * n1;
+    float3 gradD = -(eLen / n2LenSq) * n2;  // Note negative sign
+    
+    // Gradients for edge vertices (involve projections):
+    // Factor for how far along the edge each opposite vertex projects
+    float factorC = dot(pC - pA, e) / (eLen * eLen);
+    float factorD = dot(pD - pA, e) / (eLen * eLen);
+    
+    float3 gradA = -(1.0f - factorC) * gradC + (1.0f - factorD) * gradD;
+    float3 gradB = -factorC * gradC + factorD * gradD;
 
-    // Atomic accumulation (scaled to int)
-    int3 delta0 = int3(corr0 * kScale);
-    int3 delta1 = int3(corr1 * kScale);
-    int3 delta2 = int3(corr2 * kScale);
-    int3 delta3 = int3(corr3 * kScale);
+    // === STEP 5: Compute XPBD denominator ===
+    float denom =
+        wA * dot(gradA, gradA) +
+        wB * dot(gradB, gradB) +
+        wC * dot(gradC, gradC) +
+        wD * dot(gradD, gradD);
 
-    InterlockedAdd(PositionDelta[idx0].x, delta0.x);
-    InterlockedAdd(PositionDelta[idx0].y, delta0.y);
-    InterlockedAdd(PositionDelta[idx0].z, delta0.z);
-    InterlockedAdd(PositionWeight[idx0], 1);
+    if (denom < EPSILON) return;
 
-    InterlockedAdd(PositionDelta[idx1].x, delta1.x);
-    InterlockedAdd(PositionDelta[idx1].y, delta1.y);
-    InterlockedAdd(PositionDelta[idx1].z, delta1.z);
-    InterlockedAdd(PositionWeight[idx1], 1);
+    // === STEP 6: Pure XPBD update (NO STIFFNESS) ===
+    // Compliance term: alpha = compliance / dt^2
+    // If compliance = 0, constraint is hard (infinite stiffness)
+    float alpha = (constraint.Compliance > EPSILON) 
+        ? (constraint.Compliance / (DeltaTime * DeltaTime))
+        : 0.0f;
+    
+    // Load old lambda (warm starting)
+    float lambdaOld = constraint.Lambda;
+    
+    // XPBD Lagrange multiplier update
+    // deltaLambda = -(C + alpha * lambdaOld) / (denom + alpha)
+    float deltaLambda = -(C + alpha * lambdaOld) / (denom + alpha);
+    
+    // Update lambda (accumulate)
+    float lambdaNew = lambdaOld + deltaLambda;
+    
+    // Write back updated lambda for next iteration/frame
+    BendConstraints[id].Lambda = lambdaNew;
 
-    InterlockedAdd(PositionDelta[idx2].x, delta2.x);
-    InterlockedAdd(PositionDelta[idx2].y, delta2.y);
-    InterlockedAdd(PositionDelta[idx2].z, delta2.z);
-    InterlockedAdd(PositionWeight[idx2], 1);
+    // === STEP 7: Compute position corrections ===
+    // deltax_i = -w_i * deltaLambda * grad_i
+    float3 corrA = -wA * deltaLambda * gradA;
+    float3 corrB = -wB * deltaLambda * gradB;
+    float3 corrC = -wC * deltaLambda * gradC;
+    float3 corrD = -wD * deltaLambda * gradD;
 
-    InterlockedAdd(PositionDelta[idx3].x, delta3.x);
-    InterlockedAdd(PositionDelta[idx3].y, delta3.y);
-    InterlockedAdd(PositionDelta[idx3].z, delta3.z);
-    InterlockedAdd(PositionWeight[idx3], 1);
+#if DEBUG_BEND
+    if (id == DEBUG_ID)
+    {
+        // Debug: could store values in padding or use debug buffer
+        // For now, just a marker that debug is enabled
+    }
+#endif
+
+    // === STEP 8: Accumulate corrections (fixed-point for atomics) ===
+    int3 deltaA = int3(corrA * kScale);
+    int3 deltaB = int3(corrB * kScale);
+    int3 deltaC = int3(corrC * kScale);
+    int3 deltaD = int3(corrD * kScale);
+
+    InterlockedAdd(PositionDelta[idxA].x, deltaA.x);
+    InterlockedAdd(PositionDelta[idxA].y, deltaA.y);
+    InterlockedAdd(PositionDelta[idxA].z, deltaA.z);
+    InterlockedAdd(PositionWeight[idxA], 1);
+
+    InterlockedAdd(PositionDelta[idxB].x, deltaB.x);
+    InterlockedAdd(PositionDelta[idxB].y, deltaB.y);
+    InterlockedAdd(PositionDelta[idxB].z, deltaB.z);
+    InterlockedAdd(PositionWeight[idxB], 1);
+
+    InterlockedAdd(PositionDelta[idxC].x, deltaC.x);
+    InterlockedAdd(PositionDelta[idxC].y, deltaC.y);
+    InterlockedAdd(PositionDelta[idxC].z, deltaC.z);
+    InterlockedAdd(PositionWeight[idxC], 1);
+
+    InterlockedAdd(PositionDelta[idxD].x, deltaD.x);
+    InterlockedAdd(PositionDelta[idxD].y, deltaD.y);
+    InterlockedAdd(PositionDelta[idxD].z, deltaD.z);
+    InterlockedAdd(PositionWeight[idxD], 1);
 }
