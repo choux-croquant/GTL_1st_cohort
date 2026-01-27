@@ -1,21 +1,19 @@
 /**
  * Cloth Distance Constraint Solver
- * Solves distance constraints using Position-Based Dynamics (PBD/XPBD)
- * Now supports batched simulation with per-instance parameters
+ * Solves distance constraints using Position-Based Dynamics (PBD)
  *
- * PHASE 2 UPDATE (Velvet-inspired):
- * - Corrected formulation to exactly match Velvet's SolveStretch_Kernel
- * - Clearer variable naming matching Velvet
- * - Stiffness handled correctly as per-instance multiplier
+ * VELVET PATTERN (Single Working Buffer):
+ * - Reads from PredictedBuffer (working buffer)
+ * - Accumulates deltas to PositionDelta/PositionWeight buffers
+ * - PredictedBuffer modified in-place by ApplyDeltas shader
  */
 
 #include "ClothCommon.hlsli"
 
 // Read-only buffers
-StructuredBuffer<FClothParticle> PositionRead : register(t0);
-StructuredBuffer<FDistanceConstraint> ConstraintBuffer : register(t1);
-StructuredBuffer<float> InvMassBuffer : register(t2);
-StructuredBuffer<FClothInstanceParameters> InstanceParams : register(t3);
+StructuredBuffer<FClothParticle> PredictedRead : register(t0);  // Read predicted positions
+StructuredBuffer<FDistanceConstraint> Constraints : register(t1);
+StructuredBuffer<float> InvMass : register(t2);
 
 // Write buffers for delta accumulation
 RWStructuredBuffer<int3> PositionDelta : register(u0);
@@ -24,76 +22,53 @@ RWStructuredBuffer<int>  PositionWeight : register(u1);
 static const float kScale = 10000.0f;
 static const float EPSILON = 1e-6f;
 
-[numthreads(64, 1, 1)]
+[numthreads(256, 1, 1)]
 void SolveDistanceConstraintsCS(uint3 DTid : SV_DispatchThreadID)
 {
     uint idx = DTid.x;
     if (idx >= NumConstraints) return;
 
-    FDistanceConstraint constraint = ConstraintBuffer[idx];
+    FDistanceConstraint constraint = Constraints[idx];
 
-    // Load particles (Velvet naming: idx1, idx2)
-    uint idx1 = constraint.ParticleA;
-    uint idx2 = constraint.ParticleB;
+    // Load particles
+    uint i0 = constraint.ParticleA;
+    uint i1 = constraint.ParticleB;
     
-    FClothParticle p1 = PositionRead[idx1];
-    FClothParticle p2 = PositionRead[idx2];
+    // Read predicted positions
+    float3 p0 = PredictedRead[i0].Position;
+    float3 p1 = PredictedRead[i1].Position;
 
-    // Velvet formulation: diff = predicted[idx1] - predicted[idx2]
-    float3 diff = p1.Position - p2.Position;
-    float distance = length(diff);
-    float expectedDistance = constraint.RestLength;
+    // Compute constraint violation
+    float3 diff = p1 - p0;
+    float dist = length(diff);
+    float C = dist - constraint.RestLength;
     
-    // Early out for degenerate constraints
-    if (distance < EPSILON) return;
+    // Early out for degenerate or satisfied constraints
+    if (abs(C) < EPSILON || dist < EPSILON) return;
 
-    // Load inverse masses
-    float w1 = InvMassBuffer[idx1];
-    float w2 = InvMassBuffer[idx2];
-    float denom = w1 + w2;
-    if (denom < EPSILON) return;
-
-    // Get per-instance stiffness multiplier
-    uint instanceID = p1.InstanceID;
-    FClothInstanceParameters params = InstanceParams[instanceID];
+    float3 dir = diff / dist;
+    float w0 = InvMass[i0];
+    float w1 = InvMass[i1];
+    float wSum = w0 + w1;
     
-    // Skip if instance is inactive
-    if (params.IsActive == 0) return;
+    if (wSum < EPSILON) return;
 
-    // Check if constraint should be enforced (Velvet check)
-    if (distance != expectedDistance && denom > 0)
-    {
-        // Gradient (normalized direction from p2 to p1)
-        float3 gradient = diff / (distance + EPSILON);
-        
-        // Compute lambda (Velvet formulation)
-        // For PBD with compliance=0: lambda = C / (w1 + w2)
-        // Where C = distance - expectedDistance (constraint violation)
-        float lambda = (distance - expectedDistance) / denom;
-        float3 common = lambda * gradient;
-        
-        // Compute corrections (Velvet pattern)
-        // CRITICAL FIX: Do NOT multiply by stiffness here!
-        // Velvet uses pure PBD with compliance=0, meaning stiffness is implicitly 1.0
-        // Multiplying by stiffness < 1.0 weakens constraints and causes stretching
-        float3 correction1 = -w1 * common;
-        float3 correction2 =  w2 * common;
-        
-        // NOTE: Stiffness/compliance would be handled via XPBD compliance parameter
-        // For now, we use hard constraints (stiffness = 1.0) like Velvet
-        
-        // Atomic accumulation (scaled to int for InterlockedAdd)
-        int3 delta1Int = int3(correction1 * kScale);
-        int3 delta2Int = int3(correction2 * kScale);
+    // Compute corrections (Velvet formulation)
+    float3 corr = -C * dir / wSum;
+    float3 corr0 = corr * w0;
+    float3 corr1 = -corr * w1;
+    
+    // Atomic accumulation (scaled to int for InterlockedAdd)
+    int3 delta0Int = int3(corr0 * kScale);
+    int3 delta1Int = int3(corr1 * kScale);
 
-        InterlockedAdd(PositionDelta[idx1].x, delta1Int.x);
-        InterlockedAdd(PositionDelta[idx1].y, delta1Int.y);
-        InterlockedAdd(PositionDelta[idx1].z, delta1Int.z);
-        InterlockedAdd(PositionWeight[idx1], 1);
+    InterlockedAdd(PositionDelta[i0].x, delta0Int.x);
+    InterlockedAdd(PositionDelta[i0].y, delta0Int.y);
+    InterlockedAdd(PositionDelta[i0].z, delta0Int.z);
+    InterlockedAdd(PositionWeight[i0], 1);
 
-        InterlockedAdd(PositionDelta[idx2].x, delta2Int.x);
-        InterlockedAdd(PositionDelta[idx2].y, delta2Int.y);
-        InterlockedAdd(PositionDelta[idx2].z, delta2Int.z);
-        InterlockedAdd(PositionWeight[idx2], 1);
-    }
+    InterlockedAdd(PositionDelta[i1].x, delta1Int.x);
+    InterlockedAdd(PositionDelta[i1].y, delta1Int.y);
+    InterlockedAdd(PositionDelta[i1].z, delta1Int.z);
+    InterlockedAdd(PositionWeight[i1], 1);
 }

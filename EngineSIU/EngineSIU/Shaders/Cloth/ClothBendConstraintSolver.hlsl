@@ -1,38 +1,34 @@
 /**
  * Cloth Bend Constraint Solver
  * Solves dihedral angle bending constraints using proper gradient derivation
- * Now supports batched simulation with per-instance parameters
- * 
- * PHASE 2 COMPLETE REWRITE (Velvet-inspired):
- * - Proper gradient calculation matching Velvet's SolveBending_Kernel
+ *
+ * VELVET PATTERN (Single Working Buffer):
+ * - Reads from PredictedBuffer (working buffer)
+ * - Accumulates deltas to PositionDelta/PositionWeight buffers
  * - XPBD compliance support
- * - Accurate dihedral angle constraint solving
- * 
- * Based on: Velvet/VtClothSolverGPU.cu::SolveBending_Kernel (lines 117-189)
  */
 
 #include "ClothCommon.hlsli"
 
 // Read-only buffers
-StructuredBuffer<FClothParticle> PositionRead : register(t0);
-StructuredBuffer<FBendConstraint> BendConstraintBuffer : register(t1);
-StructuredBuffer<float> InvMassBuffer : register(t2);
-StructuredBuffer<FClothInstanceParameters> InstanceParams : register(t3);
+StructuredBuffer<FClothParticle> PredictedRead : register(t0);  // Read predicted positions
+StructuredBuffer<FBendConstraint> BendConstraints : register(t1);
+StructuredBuffer<float> InvMass : register(t2);
 
 // Write buffers
 RWStructuredBuffer<int3> PositionDelta : register(u0);
 RWStructuredBuffer<int> PositionWeight : register(u1);
 
-static const float kScale = 10000.0f;  // FIXED: Match distance constraint scaling
+static const float kScale = 10000.0f;
 static const float EPSILON = 1e-6f;
 
-[numthreads(64, 1, 1)]
+[numthreads(256, 1, 1)]
 void SolveBendConstraintsCS(uint3 DTid : SV_DispatchThreadID)
 {
     uint id = DTid.x;
     if (id >= NumBendConstraints) return;
 
-    FBendConstraint constraint = BendConstraintBuffer[id];
+    FBendConstraint constraint = BendConstraints[id];
 
     // Load particle indices (Velvet naming)
     uint idx0 = constraint.ParticleA;
@@ -42,22 +38,16 @@ void SolveBendConstraintsCS(uint3 DTid : SV_DispatchThreadID)
     float restAngle = constraint.RestAngle;
 
     // Load inverse masses
-    float w0 = InvMassBuffer[idx0];
-    float w1 = InvMassBuffer[idx1];
-    float w2 = InvMassBuffer[idx2];
-    float w3 = InvMassBuffer[idx3];
+    float w0 = InvMass[idx0];
+    float w1 = InvMass[idx1];
+    float w2 = InvMass[idx2];
+    float w3 = InvMass[idx3];
 
-    // Load positions
-    float3 p0 = PositionRead[idx0].Position;
-    float3 p1 = PositionRead[idx1].Position;
-    float3 p2 = PositionRead[idx2].Position;
-    float3 p3 = PositionRead[idx3].Position;
-
-    // Get instance parameters
-    uint instanceID = PositionRead[idx0].InstanceID;
-    FClothInstanceParameters params = InstanceParams[instanceID];
-    
-    if (params.IsActive == 0) return;
+    // Load predicted positions
+    float3 p0 = PredictedRead[idx0].Position;
+    float3 p1 = PredictedRead[idx1].Position;
+    float3 p2 = PredictedRead[idx2].Position;
+    float3 p3 = PredictedRead[idx3].Position;
 
     // Compute shared edge e = p3 - p2 (Velvet formulation)
     float3 e = p3 - p2;
@@ -113,16 +103,11 @@ void SolveBendConstraintsCS(uint3 DTid : SV_DispatchThreadID)
     float angleError = phi - restAngle;
     float lambda = angleError / (lambda_denom + xpbd_bend);
 
-    // Determine sign based on normal orientation (Velvet check)
+    // Determine sign based on normal orientation
     if (dot(cross(n1Norm, n2Norm), e) > 0.0f)
         lambda = -lambda;
 
-    // CRITICAL FIX: Do NOT multiply by stiffness - causes weak bending!
-    // Velvet uses compliance parameter to control bending strength
-    // Per-instance tuning should be via compliance, not stiffness multiplier
-    // lambda *= params.BendStiffness;  // REMOVED - weakens constraints
-
-    // Compute corrections (Velvet pattern)
+    // Compute corrections
     float3 corr0 = -w0 * lambda * d0;
     float3 corr1 = -w1 * lambda * d1;
     float3 corr2 = -w2 * lambda * d2;

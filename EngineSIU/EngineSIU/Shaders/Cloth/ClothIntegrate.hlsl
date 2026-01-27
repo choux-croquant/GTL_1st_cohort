@@ -2,25 +2,25 @@
  * Cloth Integration Compute Shader
  * Performs semi-implicit Euler integration for cloth particles
  * Applies external forces (gravity, wind, drag) and predicts new positions
- * Now supports batched simulation with per-instance parameters
  *
- * MODIFIED (Velvet-inspired):
- * - Removed velocity damping (now in Finalize shader)
- * - Uses MaxSpeed from constants for safety clamping
+ * VELVET PATTERN (Single Working Buffer):
+ * - Reads from PositionBuffer (old positions) and VelocityBuffer
+ * - Writes to PredictedBuffer (working buffer for constraint solving)
+ * - Velocity damping removed (now in Finalize shader)
  */
 
 #include "ClothCommon.hlsli"
 
-// Input/Output buffers
-RWStructuredBuffer<FClothParticle> PositionRead  : register(u0);
-RWStructuredBuffer<FClothParticle> PositionWrite : register(u1);
-RWStructuredBuffer<FClothVelocity> VelocityBuffer : register(u2);
-
-// Batched simulation buffers
-StructuredBuffer<float> InvMassBuffer : register(t2);  // Separate inverse mass buffer
+// Input buffers (read-only)
+StructuredBuffer<FClothParticle> PositionRead : register(t0);  // Old positions
+StructuredBuffer<FClothVelocity> VelocityRead : register(t1);  // Current velocities
+StructuredBuffer<float> InvMass : register(t2);                // Inverse masses
 StructuredBuffer<FClothInstanceParameters> InstanceParams : register(t3);  // Per-instance parameters
 
-[numthreads(64, 1, 1)]
+// Output buffer (write predicted positions)
+RWStructuredBuffer<FClothParticle> PredictedWrite : register(u0);  // Predicted positions
+
+[numthreads(256, 1, 1)]
 void IntegrateCS(uint3 DTid : SV_DispatchThreadID)
 {
     uint idx = DTid.x;
@@ -29,61 +29,49 @@ void IntegrateCS(uint3 DTid : SV_DispatchThreadID)
     if (idx >= NumParticles)
         return;
 
-    // Load particle data
-    FClothParticle particle = PositionRead[idx];
-    FClothVelocity velocity = VelocityBuffer[idx];
-    float invMass = InvMassBuffer[idx];  // Load from separate buffer
-
-    // Skip fixed particles
+    float invMass = InvMass[idx];
+    
+    // Skip kinematic particles (invMass == 0)
     if (invMass == 0.0f)
     {
-        PositionWrite[idx] = particle;
-        VelocityBuffer[idx] = velocity;
+        // Copy position unchanged
+        PredictedWrite[idx] = PositionRead[idx];
         return;
     }
 
     // Get per-instance parameters
-    uint instanceID = particle.InstanceID;
+    uint instanceID = PositionRead[idx].InstanceID;
     FClothInstanceParameters params = InstanceParams[instanceID];
     
     // Check if instance is active
     if (params.IsActive == 0)
     {
-        PositionWrite[idx] = particle;
-        VelocityBuffer[idx] = velocity;
+        PredictedWrite[idx] = PositionRead[idx];
         return;
     }
 
+    // Load particle data
+    float3 position = PositionRead[idx].Position;
+    float3 velocity = VelocityRead[idx].Velocity;
+
     // Calculate total external force using per-instance parameters
     float3 force = float3(0, 0, 0);
-
+    
     // Add per-instance gravity
     force += params.Gravity * params.GravityMultiplier;
-
+    
     // Add per-instance wind with air drag
     force += params.Wind * params.WindStrength * params.AirDrag;
+    
+    // Semi-implicit Euler integration
+    velocity += force * DeltaTime;
 
-    // Acceleration
-    float3 acceleration = force * invMass;
+    // Predict new position
+    float3 predicted = position + velocity * DeltaTime;
 
-    // Semi-implicit Euler (velocity first, then position)
-    velocity.Velocity += acceleration * DeltaTime;
-
-    // REMOVED: Velocity damping (now in Finalize shader after constraints)
-    // velocity.Velocity *= (1.0f - params.Damping);
-
-    // Safety clamp velocity (generous limit, real clamping in Finalize)
-    // This is a safety measure to prevent initial explosions
-    //float maxVelocity = MaxSpeed * 2.0f;  // 2x max speed as safety margin
-    //float velMagnitude = length(velocity.Velocity);
-    //if (velMagnitude > maxVelocity)
-    //{
-    //    velocity.Velocity = (velocity.Velocity / velMagnitude) * maxVelocity;
-    //}
-
-    // Update position from velocity
-    particle.Position += velocity.Velocity * DeltaTime;
-
-    PositionWrite[idx] = particle;
-    VelocityBuffer[idx] = velocity;
+    // Write to predicted buffer
+    FClothParticle outParticle;
+    outParticle.Position = predicted;
+    outParticle.InstanceID = instanceID;
+    PredictedWrite[idx] = outParticle;
 }

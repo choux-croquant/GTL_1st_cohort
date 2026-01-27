@@ -100,7 +100,7 @@ private:
     void DispatchBendConstraintSolver(uint32 BendConstraintCount);
     void DispatchApplyDeltas(uint32 ParticleCount);
     void DispatchApplyKinematicTargets(uint32 TargetCount);
-    void DispatchFinalize(uint32 ParticleCount, int32 OldPositionBufferIndex);  // NEW: Velocity finalization
+    void DispatchFinalize(uint32 ParticleCount);  // NEW: Velocity finalization
     void DispatchClearNormals(uint32 ParticleCount);
     void DispatchUpdateNormals(uint32 TriangleCount);
     void DispatchNormalizeNormals(uint32 ParticleCount);
@@ -130,8 +130,9 @@ private:
     ID3D11ComputeShader *UpdateNormalsCS;
     ID3D11ComputeShader *NormalizeNormalsCS;
 
-    // Unified GPU buffers
-    ID3D11Buffer *UnifiedPositionBuffer[2]; // Ping-pong
+    // Unified GPU buffers (Velvet pattern - single working buffer)
+    ID3D11Buffer *UnifiedPositionBuffer;    // Final position buffer (for rendering)
+    ID3D11Buffer *UnifiedPredictedBuffer;   // Working buffer (for constraint solving)
     ID3D11Buffer *UnifiedVelocityBuffer;
     ID3D11Buffer *UnifiedInvMassBuffer;
     ID3D11Buffer *UnifiedConstraintBuffer;
@@ -143,13 +144,15 @@ private:
     ID3D11Buffer *UnifiedPositionWeightBuffer;
 
     // UAVs and SRVs
-    ID3D11UnorderedAccessView *UnifiedPositionUAV[2];
+    ID3D11UnorderedAccessView *UnifiedPositionUAV;
+    ID3D11UnorderedAccessView *UnifiedPredictedUAV;
     ID3D11UnorderedAccessView *UnifiedVelocityUAV;
     ID3D11UnorderedAccessView *UnifiedNormalUAV;
     ID3D11UnorderedAccessView *UnifiedPositionDeltaUAV;
     ID3D11UnorderedAccessView *UnifiedPositionWeightUAV;
 
-    ID3D11ShaderResourceView *UnifiedPositionSRV[2];
+    ID3D11ShaderResourceView *UnifiedPositionSRV;
+    ID3D11ShaderResourceView *UnifiedPredictedSRV;
     ID3D11ShaderResourceView *UnifiedVelocitySRV;
     ID3D11ShaderResourceView *UnifiedInvMassSRV;
     ID3D11ShaderResourceView *UnifiedConstraintSRV;
@@ -181,7 +184,6 @@ private:
     uint32 UsedTriangleCount;
     uint32 UsedInstanceCount;
 
-    int32 CurrentBufferIndex;
     bool bInitialized;
     
     // NEW: Substep timing state
