@@ -1,11 +1,6 @@
 /**
  * Cloth Distance Constraint Solver
  * Solves distance constraints using Position-Based Dynamics (PBD)
- *
- * VELVET PATTERN (Single Working Buffer):
- * - Reads from PredictedBuffer (working buffer)
- * - Accumulates deltas to PositionDelta/PositionWeight buffers
- * - PredictedBuffer modified in-place by ApplyDeltas shader
  */
 
 #include "ClothCommon.hlsli"
@@ -62,7 +57,6 @@ void SolveDistanceConstraintsCS(uint3 DTid : SV_DispatchThreadID)
     float stiffness = clamp(StretchStiffness * params.StretchStiffness * constraint.Stiffness, 0.0f, 1.0f);
 
     // Compute corrections (PBD formulation)
-    // CRITICAL FIX: Remove negative sign - when C > 0 (stretched), corrections should pull particles together
     float3 corr = (C * stiffness) * dir / wSum;
     float3 corr0 = corr * w0;
     float3 corr1 = -corr * w1;
