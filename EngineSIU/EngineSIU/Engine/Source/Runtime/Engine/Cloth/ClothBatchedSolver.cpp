@@ -4,6 +4,7 @@
  */
 
 #include "ClothBatchedSolver.h"
+#include "ClothCollisionManager.h"
 #include "Windows/D3D11RHI/GraphicDevice.h"
 #include "Windows/D3D11RHI/DXDBufferManager.h"
 #include "Windows/D3D11RHI/DXDShaderManager.h"
@@ -20,7 +21,7 @@
     }
 
 FClothBatchedSolver::FClothBatchedSolver()
-    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), IntegrateCS(nullptr), ConstraintSolverCS(nullptr), BendConstraintSolverCS(nullptr), ApplyDeltasCS(nullptr), ApplyKinematicTargetsCS(nullptr), FinalizeCS(nullptr), ClearNormalsCS(nullptr), UpdateNormalsCS(nullptr), NormalizeNormalsCS(nullptr), BatchSimConstantBuffer(nullptr), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), UsedParticleCount(0), UsedConstraintCount(0), UsedBendConstraintCount(0), UsedKinematicTargetCount(0), UsedTriangleCount(0), UsedInstanceCount(0), bInitialized(false), AccumulatedTime(0.0f)
+    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), IntegrateCS(nullptr), ConstraintSolverCS(nullptr), BendConstraintSolverCS(nullptr), ApplyDeltasCS(nullptr), ApplyKinematicTargetsCS(nullptr), FinalizeCS(nullptr), ClearNormalsCS(nullptr), UpdateNormalsCS(nullptr), NormalizeNormalsCS(nullptr), CollisionSolverCS(nullptr), CollisionManager(nullptr), BatchSimConstantBuffer(nullptr), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), UsedParticleCount(0), UsedConstraintCount(0), UsedBendConstraintCount(0), UsedKinematicTargetCount(0), UsedTriangleCount(0), UsedInstanceCount(0), bInitialized(false), AccumulatedTime(0.0f)
 {
     // Initialize all buffer pointers to nullptr (Velvet pattern - single working buffer)
     UnifiedPositionBuffer = nullptr;
@@ -87,6 +88,12 @@ void FClothBatchedSolver::Initialize(FGraphicsDevice *InGraphics,
         return;
     }
 
+    // Initialize collision manager
+    CollisionManager = new FClothCollisionManager();
+    CollisionManager->Initialize(512);  // Max 512 colliders
+    
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Collision manager initialized"));
+
     // NOTE: bInitialized will be set true in AllocateBuffers() after buffers are created
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Shaders loaded, ready for buffer allocation"));
 }
@@ -106,6 +113,15 @@ void FClothBatchedSolver::Release()
     ClearNormalsCS = nullptr;
     UpdateNormalsCS = nullptr;
     NormalizeNormalsCS = nullptr;
+    CollisionSolverCS = nullptr;
+
+    // Release collision manager
+    if (CollisionManager)
+    {
+        CollisionManager->Release();
+        delete CollisionManager;
+        CollisionManager = nullptr;
+    }
 
     // Release unified buffers (Velvet pattern - single working buffer)
     SAFE_RELEASE(UnifiedPositionBuffer);
@@ -619,8 +635,8 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
     // Writes: PredictedBuffer
     DispatchIntegration(UsedParticleCount);
 
-    // Step 2: Pre-stabilization collision (optional)
-    // TODO: DispatchCollisionSDF(PredictedBuffer);
+    // Step 2: Pre-stabilization collision (NEW - ADDED)
+    DispatchCollisionSDF(UsedParticleCount);
 
     // Step 3: Constraint solver iterations
     // All iterations work on PredictedBuffer IN-PLACE
@@ -749,6 +765,17 @@ bool FClothBatchedSolver::LoadComputeShaders()
         bSuccess = false;
     }
     NormalizeNormalsCS = ShaderManager->GetComputeShaderByKey(L"ClothNormalizeNormalsCS");
+
+    // Load or get Collision SDF shader (NEW)
+    hr = ShaderManager->AddComputeShader(L"ClothCollisionSDFCS",
+                                          L"Shaders/Cloth/ClothSDFCollision.hlsl",
+                                          "SolveCollisionsCS");
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to compile ClothSDFCollision shader (optional)"));
+        // Not critical - collision is optional
+    }
+    CollisionSolverCS = ShaderManager->GetComputeShaderByKey(L"ClothCollisionSDFCS");
 
     // Verify critical shaders loaded
     if (!IntegrateCS || !ConstraintSolverCS || !BendConstraintSolverCS || !ApplyDeltasCS || !FinalizeCS)
@@ -1294,6 +1321,49 @@ void FClothBatchedSolver::DispatchNormalizeNormals(uint32 ParticleCount)
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
 }
 
+void FClothBatchedSolver::DispatchCollisionSDF(uint32 ParticleCount)
+{
+    if (!Graphics || !Graphics->DeviceContext || !CollisionSolverCS || ParticleCount == 0)
+        return;
+    
+    if (!CollisionManager || CollisionManager->GetColliderCount() == 0)
+        return;
+    
+    // Update collision manager and upload if dirty
+    CollisionManager->UpdateTransforms();
+    CollisionManager->UploadToGPU(Graphics->Device, Graphics->DeviceContext);
+    
+    // Bind constant buffer (contains NumColliders, CollisionThickness, etc.)
+    Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
+    
+    // Bind SRVs:
+    // t0: Collider buffer (read-only)
+    // t1: InvMass (to skip kinematic particles)
+    ID3D11ShaderResourceView* srvs[2] = {
+        CollisionManager->GetColliderBufferSRV(),  // t0
+        UnifiedInvMassSRV                          // t1
+    };
+    Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
+    
+    // Bind UAV:
+    // u0: Predicted buffer (read-write, modify in-place)
+    ID3D11UnorderedAccessView* uavs[] = { UnifiedPredictedUAV };
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, uavs, nullptr);
+    
+    // Bind shader
+    Graphics->DeviceContext->CSSetShader(CollisionSolverCS, nullptr, 0);
+    
+    // Dispatch (one thread per particle)
+    uint32 dispatchCount = GetDispatchCount(ParticleCount, 256);
+    Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
+    
+    // Unbind
+    ID3D11UnorderedAccessView* nullUAVs[] = { nullptr };
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, nullUAVs, nullptr);
+    ID3D11ShaderResourceView* nullSRVs[2] = { nullptr, nullptr };
+    Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
+}
+
 void FClothBatchedSolver::ClearAccumulationBuffers(uint32 ParticleCount)
 {
     if (!Graphics || !Graphics->DeviceContext)
@@ -1331,6 +1401,11 @@ void FClothBatchedSolver::UpdateConstantBuffers(float DeltaTime)
     constants.RelaxationFactor = Config.RelaxationFactor;
     constants.MaxSpeed = Config.MaxSpeed;
     constants.LongRangeStretchiness = Config.LongRangeStretchiness;
+    
+    // NEW: Collision parameters
+    constants.NumColliders = CollisionManager ? CollisionManager->GetColliderCount() : 0;
+    constants.CollisionThickness = 0.1f;   // TODO: Make configurable in FClothConfig
+    constants.CollisionFriction = 0.2f;    // TODO: Make configurable
 
     constants.WorldMatrix = FMatrix::Identity;
 

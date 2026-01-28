@@ -110,6 +110,29 @@ struct FClothCollisionCapsuleGPU
     // Total: 32 bytes
 };
 
+/**
+ * Unified cloth collider structure (64 bytes, aligned)
+ * Single structure for all collider types (sphere/capsule/box)
+ * Must match FClothCollider in ClothCommon.hlsli
+ */
+struct FClothColliderGPU
+{
+	uint32 Type;            // 4 bytes - EClothColliderType: 0=Sphere, 1=Capsule, 2=Box
+	float Radius;           // 4 bytes - Sphere/Capsule radius
+	float HalfHeight;       // 4 bytes - Capsule half-height (0 for others)
+	float Padding0;         // 4 bytes
+	
+	FVector Center;         // 12 bytes - World-space center
+	float Padding1;         // 4 bytes
+	
+	FVector Axis;           // 12 bytes - Capsule axis (normalized), Box orientation
+	float Padding2;         // 4 bytes
+	
+	FVector Extents;        // 12 bytes - Box half-extents (0 for sphere/capsule)
+	float Padding3;         // 4 bytes
+	// Total: 64 bytes
+};
+
 // Static assertions to verify structure sizes (C++ only)
 static_assert(sizeof(FClothParticleGPU) == 16, "FClothParticleGPU must be 16 bytes");
 static_assert(sizeof(FClothVelocityGPU) == 16, "FClothVelocityGPU must be 16 bytes");
@@ -118,6 +141,7 @@ static_assert(sizeof(FClothBendConstraintGPU) == 32, "FClothBendConstraintGPU mu
 static_assert(sizeof(FClothKinematicTargetGPU) == 32, "FClothKinematicTargetGPU must be 32 bytes");
 static_assert(sizeof(FClothCollisionSphereGPU) == 16, "FClothCollisionSphereGPU must be 16 bytes");
 static_assert(sizeof(FClothCollisionCapsuleGPU) == 32, "FClothCollisionCapsuleGPU must be 32 bytes");
+static_assert(sizeof(FClothColliderGPU) == 64, "FClothColliderGPU must be 64 bytes");
 
 // Verify alignment
 static_assert(alignof(FClothParticleGPU) == 4, "FClothParticleGPU alignment");

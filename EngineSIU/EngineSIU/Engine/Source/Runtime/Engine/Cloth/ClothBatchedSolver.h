@@ -19,6 +19,7 @@
 class FGraphicsDevice;
 class FDXDBufferManager;
 class FDXDShaderManager;
+class FClothCollisionManager;
 
 /**
  * Batched cloth solver
@@ -90,6 +91,8 @@ public:
     void SetUsedCounts(uint32 Particles, uint32 Constraints, uint32 BendConstraints,
                        uint32 KinematicTargets, uint32 Triangles, uint32 Instances);
 
+    FClothCollisionManager* GetCollisionManager() { return CollisionManager; }
+
 private:
     // Simulation methods
     void SimulateSubstep(float SubstepDeltaTime); // NEW: Substep simulation
@@ -104,6 +107,7 @@ private:
     void DispatchClearNormals(uint32 ParticleCount);
     void DispatchUpdateNormals(uint32 TriangleCount);
     void DispatchNormalizeNormals(uint32 ParticleCount);
+    void DispatchCollisionSDF(uint32 ParticleCount); // NEW: SDF collision solver
 
     void ClearAccumulationBuffers(uint32 ParticleCount);
     void UpdateConstantBuffers(float DeltaTime);
@@ -129,6 +133,10 @@ private:
     ID3D11ComputeShader *ClearNormalsCS;
     ID3D11ComputeShader *UpdateNormalsCS;
     ID3D11ComputeShader *NormalizeNormalsCS;
+    ID3D11ComputeShader *CollisionSolverCS; // NEW: SDF collision shader
+
+    // Collision manager (NEW)
+    FClothCollisionManager *CollisionManager;
 
     // Unified GPU buffers (Velvet pattern - single working buffer)
     ID3D11Buffer *UnifiedPositionBuffer;  // Final position buffer (for rendering)

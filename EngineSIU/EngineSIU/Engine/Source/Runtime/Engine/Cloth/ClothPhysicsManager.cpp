@@ -2,6 +2,10 @@
 #include "Engine/UserInterface/Console.h"
 #include "World/World.h"
 #include "Cloth/ClothWorld.h"
+#include "Cloth/ClothCollisionManager.h"
+#include "Cloth/ClothBatchManager.h"
+#include "Cloth/ClothBatchedSolver.h"
+#include "Engine/Engine.h"
 
 FClothPhysicsManager::FClothPhysicsManager() = default;
 
@@ -28,6 +32,26 @@ FClothWorld* FClothPhysicsManager::CreateClothWorld(UWorld* World)
     FClothWorld* NewWorld = new FClothWorld();
     NewWorld->Initialize(Graphics, BufferManager, ShaderManager);
     ClothWorldMap.Add(World, NewWorld);
+
+    FClothCollisionManager* CollisionMgr = NewWorld->GetBatchManager(EClothLODLevel::LOD_0)->GetSolver()->GetCollisionManager();
+    TArray<UPrimitiveComponent*> Primitives;
+
+    for (const auto Iter : TObjectRange<UPrimitiveComponent>())
+    {
+        if (Iter->GetWorld() == GEngine->ActiveWorld)
+        {
+            Primitives.Add(Iter);
+        }
+    }
+
+    for (UPrimitiveComponent* Primitive : Primitives)
+    {
+        // Register colliders from this component's BodySetup
+        int32 NumColliders = CollisionMgr->RegisterCollider(Primitive);
+
+        /*UE_LOG(ELogLevel::Display, TEXT("Registered %d colliders from %s"),
+            NumColliders, *Actor->GetName());*/
+    }
 
     return NewWorld;
 }
