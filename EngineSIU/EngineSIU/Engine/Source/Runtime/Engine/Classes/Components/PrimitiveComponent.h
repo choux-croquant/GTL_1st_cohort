@@ -117,6 +117,8 @@ public:
 
     virtual void BeginPlay() override;
     
+    UBodySetup* GetBodySetup() { return BodySetup; }
+
 protected:
     TArray<FOverlapInfo> OverlappingComponents;
 

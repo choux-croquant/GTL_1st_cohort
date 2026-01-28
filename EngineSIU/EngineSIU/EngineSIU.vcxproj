@@ -401,6 +401,7 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\PhysicsEngine\PhysicsAsset.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchedSolver.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchManager.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothCollisionManager.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothInstanceHandle.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothWorld.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Engine\ClothAsset.cpp" />
@@ -819,6 +820,7 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchedSolver.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchManager.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchTypes.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothCollisionManager.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothInstanceHandle.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothSimulationData.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothGPUStructs.h" />

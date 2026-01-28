@@ -1678,6 +1678,7 @@
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchManager.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothInstanceHandle.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\TestBatchedClothActor.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothCollisionManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="EngineSIU.natvis" />
@@ -1862,6 +1863,7 @@
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchTypes.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothInstanceHandle.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\TestBatchedClothActor.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothCollisionManager.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\CompositingShader.hlsl" />

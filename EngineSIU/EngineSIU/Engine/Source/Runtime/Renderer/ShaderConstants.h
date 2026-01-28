@@ -283,7 +283,9 @@ struct alignas(16) FClothSimConstants
     float MaxSpeed;                // NEW: Velocity clamping (Velvet-inspired)
     
     float LongRangeStretchiness;   // NEW: LRA slack multiplier (Velvet default: 1.2)
-    float Padding3;
+    uint32 NumColliders;           // NEW: Number of active colliders
+    float CollisionThickness;      // NEW: Collision distance threshold
+    float CollisionFriction;       // NEW: Friction coefficient (0-1)
 
     alignas(16) FMatrix WorldMatrix;
 };
