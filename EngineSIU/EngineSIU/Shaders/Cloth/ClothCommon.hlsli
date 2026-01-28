@@ -31,7 +31,9 @@ cbuffer ClothSimConstants : register(b0)
     float MaxSpeed;                // NEW: Velocity clamping (Velvet-inspired)
     
     float LongRangeStretchiness;   // NEW: LRA slack multiplier (Velvet default: 1.2)
-    float Padding3;
+    uint NumColliders;             // NEW: Number of active colliders
+    float CollisionThickness;      // NEW: Collision distance threshold
+    float CollisionFriction;       // NEW: Friction coefficient (0-1)
 
     float4x4 WorldMatrix;
 };
@@ -161,6 +163,28 @@ struct FClothCollisionCapsule
     float Radius;
     float3 End;
     float Padding;
+};
+
+/**
+ * Unified collider structure (HLSL)
+ * Single structure for all collider types (sphere/capsule/box)
+ * Must match FClothColliderGPU in ClothGPUStructs.h
+ */
+struct FClothCollider
+{
+    uint Type;              // 0=Sphere, 1=Capsule, 2=Box
+    float Radius;
+    float HalfHeight;       // For capsule only
+    float Padding0;
+    
+    float3 Center;          // World-space center
+    float Padding1;
+    
+    float3 Axis;            // Capsule axis (normalized)
+    float Padding2;
+    
+    float3 Extents;         // Box half-extents
+    float Padding3;
 };
 
 // Helper functions
