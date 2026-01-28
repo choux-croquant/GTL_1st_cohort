@@ -29,7 +29,7 @@ public:
     virtual void Tick(float DeltaTime) override;
 
     // Multiple cloth instances for batching test
-    static constexpr int32 NumClothInstances = 5;
+    static constexpr int32 NumClothInstances = 1;
     UClothMeshComponent *ClothMeshes[NumClothInstances];
     UClothAsset *ClothAssets[NumClothInstances];
     FClothInstanceHandle *ClothHandles[NumClothInstances];
@@ -39,7 +39,7 @@ public:
     FVector DriverInitialPositions[NumClothInstances];
 
     // Create test cloth grid
-    void CreateTestCloth(int32 Index, int32 GridSize, EClothLODLevel LOD);
+    void CreateTestCloth(int32 Index, int32 GridSize, int32 Spacing, EClothLODLevel LOD);
 
 private:
     // Animation time

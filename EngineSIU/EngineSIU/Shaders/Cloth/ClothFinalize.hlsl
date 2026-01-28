@@ -76,7 +76,7 @@ void FinalizeVelocityCS(uint3 DTid : SV_DispatchThreadID)
     }
     
     // Apply damping using per-instance damping parameter (matching Velvet: velocities[id] = raw_vel * (1 - damping * dt))
-    float3 dampedVel = rawVel * (1.0 - params.Damping * DeltaTime);
+    float3 dampedVel = rawVel * (1.0 - params.Damping * DeltaTime * Damping);
     
     // Write outputs (positions updated in-place on GPU)
     FClothVelocity vel;

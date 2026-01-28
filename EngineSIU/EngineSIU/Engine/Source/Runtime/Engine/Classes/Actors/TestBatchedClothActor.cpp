@@ -56,7 +56,7 @@ void ATestBatchedClothActor::Tick(float DeltaTime)
         return;
     }
 
-    // for (int32 i = 0; i < NumClothInstances; ++i)
+    //for (int32 i = 0; i < NumClothInstances; ++i)
     //{
     //     if (AttachmentDrivers[i])
     //     {
@@ -67,7 +67,7 @@ void ATestBatchedClothActor::Tick(float DeltaTime)
 
     //        float Time = AnimationTime * Speed + phaseOffset;
 
-    //        // Different motion patterns based on instance index
+    //         Different motion patterns based on instance index
     //        float OffsetY = FMath::Sin(Time) * MoveRadius;
     //        float OffsetX = FMath::Cos(Time * 2.0f) * (MoveRadius * 0.3f);
     //        float OffsetZ = FMath::Sin(Time * 1.5f) * (MoveRadius * 0.15f);
@@ -88,12 +88,10 @@ void ATestBatchedClothActor::Tick(float DeltaTime)
     AnimationTime += DeltaTime;
 }
 
-void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, EClothLODLevel LOD)
+void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, int32 Spacing, EClothLODLevel LOD)
 {
     if (Index < 0 || Index >= NumClothInstances)
         return;
-
-    const float Spacing = 5.0f; // 5cm spacing between particles
 
     TArray<FVector> positions;
     TArray<uint32> indices;
@@ -446,7 +444,9 @@ void ATestBatchedClothActor::PostSpawnInitialize()
     // LOD 0 (High detail) - Batch Test
     for (int32 i = 0; i < NumClothInstances; i++)
     {
-        CreateTestCloth(i, 20 - i * 2, EClothLODLevel::LOD_0);
+        //CreateTestCloth(i, 20 - i * 2, 5.0f, EClothLODLevel::LOD_0);
+        CreateTestCloth(i, 10, 5.0f, EClothLODLevel::LOD_0);
+        //CreateTestCloth(i, 100, 0.5f, EClothLODLevel::LOD_0);
     }
 
     // Position instances in a grid layout

@@ -45,7 +45,7 @@ void ClothConfigPanel::Render()
 
     if (ImGui::Begin("Cloth Configuration", &bShowPanel, WindowFlags))
     {
-        ImGui::Text("Runtime Cloth Simulation Tuning");
+        ImGui::Text("Cloth Simulation Solver Config");
         ImGui::Separator();
 
         RenderClothConfig();
@@ -95,7 +95,7 @@ void ClothConfigPanel::RenderClothConfig()
     if (ImGui::TreeNodeEx("Global Settings", ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen))
     {
         //bConfigChanged |= ImGui::SliderFloat("Mass", &Config.Mass, 0.1f, 10.0f, "%.2f");
-        bConfigChanged |= ImGui::SliderFloat("Damping", &Config.Damping, 0.0f, 1.0f, "%.3f");
+        bConfigChanged |= ImGui::SliderFloat("Damping", &Config.Damping, 0.0f, 10.0f, "%.3f");
         //bConfigChanged |= ImGui::SliderFloat("Friction", &Config.Friction, 0.0f, 1.0f, "%.3f");
 
         ImGui::TreePop();
@@ -146,13 +146,7 @@ void ClothConfigPanel::RenderClothConfig()
             ImGui::SetTooltip("Simulation substeps per frame");
         }
 
-       /* bConfigChanged |= ImGui::SliderFloat("Fixed Substep Time", &Config.FixedSubstepTime, 1.0f / 1200.0f, 1.0f / 60.0f, "%.6f");
-        if (ImGui::IsItemHovered())
-        {
-            ImGui::SetTooltip("Target time per substep (lower = more accurate)");
-        }
-
-        bConfigChanged |= ImGui::SliderInt("Max Substeps/Frame", &Config.MaxSubstepsPerFrame, 1, 20);
+        /*bConfigChanged |= ImGui::SliderInt("Max Substeps/Frame", &Config.MaxSubstepsPerFrame, 1, 20);
         if (ImGui::IsItemHovered())
         {
             ImGui::SetTooltip("Safety limit to prevent performance issues");
@@ -185,13 +179,13 @@ void ClothConfigPanel::RenderClothConfig()
     }
 
     // Wind and Forces
-    if (ImGui::TreeNodeEx("Wind & Forces", ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen))
+    /*if (ImGui::TreeNodeEx("Wind & Forces", ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen))
     {
         bConfigChanged |= ImGui::SliderFloat("Air Drag", &Config.AirDrag, 0.0f, 5.0f, "%.2f");
         bConfigChanged |= ImGui::SliderFloat("Wind Strength", &Config.WindStrength, 0.0f, 10.0f, "%.2f");
 
         ImGui::TreePop();
-    }
+    }*/
 
     // Collision Settings
     if (ImGui::TreeNodeEx("Collision", ImGuiTreeNodeFlags_Framed))
