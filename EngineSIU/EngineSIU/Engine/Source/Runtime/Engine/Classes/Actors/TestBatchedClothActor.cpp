@@ -67,7 +67,7 @@ void ATestBatchedClothActor::Tick(float DeltaTime)
 
     //        float Time = AnimationTime * Speed + phaseOffset;
 
-    //         Different motion patterns based on instance index
+    //        // Different motion patterns based on instance index
     //        float OffsetY = FMath::Sin(Time) * MoveRadius;
     //        float OffsetX = FMath::Cos(Time * 2.0f) * (MoveRadius * 0.3f);
     //        float OffsetZ = FMath::Sin(Time * 1.5f) * (MoveRadius * 0.15f);

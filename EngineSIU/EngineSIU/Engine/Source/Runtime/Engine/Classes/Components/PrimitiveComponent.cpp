@@ -637,8 +637,6 @@ void UPrimitiveComponent::CreatePhysXGameObject()
         }
     }
 
-        // *** 중요: 실제 PhysX GameObject 생성 부분이 누락되어 있었음! ***Add commentMore actions
-    // Shape를 생성했으니 이제 실제 PhysX GameObject를 생성해야 함
     if (GEngine && GEngine->PhysicsManager)
     {
         BodyInstance->BIGameObject = GEngine->PhysicsManager->CreateGameObject(
