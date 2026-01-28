@@ -618,56 +618,36 @@ void FClothBatchedSolver::Simulate(float DeltaTime)
 
 void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
 {
-    // Update constant buffers with substep delta time
     UpdateConstantBuffers(SubstepDeltaTime);
 
-    // Step 1: Predict positions (Integration)
-    // Reads: PositionBuffer (old positions), VelocityBuffer
-    // Writes: PredictedBuffer
+    // Apply Force & Position prediction
     DispatchIntegration(UsedParticleCount);
 
-    // Step 2: Pre-stabilization collision (NEW - ADDED)
     DispatchCollisionSDF(UsedParticleCount);
 
-    // Step 3: Constraint solver iterations
-    // All iterations work on PredictedBuffer IN-PLACE
     for (int32 iter = 0; iter < Config.NumIterations; ++iter)
     {
-        // Clear delta accumulation buffers
-        ClearAccumulationBuffers(UsedParticleCount);
 
-        // Solve distance constraints
         if (UsedConstraintCount > 0)
         {
             DispatchConstraintSolver(UsedConstraintCount);
         }
 
-        // Solve bend constraints
         if (UsedBendConstraintCount > 0)
         {
             DispatchBendConstraintSolver(UsedBendConstraintCount);
         }
 
-        // Apply accumulated deltas to PredictedBuffer IN-PLACE
-        // Reads: PredictedBuffer, DeltaBuffer, WeightBuffer
-        // Writes: PredictedBuffer (modified in-place)
         DispatchApplyDeltas(UsedParticleCount);
-
-        // NO BUFFER SWAPS - predicted buffer stays consistent
     }
 
-    // Step 4: Apply kinematic targets (once after all iterations)
     if (UsedKinematicTargetCount > 0)
     {
         DispatchApplyKinematicTargets(UsedKinematicTargetCount);
     }
 
-    // Step 5: Finalize - derive velocity and write final positions (in-place)
-    // Reads: PositionBuffer (old) via UAV, PredictedBuffer (new) via SRV
-    // Writes: VelocityBuffer, PositionBuffer (overwrite with new positions)
+    // Update Final Position and Velocity of particles
     DispatchFinalize(UsedParticleCount);
-
-    // NO CurrentBufferIndex - always render from PositionBuffer
 }
 
 bool FClothBatchedSolver::LoadComputeShaders()

@@ -50,10 +50,9 @@ public:
 
     FComponentEndOverlapSignature OnComponentEndOverlap;
 
-    UPROPERTY_WITH_FLAGS(EditAnywhere, bool, bSimulate, = true)
+    UPROPERTY_WITH_FLAGS(EditAnywhere, bool, bSimulate, = false)
     UPROPERTY_WITH_FLAGS(EditAnywhere, bool, bApplyGravity, = false)
     UPROPERTY_WITH_FLAGS(EditAnywhere, ERigidBodyType, RigidBodyType, = ERigidBodyType::DYNAMIC)
-
     UPROPERTY_WITH_FLAGS(EditAnywhere, TArray<AggregateGeomAttributes>, GeomAttributes)
 
     /** 
