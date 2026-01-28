@@ -67,11 +67,13 @@ FClothBatchedSolver::~FClothBatchedSolver()
 
 void FClothBatchedSolver::Initialize(FGraphicsDevice *InGraphics,
                                      FDXDBufferManager *InBufferManager,
-                                     FDXDShaderManager *InShaderManager)
+                                     FDXDShaderManager *InShaderManager,
+                                     FClothCollisionManager *InCollisionManager)
 {
     Graphics = InGraphics;
     BufferManager = InBufferManager;
     ShaderManager = InShaderManager;
+    CollisionManager = InCollisionManager;  // Assign shared collision manager (not owned)
 
     if (!Graphics || !BufferManager || !ShaderManager)
     {
@@ -87,12 +89,6 @@ void FClothBatchedSolver::Initialize(FGraphicsDevice *InGraphics,
         bInitialized = false;
         return;
     }
-
-    // Initialize collision manager
-    CollisionManager = new FClothCollisionManager();
-    CollisionManager->Initialize(512);  // Max 512 colliders
-    
-    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Collision manager initialized"));
 
     // NOTE: bInitialized will be set true in AllocateBuffers() after buffers are created
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Shaders loaded, ready for buffer allocation"));
@@ -115,13 +111,8 @@ void FClothBatchedSolver::Release()
     NormalizeNormalsCS = nullptr;
     CollisionSolverCS = nullptr;
 
-    // Release collision manager
-    if (CollisionManager)
-    {
-        CollisionManager->Release();
-        delete CollisionManager;
-        CollisionManager = nullptr;
-    }
+    // Do NOT release collision manager - it's shared and owned by ClothWorld
+    CollisionManager = nullptr;
 
     // Release unified buffers (Velvet pattern - single working buffer)
     SAFE_RELEASE(UnifiedPositionBuffer);

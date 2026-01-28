@@ -16,6 +16,7 @@
 // Forward declarations
 class FClothBatchedSolver;
 class FClothInstanceHandle;
+class FClothCollisionManager;
 class FGraphicsDevice;
 class FDXDBufferManager;
 class FDXDShaderManager;
@@ -34,7 +35,8 @@ public:
     // Initialization
     void Initialize(FGraphicsDevice *Graphics,
                     FDXDBufferManager *BufferMgr,
-                    FDXDShaderManager *ShaderMgr);
+                    FDXDShaderManager *ShaderMgr,
+                    FClothCollisionManager *CollisionMgr);
     void Release();
 
     // Instance management

@@ -21,6 +21,7 @@ class UClothAsset;
 class UWorld;
 class FClothBatchManager;
 class FClothInstanceHandle;
+class FClothCollisionManager;
 
 /**
  * Explosion force - Transient radial force affecting all cloth
@@ -117,6 +118,11 @@ public:
     void SetLODSelectionParams(const FClothLODSelectionParams &Params);
     FClothBatchManager *GetBatchManager(EClothLODLevel LOD);
     int32 GetNumInstancesInLOD(EClothLODLevel LOD) const;
+    
+    /**
+     * Get shared collision manager
+     */
+    FClothCollisionManager *GetCollisionManager() const { return SharedCollisionManager; }
 
 private:
     void SimulateAllBatches(float DeltaTime);
@@ -146,6 +152,9 @@ private:
     TArray<FClothInstanceHandle *> BatchedInstances;
     TArray<FClothInstanceHandle *> BatchedPendingRemoval;
     FClothLODSelectionParams LODSelectionParams;
+    
+    // Shared collision manager (used by all LOD solvers)
+    FClothCollisionManager *SharedCollisionManager;
 
     // Global forces applied to all instances
     FClothGlobalForces GlobalForces;

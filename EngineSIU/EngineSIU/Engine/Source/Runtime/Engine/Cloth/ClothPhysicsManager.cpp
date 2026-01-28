@@ -33,7 +33,7 @@ FClothWorld* FClothPhysicsManager::CreateClothWorld(UWorld* World)
     NewWorld->Initialize(Graphics, BufferManager, ShaderManager);
     ClothWorldMap.Add(World, NewWorld);
 
-    FClothCollisionManager* CollisionMgr = NewWorld->GetBatchManager(EClothLODLevel::LOD_0)->GetSolver()->GetCollisionManager();
+    FClothCollisionManager* CollisionMgr = NewWorld->GetCollisionManager();
     TArray<UPrimitiveComponent*> Primitives;
 
     for (const auto Iter : TObjectRange<UPrimitiveComponent>())

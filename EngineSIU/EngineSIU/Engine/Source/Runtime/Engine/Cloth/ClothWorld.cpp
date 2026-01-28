@@ -7,6 +7,7 @@
 #include "ClothWorld.h"
 #include "ClothBatchManager.h"
 #include "ClothInstanceHandle.h"
+#include "ClothCollisionManager.h"
 #include "Engine/ClothAsset.h"
 #include "Components/ClothComponent.h"
 #include "World/World.h"
@@ -19,7 +20,7 @@
 static EClothSystemMode GClothSystemMode = EClothSystemMode::Batched;
 
 FClothWorld::FClothWorld()
-    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), SystemMode(GClothSystemMode), bIsInitialized(false), TotalParticleCount(0), TotalConstraintCount(0)
+    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), SystemMode(GClothSystemMode), SharedCollisionManager(nullptr), bIsInitialized(false), TotalParticleCount(0), TotalConstraintCount(0)
 {
     // Initialize batch manager array to nullptr
     for (int32 i = 0; i < static_cast<int32>(EClothLODLevel::Max); ++i)
@@ -40,6 +41,11 @@ void FClothWorld::Initialize(FGraphicsDevice *InGraphics, FDXDBufferManager *InB
     ShaderManager = InShaderManager;
 
     {
+        // Create shared collision manager (used by all LOD solvers)
+        SharedCollisionManager = new FClothCollisionManager();
+        SharedCollisionManager->Initialize(512);  // Max 512 world-space colliders
+        UE_LOG(ELogLevel::Display, TEXT("ClothWorld: Created shared collision manager"));
+        
         // Initialize batch managers for batched mode
         InitializeBatchManagers();
         UE_LOG(ELogLevel::Display, TEXT("ClothWorld: Initialized in Batched mode"));
@@ -71,6 +77,14 @@ void FClothWorld::Release()
 
     // Release batch managers (batched mode)
     ReleaseBatchManagers();
+    
+    // Release shared collision manager
+    if (SharedCollisionManager)
+    {
+        SharedCollisionManager->Release();
+        delete SharedCollisionManager;
+        SharedCollisionManager = nullptr;
+    }
 
     bIsInitialized = false;
 
@@ -297,7 +311,7 @@ void FClothWorld::InitializeBatchManagers()
     {
         EClothLODLevel LOD = static_cast<EClothLODLevel>(i);
         LODBatches[i] = new FClothBatchManager(LOD);
-        LODBatches[i]->Initialize(Graphics, BufferManager, ShaderManager);
+        LODBatches[i]->Initialize(Graphics, BufferManager, ShaderManager, SharedCollisionManager);
     }
 }
 

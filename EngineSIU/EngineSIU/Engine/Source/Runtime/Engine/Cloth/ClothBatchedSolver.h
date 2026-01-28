@@ -34,7 +34,8 @@ public:
     // Initialization
     void Initialize(FGraphicsDevice *Graphics,
                     FDXDBufferManager *BufferMgr,
-                    FDXDShaderManager *ShaderMgr);
+                    FDXDShaderManager *ShaderMgr,
+                    FClothCollisionManager *InCollisionManager);
     void Release();
 
     // Buffer allocation

@@ -26,7 +26,8 @@ FClothBatchManager::~FClothBatchManager()
 
 void FClothBatchManager::Initialize(FGraphicsDevice *InGraphics,
                                     FDXDBufferManager *InBufferMgr,
-                                    FDXDShaderManager *InShaderMgr)
+                                    FDXDShaderManager *InShaderMgr,
+                                    FClothCollisionManager *CollisionMgr)
 {
     Graphics = InGraphics;
     BufferManager = InBufferMgr;
@@ -39,9 +40,9 @@ void FClothBatchManager::Initialize(FGraphicsDevice *InGraphics,
         return;
     }
 
-    // Create batched solver
+    // Create batched solver with shared collision manager
     BatchedSolver = new FClothBatchedSolver();
-    BatchedSolver->Initialize(Graphics, BufferManager, ShaderManager);
+    BatchedSolver->Initialize(Graphics, BufferManager, ShaderManager, CollisionMgr);
 
     // Initial buffer allocation (generous estimate to avoid reallocation)
     // Increased to handle large batches without needing dynamic reallocation
