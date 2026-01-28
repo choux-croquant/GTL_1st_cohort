@@ -153,6 +153,10 @@ public:
     FString ToString() const;
 
     bool IsIdentity() const;
+
+    FVector GetForwardVector() const;
+    FVector GetRightVector() const;
+    FVector GetUpVector() const;
 };
 
 inline FArchive& operator<<(FArchive& Ar, FQuat& Q)
