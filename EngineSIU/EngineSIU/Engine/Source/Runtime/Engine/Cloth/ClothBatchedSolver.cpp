@@ -1590,7 +1590,7 @@ void FClothBatchedSolver::UpdateFrameConstants(float DeltaTime)
     CachedConstants.MaxSpeed = Config.MaxSpeed;
     CachedConstants.LongRangeStretchiness = Config.LongRangeStretchiness;
     CachedConstants.NumColliders = CollisionManager ? CollisionManager->GetColliderCount() : 0;
-    CachedConstants.CollisionThickness = 0.1f;
+    CachedConstants.CollisionThickness = Config.CollisionThickness;
     CachedConstants.CollisionFriction = 0.2f;
     CachedConstants.WorldMatrix = FMatrix::Identity;
     CachedConstants.CurrentIteration = 0;  // Will be updated per iteration

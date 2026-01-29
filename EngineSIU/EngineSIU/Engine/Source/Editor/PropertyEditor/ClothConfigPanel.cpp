@@ -195,14 +195,14 @@ void ClothConfigPanel::RenderClothConfig()
     // Collision Settings
     if (ImGui::TreeNodeEx("Collision", ImGuiTreeNodeFlags_Framed))
     {
-        bConfigChanged |= ImGui::SliderFloat("Collision Thickness", &Config.CollisionThickness, 0.001f, 1.0f, "%.3f");
+        bConfigChanged |= ImGui::SliderFloat("Collision Thickness", &Config.CollisionThickness, 0.001f, 10.0f, "%.3f");
 
-        bool bSelfCollision = Config.bEnableSelfCollision;
+        /*bool bSelfCollision = Config.bEnableSelfCollision;
         if (ImGui::Checkbox("Enable Self Collision", &bSelfCollision))
         {
             Config.bEnableSelfCollision = bSelfCollision;
             bConfigChanged = true;
-        }
+        }*/
 
         ImGui::TreePop();
     }

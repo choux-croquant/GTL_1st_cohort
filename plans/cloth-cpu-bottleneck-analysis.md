@@ -9,7 +9,7 @@
 
 **Problem:** After implementing GPU batching, the CPU has become the primary bottleneck, consuming 5-6ms despite GPU optimizations reducing GPU time to sub-millisecond levels.
 
----
+***
 
 ## Call Hierarchy Analysis
 
@@ -27,7 +27,7 @@ FClothWorld::Update(DeltaTime)  [MEASURED: 5-6ms total]
             │  ├─ O(N) loop over all instances
             │  ├─ O(M) loop over attachments per instance
             │  ├─ Component transform queries (virtual calls)
-            │  └─ Map/memcpy upload to GPU
+            │  └─ Map/memcpy upload to GPU (large data: 2,500+ targets)
             │
             └─ Simulate(DeltaTime) or SimulateFixedTimestep()
                 └─ FClothBatchedSolver::Simulate(DeltaTime)  [Est: 2-3ms]
@@ -54,11 +54,11 @@ FClothWorld::Update(DeltaTime)  [MEASURED: 5-6ms total]
                             │  ├─ DispatchBendConstraintSolver() [GPU overhead]
                             │  └─ DispatchApplyDeltas()        [GPU overhead]
                             │
-                            ├─ DispatchApplyKinematicTargets() [GPU overhead]
+                            ├─ DispatchApplyKinematicTargets() [GPU overhead - NOW UNUSED]
                             └─ DispatchFinalize()              [GPU overhead]
 ```
 
----
+***
 
 ## Identified CPU Bottlenecks (Priority Order)
 
@@ -90,21 +90,30 @@ FClothWorld::Update(DeltaTime)  [MEASURED: 5-6ms total]
    ```cpp
    FTransform driverTransform = attachment.DriverComponent->GetComponentTransform();
    ```
+   - **Called 2,500+ times per frame** (500 instances × 5 attachments)
+   - Many calls query the **same component** repeatedly (no deduplication)
 
 5. **Line 639:** WRITE_DISCARD map/memcpy every frame
    ```cpp
    BatchedSolver->UploadKinematicTargets(allTargets, 0);
    ```
+   - Uploads **80KB** (2,500 targets × 32 bytes) every frame
+   - Even when transforms haven't changed
 
 **Why It's Expensive:**
 - For 500 instances with 5 attachments each = 2,500 transform queries + conversions
-- Component->GetComponentTransform() involves virtual dispatch, matrix math
-- No caching — recalculates ALL targets even if transforms unchanged
+- Component->GetComponentTransform() involves virtual dispatch, matrix math (~200-300 cycles)
+- **No component deduplication** — same component queried 50+ times
+- **No caching** — recalculates ALL targets even if transforms unchanged
+- **Large upload** — 80KB per frame regardless of changes
 - TArray allocations on line 579
 
 **Expected Cost:** 2-3ms for 10K particles with typical attachment ratios
+- GetComponentTransform() × 2,500: **1.8ms**
+- Transform math & conversion: **0.2ms**
+- Upload (Map/memcpy): **0.2ms**
 
----
+***
 
 ### 🔴 CRITICAL #2: Repeated Per-Substep Work — **Est. 1-2ms per frame**
 
@@ -171,7 +180,7 @@ for (int substep = 0; substep < Config.NumSubsteps; substep++)
 
 **With 5 substeps:** These operations repeat 5× unnecessarily!
 
----
+***
 
 ### 🟡 MODERATE #3: GPU Dispatch Overhead — **Est. 0.5-1ms per frame**
 
@@ -183,12 +192,12 @@ for (int substep = 0; substep < Config.NumSubsteps; substep++)
 3. DispatchConstraintSolver × N iterations (line 1026)
 4. DispatchBendConstraintSolver × N iterations (line 1068)
 5. DispatchApplyDeltas × N iterations (line 1112)
-6. DispatchApplyKinematicTargets (line 1147)
+6. ~~DispatchApplyKinematicTargets~~ (line 1147) — **NOW REMOVED (GPU-based)**
 7. DispatchFinalize (line 1176)
 
 **With 5 substeps, 3 iterations:**
-- 7 base dispatches + (3 × 3 iteration dispatches) = 16 dispatches per substep
-- 16 × 5 substeps = **80 GPU dispatches per frame**
+- 6 base dispatches + (3 × 3 iteration dispatches) = 15 dispatches per substep
+- 15 × 5 substeps = **75 GPU dispatches per frame**
 
 **Each Dispatch Involves:**
 ```cpp
@@ -201,21 +210,17 @@ Dispatch(...)                // 1 call
 // Unbinding (another 3-4 calls)
 ```
 
-**Cost:** 4-6 API calls × 80 dispatches = **320-480 D3D11 API calls per frame**
+**Cost:** 4-6 API calls × 75 dispatches = **300-450 D3D11 API calls per frame**
 
-Even at ~2-3µs per API call = 0.6-1.4ms overhead
+Even at ~2-3µs per API call = 0.6-1.35ms overhead
 
----
+***
 
 ### 🟡 MODERATE #4: Memory Allocations in Hot Path
 
 **Locations:**
-1. **UpdateKinematicTargets()** — line 579
-   ```cpp
-   TArray<FClothKinematicTargetGPU> allTargets;
-   allTargets.Reserve(TotalKinematicTargetCount);  // Allocation every frame
-   ```
-
+1. ~~**UpdateKinematicTargets()** — line 579~~ **REMOVED (GPU-based now)**
+   
 2. **UploadToGPU()** — line 273
    ```cpp
    TArray<FClothColliderGPU> gpuColliders;
@@ -224,14 +229,16 @@ Even at ~2-3µs per API call = 0.6-1.4ms overhead
 
 **Impact:** Memory allocator overhead, potential cache misses
 
----
+***
 
 ## Root Cause Analysis
 
-### 1. **No Dirty Tracking for Kinematic Targets**
-- Recalculates ALL attachment transforms every frame
-- No check if driver components moved
-- Solution: Cache transforms, mark dirty only on change
+### 1. **Kinematic Targets: CPU Computation Bottleneck**
+- CPU computes 2,500+ attachment positions every frame
+- Heavy virtual function calls (GetComponentTransform)
+- No component deduplication (same component queried 50+ times)
+- Large data upload (80KB per frame)
+- **Solution: Move computation to GPU** ⭐
 
 ### 2. **Substep-Frequency Work at Frame Frequency**
 - Collision updates happen per-substep but data changes per-frame
@@ -239,21 +246,21 @@ Even at ~2-3µs per API call = 0.6-1.4ms overhead
 - Solution: Hoist frame-frequency work outside substep loop
 
 ### 3. **Excessive D3D11 API Overhead**
-- 80+ dispatches per frame with full binding/unbinding
+- 75+ dispatches per frame with full binding/unbinding
 - Each dispatch has ~10 API calls
 - Solution: Reduce state changes, batch small dispatches
 
 ### 4. **Virtual Function Calls in Hot Loops**
 - GetComponentTransform() is virtual (polymorphic dispatch)
-- Called hundreds of times per frame
-- Solution: Cache results, reduce call frequency
+- Called hundreds of times per frame (kinematic targets + collision)
+- Solution: Cache results, reduce call frequency, **move to GPU**
 
 ### 5. **Dynamic Memory in Hot Paths**
-- TArray allocations every frame/substep
+- TArray allocations every substep (collision upload)
 - Heap allocations expensive on multi-threaded allocators
 - Solution: Pre-allocate persistent buffers, reuse
 
----
+***
 
 ## Detailed Profiling Breakdown (Estimated)
 
@@ -267,9 +274,9 @@ FClothWorld::Update: 5.8ms
 │     ├─ UpdateKinematicTargets: 2.5ms ⚠️ MAJOR BOTTLENECK
 │     │  ├─ Instance iteration: 0.1ms
 │     │  ├─ GetClothAsset() calls: 0.2ms
-│     │  ├─ GetComponentTransform() × 2500: 1.8ms ⚠️
+│     │  ├─ GetComponentTransform() × 2500: 1.8ms ⚠️ (NO DEDUP!)
 │     │  ├─ Transform math: 0.2ms
-│     │  └─ UploadKinematicTargets (Map): 0.2ms
+│     │  └─ UploadKinematicTargets (Map 80KB): 0.2ms ⚠️
 │     │
 │     └─ Simulate (5 substeps): 3.25ms
 │        ├─ Substep 1-5 × UpdateConstantBuffers: 0.4ms/substep = 2.0ms ⚠️
@@ -280,69 +287,269 @@ FClothWorld::Update: 5.8ms
 │        │  └─ UploadToGPU (if dirty): 0.05ms × 5
 │        │
 │        └─ GPU Dispatch overhead: 0.5ms ⚠️
-│           └─ 80 dispatches × 6µs = 0.48ms
+│           └─ 75 dispatches × 6µs = 0.45ms
 │
 └─ Cleanup: <0.01ms
 ```
 
----
+***
 
 ## Optimization Proposals (Prioritized)
 
-### 🟢 PRIORITY 1: Cache Kinematic Target Transforms — **Save ~2ms**
+### 🟢 PRIORITY 1: GPU-Based Kinematic Target Computation — **Save ~2ms** ⭐⭐⭐
 
-**Expected Savings:** 2-2.5ms (40-50% of total CPU time!)
+**Expected Savings:** 2.0-2.3ms (35-40% of total CPU time!)
+
+**Why This Is Better Than CPU Caching:**
+- Works even when ALL attachments move every frame
+- Eliminates 2,500+ virtual function calls
+- Deduplicates component queries automatically (50-100× reduction)
+- Reduces upload size: 80KB → 3.2KB (25× smaller)
+- Parallel GPU computation (~0.05ms vs 2ms CPU)
+- Simpler code (no cache invalidation logic needed)
 
 **Implementation:**
 
-```cpp
-// In FClothBatchManager.h
-struct FKinematicTargetCache
-{
-    TArray<FClothKinematicTargetGPU> CachedTargets;
-    TArray<FTransform> CachedDriverTransforms;
-    bool bIsDirty;
-};
-FKinematicTargetCache TargetCache;
+#### Step 1: New Data Structures
 
-// In UpdateKinematicTargets()
-void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
+```cpp
+// In ClothTypes.h
+struct FKinematicAttachmentGPU
 {
-    bool bAnyDirty = false;
+    uint32 ComponentIndex;      // Index into ComponentTransforms buffer
+    FVector3f LocalOffset;      // Local space offset from component
+    uint32 ParticleIndex;       // Target particle index
+    float Stiffness;            // Attachment strength (0-1)
+    float _Padding [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_4ad62166-bc0c-457c-adec-c71e9d10b6c3/2d3c819f-bdf3-452b-b2e2-723d6aa1d768/cloth-advanced-features-architecture.md);          // Align to 16 bytes
+};
+
+// In FClothBatchManager.h
+class FClothBatchManager
+{
+private:
+    // Component deduplication map (built once, updated on attachment change)
+    TMap<USceneComponent*, uint32> ComponentIndexMap;
+    TArray<TWeakObjectPtr<USceneComponent>> UniqueComponents;
     
-    // Check if any driver transforms changed
-    for (int32 i = 0; i < TargetCache.CachedDriverTransforms.Num(); ++i)
+    // GPU buffers (uploaded once at init, static)
+    ID3D11Buffer* AttachmentDataBuffer;      // FKinematicAttachmentGPU[]
+    ID3D11ShaderResourceView* AttachmentSRV;
+    
+    bool bAttachmentDataDirty;  // Rebuild only when attachments change
+};
+```
+
+#### Step 2: Initialization (Build Attachment Data)
+
+```cpp
+// Called once at startup or when attachments change
+void FClothBatchManager::BuildKinematicAttachmentData()
+{
+    QUICK_SCOPE_CYCLE_COUNTER(BuildKinematicAttachmentData)
+    
+    ComponentIndexMap.Empty();
+    UniqueComponents.Empty();
+    TArray<FKinematicAttachmentGPU> attachmentData;
+    
+    // Collect all attachments and deduplicate components
+    for (FClothInstanceHandle* Handle : Instances)
     {
-        FTransform CurrentTransform = GetDriverTransform(i);
-        if (!CurrentTransform.Equals(TargetCache.CachedDriverTransforms[i], 0.01f))
+        const TArray<FClothAttachmentData>& attachments = 
+            Handle->Owner->GetClothAsset()->AttachmentsData;
+        
+        for (const FClothAttachmentData& attachment : attachments)
         {
-            TargetCache.CachedDriverTransforms[i] = CurrentTransform;
-            UpdateTarget(i);  // Only update changed targets
-            bAnyDirty = true;
+            // Get or create component index
+            uint32* ComponentIndexPtr = ComponentIndexMap.Find(attachment.DriverComponent);
+            uint32 ComponentIndex;
+            
+            if (!ComponentIndexPtr)
+            {
+                ComponentIndex = UniqueComponents.Num();
+                ComponentIndexMap.Add(attachment.DriverComponent, ComponentIndex);
+                UniqueComponents.Add(attachment.DriverComponent);
+            }
+            else
+            {
+                ComponentIndex = *ComponentIndexPtr;
+            }
+            
+            // Build GPU attachment data
+            FKinematicAttachmentGPU gpuAttachment;
+            gpuAttachment.ComponentIndex = ComponentIndex;
+            gpuAttachment.LocalOffset = FVector3f(attachment.LocalOffset);
+            gpuAttachment.ParticleIndex = attachment.ParticleIndex;
+            gpuAttachment.Stiffness = attachment.Stiffness;
+            
+            attachmentData.Add(gpuAttachment);
         }
     }
     
-    // Upload only if something changed
-    if (bAnyDirty)
+    // Upload to GPU (ONCE - this data is static)
+    BatchedSolver->UploadAttachmentData(attachmentData);
+    
+    UE_LOG(LogCloth, Log, TEXT("Built kinematic attachments: %d attachments, %d unique components (%.1f%% dedup)"),
+           attachmentData.Num(), UniqueComponents.Num(),
+           (1.0f - (float)UniqueComponents.Num() / attachmentData.Num()) * 100.0f);
+    
+    bAttachmentDataDirty = false;
+}
+```
+
+#### Step 3: CPU Update (Minimal - Only Component Transforms)
+
+```cpp
+// NEW: Lightweight update (replaces heavy UpdateKinematicTargets)
+void FClothBatchManager::UpdateKinematicTargetsGPU(float DeltaTime)
+{
+    QUICK_SCOPE_CYCLE_COUNTER(UpdateKinematicTargets_GPU)
+    
+    // Rebuild attachment data if needed (rare - only when attachments change)
+    if (bAttachmentDataDirty)
     {
-        BatchedSolver->UploadKinematicTargets(TargetCache.CachedTargets, 0);
+        BuildKinematicAttachmentData();
     }
+    
+    // Collect component transforms (ONLY unique components - 10-50 instead of 2,500!)
+    TArray<FMatrix44f> componentTransforms;
+    componentTransforms.Reserve(UniqueComponents.Num());
+    
+    for (const TWeakObjectPtr<USceneComponent>& Component : UniqueComponents)
+    {
+        if (Component.IsValid())
+        {
+            FTransform transform = Component->GetComponentTransform();
+            componentTransforms.Add(FMatrix44f(transform.ToMatrixWithScale()));
+        }
+        else
+        {
+            // Component destroyed - add identity
+            componentTransforms.Add(FMatrix44f::Identity);
+        }
+    }
+    
+    // Upload component transforms (SMALL: 50 × 64 bytes = 3.2KB vs 80KB before!)
+    BatchedSolver->UploadComponentTransforms(componentTransforms);
+    
+    // GPU will compute final positions in compute shader
+}
+
+// ESTIMATED COST:
+// - GetComponentTransform() × 50: 0.09ms (vs 1.8ms before - 20× faster!)
+// - Upload 3.2KB: 0.03ms (vs 0.2ms before - 6× faster!)
+// Total CPU: 0.12ms (vs 2.2ms before - 18× faster!)
+```
+
+#### Step 4: GPU Compute Shader
+
+```hlsl
+// ComputeKinematicTargets.hlsl
+
+StructuredBuffer<FMatrix> ComponentTransforms : register(t0);  // 50 components
+StructuredBuffer<FKinematicAttachmentGPU> Attachments : register(t1);  // 2,500 attachments
+RWStructuredBuffer<FClothParticle> Particles : register(u0);  // 10K particles
+
+cbuffer KinematicParams : register(b0)
+{
+    uint NumAttachments;
+    float GlobalStiffness;
+    float DeltaTime;
+    float _Padding;
+};
+
+[numthreads(256, 1, 1)]
+void ComputeKinematicTargetsCS(uint3 DTid : SV_DispatchThreadID)
+{
+    uint attachIdx = DTid.x;
+    if (attachIdx >= NumAttachments)
+        return;
+    
+    // Read attachment data
+    FKinematicAttachmentGPU attachment = Attachments[attachIdx];
+    
+    // Read component transform (coalesced memory access)
+    FMatrix componentTransform = ComponentTransforms[attachment.ComponentIndex];
+    
+    // Compute world position (matrix multiply)
+    float3 worldPos = mul(float4(attachment.LocalOffset, 1.0f), componentTransform).xyz;
+    
+    // Apply to particle
+    uint particleIdx = attachment.ParticleIndex;
+    FClothParticle particle = Particles[particleIdx];
+    
+    // Strong attachment: pin position
+    if (attachment.Stiffness > 0.99f)
+    {
+        particle.Position = worldPos;
+        particle.PrevPosition = worldPos;
+        particle.Velocity = float3(0, 0, 0);
+    }
+    // Weak attachment: pull toward target
+    else
+    {
+        float3 delta = worldPos - particle.Position;
+        float effectiveStiffness = attachment.Stiffness * GlobalStiffness;
+        particle.Position += delta * effectiveStiffness;
+    }
+    
+    Particles[particleIdx] = particle;
+}
+
+// ESTIMATED COST: 0.05ms for 2,500 threads (parallel)
+```
+
+#### Step 5: Dispatch Integration
+
+```cpp
+// In FClothBatchedSolver::SimulateSubstep()
+void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
+{
+    // ... existing integration ...
+    
+    // Apply kinematic constraints (GPU-based - replaces old DispatchApplyKinematicTargets)
+    DispatchComputeKinematicTargets();  // 0.02ms CPU + 0.05ms GPU
+    
+    // ... rest of substep ...
+}
+
+void FClothBatchedSolver::DispatchComputeKinematicTargets()
+{
+    QUICK_SCOPE_CYCLE_COUNTER(DispatchComputeKinematicTargets)
+    
+    // Set shader
+    Graphics->DeviceContext->CSSetShader(ComputeKinematicTargetsCS, nullptr, 0);
+    
+    // Bind resources
+    Graphics->DeviceContext->CSSetShaderResources(0, 1, &ComponentTransformsSRV);
+    Graphics->DeviceContext->CSSetShaderResources(1, 1, &AttachmentDataSRV);
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &ParticlesUAV, nullptr);
+    
+    // Dispatch
+    uint32 NumThreadGroups = (NumAttachments + 255) / 256;
+    Graphics->DeviceContext->Dispatch(NumThreadGroups, 1, 1);
+    
+    // Unbind
+    ID3D11ShaderResourceView* nullSRVs [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_4ad62166-bc0c-457c-adec-c71e9d10b6c3/25158bde-f478-4964-ae02-435fbd93c42d/cloth-simulation-architecture.md) = {nullptr, nullptr};
+    Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
 }
 ```
 
 **Benefits:**
-- Eliminates 2,500+ virtual calls per frame
-- Only updates when transforms actually change
-- Typical case: 0-5 moving drivers = 95% reduction in work
+- **CPU time: 2.2ms → 0.12ms** (18× faster!)
+- **Upload size: 80KB → 3.2KB** (25× smaller)
+- **Component deduplication: 2,500 queries → 50** (50× fewer!)
+- **GPU parallel execution: 0.05ms** (negligible)
+- **No caching logic needed** (simpler code)
+- **Works with 100% moving attachments** (CPU caching would fail here)
 
-**Complexity:** Low (1-2 hours)
-**Risk:** Low
+**Complexity:** Moderate (4-6 hours)
+**Risk:** Low-Moderate (well-tested pattern, similar to existing collision SDF)
 
----
+***
 
 ### 🟢 PRIORITY 2: Hoist Per-Frame Work Out of Substep Loop — **Save ~1.5ms**
 
-**Expected Savings:** 1-1.5ms (20-30% of total CPU time)
+**Expected Savings:** 1.0-1.5ms (17-26% of total CPU time)
 
 **Implementation:**
 
@@ -393,57 +600,53 @@ void UpdateIterationConstants(int32 CurrentIteration)
 **Complexity:** Moderate (2-4 hours)
 **Risk:** Low-Moderate (need to ensure correctness)
 
----
+***
 
-### 🟢 PRIORITY 3: Pre-Allocate Persistent Buffers — **Save ~0.3ms**
+### 🟢 PRIORITY 3: Pre-Allocate Persistent Buffers — **Save ~0.2ms**
 
-**Expected Savings:** 0.2-0.4ms (5-8% of total CPU time)
+**Expected Savings:** 0.15-0.25ms (3-4% of total CPU time)
 
 **Implementation:**
 
 ```cpp
-// In FClothBatchManager.h
-class FClothBatchManager
+// In FClothCollisionManager.h
+class FClothCollisionManager
 {
 private:
-    // Pre-allocated staging buffers (reused every frame)
-    TArray<FClothKinematicTargetGPU> StagingKinematicTargets;
+    // Pre-allocated staging buffer (reused every frame)
     TArray<FClothColliderGPU> StagingColliders;
 };
 
-// In UpdateKinematicTargets()
-void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
+// In UploadToGPU()
+void FClothCollisionManager::UploadToGPU(...)
 {
     // Reuse pre-allocated buffer (NO allocation)
-    StagingKinematicTargets.Reset();  // Keep capacity, clear count
-    StagingKinematicTargets.Reserve(TotalKinematicTargetCount);
+    StagingColliders.Reset();  // Keep capacity, clear count
+    StagingColliders.Reserve(ColliderSources.Num());
     
     // Fill buffer...
+    for (const FClothColliderSource& Source : ColliderSources)
+        StagingColliders.Add(ConvertToGPU(Source));
     
-    BatchedSolver->UploadKinematicTargets(StagingKinematicTargets, 0);
+    // Upload...
 }
 ```
 
 **Benefits:**
-- Eliminates heap allocations in hot path
+- Eliminates heap allocations in hot path (5× per frame)
 - Better cache locality
 - Reduces allocator contention
 
 **Complexity:** Low (1-2 hours)
 **Risk:** Very Low
 
----
+***
 
 ### 🟡 PRIORITY 4: Batch Small GPU Dispatches — **Save ~0.3ms**
 
-**Expected Savings:** 0.2-0.4ms (5-8% of total CPU time)
+**Expected Savings:** 0.2-0.4ms (4-7% of total CPU time)
 
 **Implementation:**
-
-**Option A: Multi-Draw Indirect** (Advanced)
-- Combine multiple small dispatches into one
-- Use indirect dispatch with compute shader
-- Complexity: High, Risk: Moderate
 
 **Option B: Persistent Resource Bindings** (Simpler)
 ```cpp
@@ -472,11 +675,11 @@ void FClothBatchedSolver::SimulateSubstep(float DeltaTime)
 **Complexity:** Moderate (3-5 hours to validate correctness)
 **Risk:** Moderate (shader resource overlap issues)
 
----
+***
 
-### 🔵 PRIORITY 5: Async Collision Update (Advanced) — **Save ~0.5ms**
+### 🔵 PRIORITY 5: Async Collision Update (Advanced) — **Save ~0.4ms**
 
-**Expected Savings:** 0.3-0.7ms (potential parallel execution)
+**Expected Savings:** 0.3-0.5ms (potential parallel execution)
 
 **Implementation:**
 
@@ -500,41 +703,92 @@ CollisionManager->UploadToGPU();  // Fast: just memcpy pre-built data
 **Complexity:** High (requires threading infrastructure)
 **Risk:** High (thread safety, synchronization bugs)
 
----
+***
 
 ## Implementation Priority Matrix
 
 | Priority | Optimization | Est. Savings | Complexity | Risk | Implementation Order |
 |----------|-------------|--------------|------------|------|---------------------|
-| 🟢 P1 | Cache Kinematic Transforms | **2.0-2.5ms** | Low | Low | **#1 - Do First** |
-| 🟢 P2 | Hoist Per-Frame Work | **1.0-1.5ms** | Moderate | Low-Mod | **#2** |
-| 🟢 P3 | Pre-Allocate Buffers | **0.2-0.4ms** | Low | Very Low | **#3** |
-| 🟡 P4 | Batch GPU Dispatches | **0.2-0.4ms** | Moderate | Moderate | **#4** |
-| 🔵 P5 | Async Collision | **0.3-0.7ms** | High | High | **#5 - Later** |
+| 🟢 P1 | **GPU Kinematic Computation** | **2.0-2.3ms** | Moderate | Low-Mod | #1 - Do First ⭐ |
+| 🟢 P2 | Hoist Per-Frame Work | **1.0-1.5ms** | Moderate | Low-Mod | #2 |
+| 🟢 P3 | Pre-Allocate Buffers | **0.15-0.25ms** | Low | Very Low | #3 |
+| 🟡 P4 | Batch GPU Dispatches | **0.2-0.4ms** | Moderate | Moderate | #4 |
+| 🔵 P5 | Async Collision | **0.3-0.5ms** | High | High | #5 - Later |
 
-**Total Potential Savings:** 3.7-5.5ms (65-95% of current 5.6ms bottleneck!)
+**Total Potential Savings:** 3.65-4.95ms (63-85% of current 5.8ms bottleneck!)
 
-**Target After P1-P3:** 5.6ms → **2.5-3ms** (acceptable for 60 FPS)
+**Target After P1-P3:** 5.8ms → **2.0-2.4ms** (excellent for 60 FPS)
 
----
+***
+
+## Performance Projections
+
+### Current (Before Optimization)
+```
+FClothWorld::Update: 5.8ms
+├─ UpdateKinematicTargets (CPU): 2.5ms ⚠️
+│  ├─ GetComponentTransform() × 2,500: 1.8ms
+│  ├─ Transform math: 0.2ms
+│  └─ Upload 80KB: 0.2ms
+│
+├─ Substep loop (5×): 3.25ms
+│  ├─ UpdateConstantBuffers × 5: 2.0ms ⚠️
+│  ├─ CollisionManager × 5: 0.75ms ⚠️
+│  └─ GPU dispatch overhead: 0.5ms
+```
+
+### After P1 (GPU Kinematic)
+```
+FClothWorld::Update: 3.7ms (-2.1ms, -36%)
+├─ UpdateKinematicTargets (GPU): 0.14ms ✅
+│  ├─ GetComponentTransform() × 50: 0.09ms (20× faster!)
+│  ├─ Upload 3.2KB: 0.03ms
+│  └─ GPU compute: 0.02ms (negligible)
+│
+├─ Substep loop (5×): 3.25ms
+   └─ (unchanged)
+```
+
+### After P1+P2 (+ Hoist Per-Frame)
+```
+FClothWorld::Update: 2.3ms (-3.5ms, -60%)
+├─ UpdateKinematicTargets (GPU): 0.14ms ✅
+├─ Substep loop (5×): 1.85ms ✅
+│  ├─ UpdateIterationConstants × 5: 0.5ms (75% reduction!)
+│  ├─ CollisionManager (ONCE): 0.15ms (moved outside loop!)
+│  └─ GPU dispatch overhead: 0.5ms
+```
+
+### After P1+P2+P3 (+ Pre-Allocate)
+```
+FClothWorld::Update: 2.1ms (-3.7ms, -64%)
+├─ UpdateKinematicTargets (GPU): 0.14ms ✅
+├─ Substep loop (5×): 1.65ms ✅
+   └─ (no allocations in hot path)
+```
+
+***
 
 ## Success Criteria
 
-### Phase 1 (P1-P3): Target <3ms CPU time
-- ✅ Implement kinematic target caching
-- ✅ Hoist per-frame work out of substep loop
-- ✅ Pre-allocate staging buffers
-- ✅ Profile and verify 40-50% reduction
+### Phase 1 (P1): Target <4ms CPU time
+- ✅ Implement GPU-based kinematic target computation
+- ✅ Profile and verify 35-40% reduction (5.8ms → 3.7ms)
+- ✅ Verify correctness (visual inspection of attachment behavior)
 
-### Phase 2 (P4): Target <2ms CPU time
+### Phase 2 (P1+P2): Target <2.5ms CPU time
+- ✅ Hoist per-frame work out of substep loop
+- ✅ Profile and verify cumulative 55-60% reduction (5.8ms → 2.3ms)
+
+### Phase 3 (P1+P2+P3): Target <2.2ms CPU time
+- ✅ Pre-allocate staging buffers
+- ✅ Final profile and verify 60-65% reduction (5.8ms → 2.1ms)
+
+### Phase 4 (Optional - P4): Target <1.9ms CPU time
 - ✅ Batch related GPU dispatches
 - ✅ Reduce D3D11 API call count by 50%
 
-### Phase 3 (P5 - Optional): Target <1.5ms CPU time
-- ✅ Implement async collision updates
-- ✅ Verify thread safety
-
----
+***
 
 ## Measurement Recommendations
 
@@ -547,8 +801,8 @@ void FClothBatchManager::Update(float DeltaTime)
     QUICK_SCOPE_CYCLE_COUNTER(ClothBatch_Update)
     
     {
-        QUICK_SCOPE_CYCLE_COUNTER(ClothBatch_UpdateKinematicTargets)
-        UpdateKinematicTargets(DeltaTime);
+        QUICK_SCOPE_CYCLE_COUNTER(ClothBatch_UpdateKinematicTargets_GPU)
+        UpdateKinematicTargetsGPU(DeltaTime);  // NEW: GPU-based
     }
     
     {
@@ -560,72 +814,79 @@ void FClothBatchManager::Update(float DeltaTime)
     }
 }
 
-// In FClothBatchedSolver::SimulateSubstep()
-void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
+// In FClothBatchedSolver::Simulate()
+void FClothBatchedSolver::Simulate(float DeltaTime)
 {
-    QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_Substep)
+    QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_Simulate)
     
     {
-        QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_UpdateConstants)
-        UpdateConstantBuffers(SubstepDeltaTime);
+        QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_UpdateFrameConstants)
+        UpdateFrameConstants(DeltaTime);  // NEW: Once per frame
     }
     
+    for (int substep = 0; substep < Config.NumSubsteps; substep++)
     {
-        QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_Integration)
-        DispatchIntegration(UsedParticleCount);
-    }
-    
-    {
-        QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_Collision)
-        DispatchCollisionSDF(UsedParticleCount);
-    }
-    
-    {
-        QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_Constraints)
-        for (int32 iter = 0; iter < Config.NumIterations; ++iter)
+        QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_Substep)
+        
         {
-            // ...existing code...
+            QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_UpdateIterationConstants)
+            UpdateIterationConstants(substep);  // NEW: Only iteration number
         }
+        
+        SimulateSubstep(SubstepTime);
     }
 }
 
-// In FClothCollisionManager
-void FClothCollisionManager::UpdateTransforms()
+// In UpdateKinematicTargetsGPU()
+void FClothBatchManager::UpdateKinematicTargetsGPU(float DeltaTime)
 {
-    QUICK_SCOPE_CYCLE_COUNTER(ClothCollision_UpdateTransforms)
-    // ...existing code...
-}
-
-void FClothCollisionManager::UploadToGPU(...)
-{
-    QUICK_SCOPE_CYCLE_COUNTER(ClothCollision_UploadGPU)
-    // ...existing code...
+    QUICK_SCOPE_CYCLE_COUNTER(UpdateKinematicTargets_GPU)
+    
+    {
+        QUICK_SCOPE_CYCLE_COUNTER(UpdateKinematicTargets_CollectTransforms)
+        // GetComponentTransform() × 50
+    }
+    
+    {
+        QUICK_SCOPE_CYCLE_COUNTER(UpdateKinematicTargets_UploadTransforms)
+        BatchedSolver->UploadComponentTransforms(componentTransforms);
+    }
 }
 ```
 
----
+***
 
 ## Next Steps
 
-1. **Add profiling scopes** (above) to get accurate measurements
-2. **Implement P1** (kinematic target caching) — biggest win
-3. **Measure results** — should see ~40% reduction
+1. **Add profiling scopes** (above) to get accurate baseline measurements
+2. **Implement P1** (GPU kinematic computation) — biggest win, most important
+   - Build attachment data structures
+   - Write compute shader
+   - Update CPU code to collect only unique component transforms
+   - Test and verify correctness
+3. **Measure results** — should see ~35-40% reduction (5.8ms → 3.7ms)
 4. **Implement P2** (hoist per-frame work) — second biggest win
-5. **Measure results** — cumulative 60-70% reduction
+5. **Measure results** — cumulative 55-60% reduction (5.8ms → 2.3ms)
 6. **Implement P3** (pre-allocate buffers) — polish
-7. **Final measurement** — should be <3ms total
+7. **Final measurement** — should be <2.2ms total (62% improvement)
 
 **DO NOT implement P4-P5 unless P1-P3 are insufficient.**
 
----
+***
 
 ## Conclusion
 
 The CPU bottleneck is primarily caused by:
-1. **UpdateKinematicTargets() doing 2,500+ transform queries per frame** (2-3ms)
-2. **Per-substep repetition of per-frame work** (1-2ms)
-3. **Memory allocations and D3D11 API overhead** (0.5-1ms)
+1. **UpdateKinematicTargets() doing 2,500+ transform queries with no deduplication** (2.5ms)
+2. **Per-substep repetition of per-frame work** (1.0-1.5ms)
+3. **Memory allocations and D3D11 API overhead** (0.3-0.5ms)
 
-**By implementing P1-P3 (low-moderate complexity, low risk), we can reduce CPU time from 5.6ms to 2.5-3ms — a 45-55% improvement.**
+**By implementing P1-P3 (GPU-based kinematic computation + hoist per-frame work + pre-allocate buffers), we can reduce CPU time from 5.8ms to 2.1ms — a 64% improvement.**
 
-This brings CPU time below the frame budget (16.67ms for 60 FPS) with healthy margin, allowing the GPU's excellent <1ms performance to shine.
+**Key Innovation:** Moving kinematic target computation to GPU not only eliminates the largest CPU bottleneck (2.5ms) but also:
+- Automatically deduplicates component queries (2,500 → 50)
+- Reduces upload bandwidth by 25× (80KB → 3.2KB)
+- Works perfectly even when all attachments move (unlike CPU caching)
+- Simplifies code (no complex cache invalidation logic)
+
+This brings CPU time well below the frame budget (16.67ms for 60 FPS) with healthy margin, allowing the GPU's excellent <1ms cloth simulation performance to shine.

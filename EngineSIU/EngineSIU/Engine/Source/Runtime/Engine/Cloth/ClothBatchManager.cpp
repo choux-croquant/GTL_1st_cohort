@@ -749,8 +749,6 @@ void FClothBatchManager::UpdateKinematicTargetsGPU(float DeltaTime)
         {
             if (Component.IsValid())
             {
-                //FTransform transform = FTransform(Component->GetWorldMatrix());
-                /*componentTransforms.Add(transform.ToMatrixWithScale());*/
                 componentTransforms.Add(Component->GetWorldMatrix());
             }
             else

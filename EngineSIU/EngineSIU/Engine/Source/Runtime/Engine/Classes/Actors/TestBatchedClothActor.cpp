@@ -61,7 +61,7 @@ void ATestBatchedClothActor::Tick(float DeltaTime)
     //     if (AttachmentDrivers[i])
     //     {
     //         float phaseOffset = (float)i / (float)NumClothInstances * 2.0f * PI;
-    //         const float Speed = 1.8f;
+    //         const float Speed = 1.2f;
     //         const float MoveRadius = 200.0f;
     //         const float SwayAngleScale = 30.0f;
 
@@ -445,15 +445,15 @@ void ATestBatchedClothActor::PostSpawnInitialize()
     for (int32 i = 0; i < NumClothInstances; i++)
     {
         //CreateTestCloth(i, 20 - i * 2, 5.0f, EClothLODLevel::LOD_0);
-        CreateTestCloth(i, 10, 5.0f, EClothLODLevel::LOD_0);
+        CreateTestCloth(i, 200, 0.25f, EClothLODLevel::LOD_0);
         //CreateTestCloth(i, 100, 0.5f, EClothLODLevel::LOD_0);
     }
 
     // Position instances in a grid layout
     for (int32 i = 0; i < NumClothInstances; ++i)
     {
-        int32 row = i / 4;
-        int32 col = i % 4;
+        int32 row = i / 10;
+        int32 col = i % 10;
 
         FVector offset(row * 150.0f, col * 150.0f, 0.0f);
         FVector instanceLocation = GetActorLocation() + offset;
