@@ -5,6 +5,7 @@
 #include "Core/Container/Map.h"
 #include "Core/Math/Vector.h"
 #include "Core/Math/Transform.h"
+#include "UObject/WeakObjectPtr.h"
 #include <d3d11.h>
 
 // Forward declarations
@@ -37,8 +38,8 @@ enum class EClothColliderType : uint32
 struct FClothColliderSource
 {
 	EClothColliderType Type;
-	UPrimitiveComponent* SourceComponent;  // Component providing the collider
-	int32 ElementIndex;                     // Index in BodySetup->AggGeom array
+	TWeakObjectPtr<UPrimitiveComponent> Component;  // Component providing the collider (SAFE weak pointer)
+	int32 ElementIndex;                              // Index in BodySetup->AggGeom array
 	
 	FTransform CachedTransform;             // Last uploaded transform
 	FVector CachedLocalCenter;              // Local-space center/start point
@@ -51,7 +52,7 @@ struct FClothColliderSource
 	
 	FClothColliderSource()
 		: Type(EClothColliderType::Sphere)
-		, SourceComponent(nullptr)
+		, Component(nullptr)
 		, ElementIndex(0)
 		, CachedTransform(FTransform::Identity)
 		, CachedLocalCenter(FVector::ZeroVector)
@@ -95,6 +96,11 @@ public:
 	 * Unregister all colliders from a component
 	 */
 	void UnregisterCollider(UPrimitiveComponent* Component);
+	
+	/**
+	 * Clear all registered colliders (useful for world transitions)
+	 */
+	void ClearAllColliders();
 	
 	/**
 	 * Manually add a sphere collider

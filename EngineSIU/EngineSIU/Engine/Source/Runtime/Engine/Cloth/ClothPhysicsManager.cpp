@@ -11,100 +11,108 @@ FClothPhysicsManager::FClothPhysicsManager() = default;
 
 FClothPhysicsManager::~FClothPhysicsManager()
 {
-    Shutdown();
+	Shutdown();
 }
 
 void FClothPhysicsManager::Initialize(FGraphicsDevice* InGraphics,
-    FDXDBufferManager* InBufferManager,
-    FDXDShaderManager* InShaderManager)
+	FDXDBufferManager* InBufferManager,
+	FDXDShaderManager* InShaderManager)
 {
-    Graphics = InGraphics;
-    BufferManager = InBufferManager;
-    ShaderManager = InShaderManager;
+	Graphics = InGraphics;
+	BufferManager = InBufferManager;
+	ShaderManager = InShaderManager;
 }
 
 FClothWorld* FClothPhysicsManager::CreateClothWorld(UWorld* World)
 {
-    if (!World || !Graphics || !BufferManager || !ShaderManager) return nullptr;
+	if (!World || !Graphics || !BufferManager || !ShaderManager) return nullptr;
 
-    if (FClothWorld* const* Found = ClothWorldMap.Find(World)) return *Found;
+	if (FClothWorld* const* Found = ClothWorldMap.Find(World)) return *Found;
 
-    FClothWorld* NewWorld = new FClothWorld();
-    NewWorld->Initialize(Graphics, BufferManager, ShaderManager);
-    ClothWorldMap.Add(World, NewWorld);
+	FClothWorld* NewWorld = new FClothWorld();
+	NewWorld->Initialize(Graphics, BufferManager, ShaderManager);
+	ClothWorldMap.Add(World, NewWorld);
 
-    FClothCollisionManager* CollisionMgr = NewWorld->GetCollisionManager();
-    TArray<UPrimitiveComponent*> Primitives;
+	FClothCollisionManager* CollisionMgr = NewWorld->GetCollisionManager();
+	TArray<UPrimitiveComponent*> Primitives;
 
-    for (const auto Iter : TObjectRange<UPrimitiveComponent>())
-    {
-        if (Iter->GetWorld() == GEngine->ActiveWorld)
-        {
-            Primitives.Add(Iter);
-        }
-    }
+	for (const auto Iter : TObjectRange<UPrimitiveComponent>())
+	{
+		if (Iter->GetWorld() == GEngine->ActiveWorld)
+		{
+			Primitives.Add(Iter);
+		}
+	}
 
-    for (UPrimitiveComponent* Primitive : Primitives)
-    {
-        // Register colliders from this component's BodySetup
-        int32 NumColliders = CollisionMgr->RegisterCollider(Primitive);
+	for (UPrimitiveComponent* Primitive : Primitives)
+	{
+		// Register colliders from this component's BodySetup
+		int32 NumColliders = CollisionMgr->RegisterCollider(Primitive);
 
-        /*UE_LOG(ELogLevel::Display, TEXT("Registered %d colliders from %s"),
-            NumColliders, *Actor->GetName());*/
-    }
+		/*UE_LOG(ELogLevel::Display, TEXT("Registered %d colliders from %s"),
+			NumColliders, *Actor->GetName());*/
+	}
 
-    return NewWorld;
+	return NewWorld;
 }
 
 FClothWorld* FClothPhysicsManager::GetClothWorld(UWorld* World) const
 {
-    if (!World) return nullptr;
+	if (!World) return nullptr;
 
-    if (FClothWorld* const* Found = ClothWorldMap.Find(World)) return *Found;
+	if (FClothWorld* const* Found = ClothWorldMap.Find(World)) return *Found;
 
-    return nullptr;
+	return nullptr;
 }
 
 void FClothPhysicsManager::RemoveClothWorld(UWorld* World)
 {
-    if (!World) return;
+	if (!World) return;
 
-    FClothWorld* Found = ClothWorldMap[World];
-    if (Found)
-    {
-        DestroyClothWorld(Found);
-        ClothWorldMap.Remove(World);
-    }
+	FClothWorld* Found = ClothWorldMap[World];
+	if (Found)
+	{
+		// CRITICAL FIX: Clear collision manager before destroying world
+		// This prevents stale component pointers from Editor world persisting into PIE
+		FClothCollisionManager* CollisionMgr = Found->GetCollisionManager();
+		if (CollisionMgr)
+		{
+			CollisionMgr->ClearAllColliders();
+		}
+		
+		DestroyClothWorld(Found);
+		ClothWorldMap.Remove(World);
+	}
 
-    if (CurrentWorld == Found) CurrentWorld = nullptr;
+	if (CurrentWorld == Found) CurrentWorld = nullptr;
 }
 
 void FClothPhysicsManager::Simulate(float DeltaTime)
 {
-    if (!Graphics || !BufferManager || !ShaderManager) return;
-    if (!CurrentWorld) return;
+	if (!Graphics || !BufferManager || !ShaderManager) return;
+	if (!CurrentWorld) return;
 
-    CurrentWorld->Update(DeltaTime);
+	CurrentWorld->Update(DeltaTime);
 }
 
 void FClothPhysicsManager::Shutdown()
 {
-    for (auto& Pair : ClothWorldMap)
-    {
-        DestroyClothWorld(Pair.Value);
-    }
-    ClothWorldMap.Empty();
+	for (auto& Pair : ClothWorldMap)
+	{
+		DestroyClothWorld(Pair.Value);
+	}
+	ClothWorldMap.Empty();
 
-    Graphics = nullptr;
-    BufferManager = nullptr;
-    ShaderManager = nullptr;
-    CurrentWorld = nullptr;
+	Graphics = nullptr;
+	BufferManager = nullptr;
+	ShaderManager = nullptr;
+	CurrentWorld = nullptr;
 }
 
 void FClothPhysicsManager::DestroyClothWorld(FClothWorld* ClothWorld)
 {
-    if (!ClothWorld) return;
+	if (!ClothWorld) return;
 
-    ClothWorld->Release();
-    delete ClothWorld;
+	ClothWorld->Release();
+	delete ClothWorld;
 }

@@ -70,7 +70,8 @@ int32 FClothCollisionManager::RegisterCollider(UPrimitiveComponent* Component, b
 	
 	if (NumRegistered > 0)
 	{
-		UE_LOG(ELogLevel::Display, TEXT("ClothCollisionManager: Registered %d colliders from component"), NumRegistered);
+		UE_LOG(ELogLevel::Display, TEXT("ClothCollisionManager: Registered %d colliders from component %s"), 
+			NumRegistered, *Component->GetName());
 		bGPUDirty = true;
 	}
 	
@@ -103,11 +104,20 @@ void FClothCollisionManager::UnregisterCollider(UPrimitiveComponent* Component)
 	UE_LOG(ELogLevel::Display, TEXT("ClothCollisionManager: Unregistered colliders from component"));
 }
 
+void FClothCollisionManager::ClearAllColliders()
+{
+	ColliderSources.Empty();
+	ComponentToColliderMap.Empty();
+	bGPUDirty = true;
+	
+	UE_LOG(ELogLevel::Display, TEXT("ClothCollisionManager: Cleared all colliders"));
+}
+
 void FClothCollisionManager::AddSphereCollider(const FVector& WorldCenter, float Radius)
 {
 	FClothColliderSource Source;
 	Source.Type = EClothColliderType::Sphere;
-	Source.SourceComponent = nullptr;  // Manual collider
+	Source.Component = nullptr;  // Manual collider
 	Source.ElementIndex = -1;
 	Source.CachedTransform = FTransform::Identity;
 	Source.CachedLocalCenter = WorldCenter;
@@ -123,7 +133,7 @@ void FClothCollisionManager::AddCapsuleCollider(const FVector& WorldStart, const
 {
 	FClothColliderSource Source;
 	Source.Type = EClothColliderType::Capsule;
-	Source.SourceComponent = nullptr;
+	Source.Component = nullptr;
 	Source.ElementIndex = -1;
 	Source.CachedTransform = FTransform::Identity;
 	
@@ -147,7 +157,7 @@ void FClothCollisionManager::AddBoxCollider(const FVector& WorldCenter, const FV
 {
 	FClothColliderSource Source;
 	Source.Type = EClothColliderType::Box;
-	Source.SourceComponent = nullptr;
+	Source.Component = nullptr;
 	Source.ElementIndex = -1;
 	Source.CachedTransform = FTransform(Rotation, WorldCenter, FVector::OneVector);
 	Source.CachedLocalCenter = WorldCenter;
@@ -161,21 +171,41 @@ void FClothCollisionManager::AddBoxCollider(const FVector& WorldCenter, const FV
 
 void FClothCollisionManager::UpdateTransforms()
 {
-	for (FClothColliderSource& Source : ColliderSources)
+	// Iterate backwards to allow safe removal of stale entries
+	for (int32 i = ColliderSources.Num() - 1; i >= 0; --i)
 	{
-		if (!Source.SourceComponent)
-			continue;  // Manual collider, no transform to update
+		FClothColliderSource& Source = ColliderSources[i];
 		
-		// Get current world transform
-		FTransform CurrentTransform = Source.SourceComponent->GetComponentTransform();
-		
-		// Check if changed (simple equality check)
-		if (!CurrentTransform.Equals(Source.CachedTransform))
+		// Check if this is a component-based collider
+		if (Source.Component.IsValid())
 		{
-			Source.CachedTransform = CurrentTransform;
-			Source.bIsDirty = true;
+			// Get current world transform
+			FTransform CurrentTransform = Source.Component->GetComponentTransform();
+			
+			// Validate transform for NaN/Inf before using
+			if (!CurrentTransform.IsValid() || CurrentTransform.ContainsNaN())
+			{
+				// Invalid transform - remove this collider
+				ColliderSources.RemoveAt(i);
+				bGPUDirty = true;
+				continue;
+			}
+			
+			// Check if changed (simple equality check)
+			if (!CurrentTransform.Equals(Source.CachedTransform))
+			{
+				Source.CachedTransform = CurrentTransform;
+				Source.bIsDirty = true;
+				bGPUDirty = true;
+			}
+		}
+		else if (!Source.Component.IsValid())
+		{
+			// Component was valid but is now stale (destroyed) - remove it
+			ColliderSources.RemoveAt(i);
 			bGPUDirty = true;
 		}
+		// If Component.IsExplicitlyNull(), it's a manual collider (no transform to update)
 	}
 }
 
@@ -320,7 +350,7 @@ void FClothCollisionManager::ExtractSphereFromShape(physx::PxShape* Shape, UPrim
 	
 	FClothColliderSource Source;
 	Source.Type = EClothColliderType::Sphere;
-	Source.SourceComponent = Component;
+	Source.Component = Component;
 	Source.ElementIndex = ElementIndex;
 	Source.CachedTransform = Component->GetComponentTransform();
 	Source.CachedLocalCenter = FVector(localPose.p.x, localPose.p.y, localPose.p.z);
@@ -346,7 +376,7 @@ void FClothCollisionManager::ExtractCapsuleFromShape(physx::PxShape* Shape, UPri
 	
 	FClothColliderSource Source;
 	Source.Type = EClothColliderType::Capsule;
-	Source.SourceComponent = Component;
+	Source.Component = Component;
 	Source.ElementIndex = ElementIndex;
 	Source.CachedTransform = Component->GetComponentTransform();
 	Source.CachedLocalCenter = FVector(localPose.p.x, localPose.p.y, localPose.p.z);
@@ -380,7 +410,7 @@ void FClothCollisionManager::ExtractBoxFromShape(physx::PxShape* Shape, UPrimiti
 	
 	FClothColliderSource Source;
 	Source.Type = EClothColliderType::Box;
-	Source.SourceComponent = Component;
+	Source.Component = Component;
 	Source.ElementIndex = ElementIndex;
 	Source.CachedTransform = Component->GetComponentTransform();
 	Source.CachedLocalCenter = FVector(localPose.p.x, localPose.p.y, localPose.p.z);
