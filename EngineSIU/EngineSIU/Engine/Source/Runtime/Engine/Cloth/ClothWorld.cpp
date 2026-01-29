@@ -112,7 +112,6 @@ void FClothWorld::Update(float DeltaTime)
             GlobalForces.Explosions.RemoveAt(i);
         }
     }
-
    
     {
         // Process LOD transitions first
