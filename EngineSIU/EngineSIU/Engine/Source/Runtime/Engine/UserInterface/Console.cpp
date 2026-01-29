@@ -116,6 +116,30 @@ void FEngineProfiler::Render(ID3D11DeviceContext* Context, UINT Width, UINT Heig
         return;
     }
 
+    // Toggle button for switching between average and real-time display
+    ImGui::PushStyleColor(ImGuiCol_Button, bShowMovingAverage ? ImVec4(0.2f, 0.6f, 0.2f, 1.0f) : ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, bShowMovingAverage ? ImVec4(0.3f, 0.7f, 0.3f, 1.0f) : ImVec4(0.7f, 0.3f, 0.3f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, bShowMovingAverage ? ImVec4(0.1f, 0.5f, 0.1f, 1.0f) : ImVec4(0.5f, 0.1f, 0.1f, 1.0f));
+    
+    if (ImGui::Button(bShowMovingAverage ? "Mode: Average (60f)" : "Mode: Real-time"))
+    {
+        bShowMovingAverage = !bShowMovingAverage;
+    }
+    
+    ImGui::PopStyleColor(3);
+    
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::BeginTooltip();
+        ImGui::TextUnformatted("Click to toggle between moving average (smoothed) and real-time values.");
+        ImGui::TextUnformatted("Moving average uses 60 frames (~1 second at 60fps).");
+        ImGui::EndTooltip();
+    }
+
+    ImGui::Separator();
+
     if (ImGui::BeginTable("ProfilerTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
     {
         ImGui::TableSetupColumn("Scope", ImGuiTableColumnFlags_WidthStretch);
@@ -125,30 +149,56 @@ void FEngineProfiler::Render(ID3D11DeviceContext* Context, UINT Width, UINT Heig
 
         for (const auto& [DisplayName, CPUStatName, GPUStatName] : TrackedScopes)
         {
+            // Get current frame timings
             const double CPUTimeMs = FProfilerStatsManager::GetCpuStatMs(CPUStatName);
             double GPUTimeMs = GPUTimingManager->GetElapsedTimeMs(TStatId(GPUStatName));
 
-            FString CPUText = (CPUTimeMs >= 0.0) ? FString::Printf(TEXT("%.3f"), CPUTimeMs) : TEXT("---");
-            FString GPUText;
+            // Create unique key combining CPU and GPU stat names for tracking
+            FName HistoryKey = FName(CPUStatName.ToString() + TEXT("_") + GPUStatName.ToString());
+            
+            // Initialize timing history if not exists
+            if (!TimingHistories.Contains(HistoryKey))
+            {
+                TimingHistories.Add(HistoryKey, FTimingHistory());
+            }
+            
+            // Add current samples to history
+            FTimingHistory& History = TimingHistories[HistoryKey];
+            History.AddSample(CPUTimeMs, GPUTimeMs);
 
-            if (GPUTimeMs == -1.0) GPUText = TEXT("Disjoint");
-            else if (GPUTimeMs == -2.0) GPUText = TEXT("Waiting");
-            else if (GPUTimeMs < 0.0) GPUText = TEXT("---");
-            else GPUText = FString::Printf(TEXT("%.3f"), GPUTimeMs);
+            // Determine what values to display based on toggle state
+            double DisplayCPUTimeMs = CPUTimeMs;
+            double DisplayGPUTimeMs = GPUTimeMs;
+            
+            if (bShowMovingAverage)
+            {
+                DisplayCPUTimeMs = History.GetCPUAverage();
+                DisplayGPUTimeMs = History.GetGPUAverage();
+            }
+
+            // Format CPU text
+            FString CPUText = (DisplayCPUTimeMs >= 0.0) ? FString::Printf(TEXT("%.3f"), DisplayCPUTimeMs) : TEXT("---");
+            
+            // Format GPU text with special states
+            FString GPUText;
+            if (DisplayGPUTimeMs == -1.0) GPUText = TEXT("Disjoint");
+            else if (DisplayGPUTimeMs == -2.0) GPUText = TEXT("Waiting");
+            else if (DisplayGPUTimeMs < 0.0) GPUText = TEXT("---");
+            else GPUText = FString::Printf(TEXT("%.3f"), DisplayGPUTimeMs);
 
             ImGui::TableNextRow();
 
-            // Scope 열
+            // Scope column
             ImGui::TableSetColumnIndex(0);
             ImGui::Text("%s", *DisplayName);
 
-            // CPU (ms) 열 - 우측 정렬
+            // CPU (ms) column - right aligned
             ImGui::TableSetColumnIndex(1);
             float CPUTextWidth = ImGui::CalcTextSize(*CPUText).x;
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - CPUTextWidth);
             ImGui::TextUnformatted(*CPUText);
 
-            // GPU (ms) 열 - 우측 정렬
+            // GPU (ms) column - right aligned
             ImGui::TableSetColumnIndex(2);
             float GPUTextWidth = ImGui::CalcTextSize(*GPUText).x;
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - GPUTextWidth);
