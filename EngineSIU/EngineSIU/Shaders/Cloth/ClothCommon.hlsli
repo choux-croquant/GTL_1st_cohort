@@ -110,6 +110,23 @@ struct FKinematicTarget
 };
 
 /**
+ * Kinematic attachment structure (P1 Optimization - GPU-based computation)
+ * Compact representation for GPU-based kinematic target computation
+ * CPU uploads component transforms, GPU computes final positions
+ * Must match FKinematicAttachmentGPU in ClothGPUStructs.h
+ */
+struct FKinematicAttachment
+{
+    uint ComponentIndex;   // Index into ComponentTransforms buffer (deduplication!)
+    uint ParticleIndex;    // Target particle index in batch
+    float Stiffness;       // Attachment strength (0-1)
+    float AttachDistance;  // Max distance for LRA (0 = hard kinematic)
+    
+    float3 LocalOffset;    // Local space offset from component
+    float Padding;         // Align to 32 bytes
+};
+
+/**
  * Per-instance parameters for batched simulation
  * Allows different instances to have different material properties
  */
