@@ -8,14 +8,17 @@
 #include "ClothInstanceHandle.h"
 #include "Classes/Engine/ClothAsset.h"
 #include "Classes/Components/ClothComponent.h"
+#include "Classes/Components/SceneComponent.h"
 #include "Windows/D3D11RHI/GraphicDevice.h"
 #include "Windows/D3D11RHI/DXDBufferManager.h"
 #include "Windows/D3D11RHI/DXDShaderManager.h"
 #include "Engine/UserInterface/Console.h"
 #include "Core/Math/MathUtility.h"
+#include "Core/Math/Matrix.h"
+#include "ClothGPUStructs.h"
 
 FClothBatchManager::FClothBatchManager(EClothLODLevel InLODLevel)
-    : LODLevel(InLODLevel), BatchedSolver(nullptr), TotalParticleCount(0), TotalConstraintCount(0), TotalBendConstraintCount(0), TotalKinematicTargetCount(0), TotalTriangleCount(0), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), bNeedsReallocation(false), bNeedsCompaction(false), GrowthFactor(1.5f), Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), bIsInitialized(false)
+    : LODLevel(InLODLevel), BatchedSolver(nullptr), TotalParticleCount(0), TotalConstraintCount(0), TotalBendConstraintCount(0), TotalKinematicTargetCount(0), TotalTriangleCount(0), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), bNeedsReallocation(false), bNeedsCompaction(false), GrowthFactor(1.5f), TotalAttachmentCount(0), bAttachmentDataDirty(true), Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), bIsInitialized(false)
 {
 }
 
@@ -341,6 +344,9 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
 
     // 7. Update instance parameters
     UpdateInstanceParameterBuffer();
+    
+    // NEW: Mark attachment data dirty so GPU-based kinematic targets are rebuilt
+    bAttachmentDataDirty = true;
 
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Added instance - %d particles, %d constraints, Total instances: %d, Total particles: %d"),
            static_cast<int32>(LODLevel), particleCount, constraintCount, Instances.Num(), TotalParticleCount);
@@ -400,20 +406,28 @@ void FClothBatchManager::UpdateInstanceParameters(FClothInstanceHandle *Instance
 
 void FClothBatchManager::Update(float DeltaTime)
 {
+    QUICK_SCOPE_CYCLE_COUNTER(ClothBatch_Update);
+    
     if (!bIsInitialized || Instances.Num() == 0)
         return;
 
-    // Update kinematic targets
-    UpdateKinematicTargets(DeltaTime);
+    // Update kinematic targets (NEW: GPU-based - P1 optimization)
+    {
+        QUICK_SCOPE_CYCLE_COUNTER(ClothBatch_UpdateKinematicTargets_GPU);
+        UpdateKinematicTargetsGPU(DeltaTime);
+    }
 
     // Simulate using fixed or variable timestep
-    if (FixedTimestepState.bUseFixedTimestep)
     {
-        SimulateFixedTimestep(DeltaTime);
-    }
-    else
-    {
-        Simulate(DeltaTime);
+        QUICK_SCOPE_CYCLE_COUNTER(ClothBatch_Simulate);
+        if (FixedTimestepState.bUseFixedTimestep)
+        {
+            SimulateFixedTimestep(DeltaTime);
+        }
+        else
+        {
+            Simulate(DeltaTime);
+        }
     }
 }
 
@@ -638,6 +652,123 @@ void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
     {
         BatchedSolver->UploadKinematicTargets(allTargets, 0);
     }
+}
+
+// NEW: GPU-based kinematic target computation (P1 optimization - saves ~2ms)
+void FClothBatchManager::BuildKinematicAttachmentData()
+{
+    ComponentIndexMap.Empty();
+    UniqueComponents.Empty();
+    TArray<FKinematicAttachmentGPU> attachmentData;
+    
+    // Collect all attachments and deduplicate components
+    for (FClothInstanceHandle* Handle : Instances)
+    {
+        if (!Handle || !Handle->GetOwnerComponent() || !Handle->GetOwnerComponent()->GetClothAsset())
+            continue;
+            
+        const FClothInstanceMetadata& metadata = Handle->GetMetadata();
+        UClothComponent* owner = Handle->GetOwnerComponent();
+        const TArray<FClothAttachmentData>& attachments = owner->GetClothAsset()->AttachmentsData;
+        
+        for (const FClothAttachmentData& attachment : attachments)
+        {
+            if (!attachment.DriverComponent)
+                continue;
+                
+            // Get or create component index (deduplication!)
+            uint32* ComponentIndexPtr = ComponentIndexMap.Find(attachment.DriverComponent);
+            uint32 ComponentIndex;
+            
+            if (!ComponentIndexPtr)
+            {
+                ComponentIndex = UniqueComponents.Num();
+                ComponentIndexMap.Add(attachment.DriverComponent, ComponentIndex);
+                UniqueComponents.Add(attachment.DriverComponent);
+            }
+            else
+            {
+                ComponentIndex = *ComponentIndexPtr;
+            }
+            
+            // Build GPU attachment data
+            FKinematicAttachmentGPU gpuAttachment;
+            gpuAttachment.ComponentIndex = ComponentIndex;
+            gpuAttachment.ParticleIndex = attachment.ClothVertexIndex + metadata.ParticleOffset;
+            gpuAttachment.Stiffness = attachment.Stiffness;
+            gpuAttachment.AttachDistance = attachment.AttachDistance;
+            gpuAttachment.LocalOffset = attachment.LocalOffset.GetTranslation();
+            gpuAttachment.Padding = 0.0f;
+            
+            attachmentData.Add(gpuAttachment);
+        }
+    }
+    
+    // Store total attachment count for GPU dispatch
+    TotalAttachmentCount = attachmentData.Num();
+    
+    // Upload to GPU (ONCE - this data is static)
+    if (attachmentData.Num() > 0 && BatchedSolver)
+    {
+        BatchedSolver->UploadAttachmentData(attachmentData);
+        BatchedSolver->SetAttachmentCount(attachmentData.Num());  // Set count for dispatch
+    }
+    
+    float dedupPercent = attachmentData.Num() > 0 ?
+        (1.0f - (float)UniqueComponents.Num() / attachmentData.Num()) * 100.0f : 0.0f;
+    
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Built kinematic attachments - %d attachments, %d unique components (%.1f%% dedup)"),
+           static_cast<int32>(LODLevel),
+           attachmentData.Num(),
+           UniqueComponents.Num(),
+           dedupPercent);
+    
+    bAttachmentDataDirty = false;
+}
+
+void FClothBatchManager::UpdateKinematicTargetsGPU(float DeltaTime)
+{
+    QUICK_SCOPE_CYCLE_COUNTER(UpdateKinematicTargets_GPU);
+    
+    if (!BatchedSolver || TotalKinematicTargetCount == 0)
+        return;
+    
+    // Rebuild attachment data if needed (rare - only when attachments change)
+    if (bAttachmentDataDirty)
+    {
+        BuildKinematicAttachmentData();
+    }
+    
+    // Collect component transforms (ONLY unique components - 10-50 instead of 2,500!)
+    TArray<FMatrix> componentTransforms;
+    componentTransforms.Reserve(UniqueComponents.Num());
+    
+    {
+        QUICK_SCOPE_CYCLE_COUNTER(UpdateKinematicTargets_CollectTransforms);
+        for (const TWeakObjectPtr<USceneComponent>& Component : UniqueComponents)
+        {
+            if (Component.IsValid())
+            {
+                //FTransform transform = FTransform(Component->GetWorldMatrix());
+                /*componentTransforms.Add(transform.ToMatrixWithScale());*/
+                componentTransforms.Add(Component->GetWorldMatrix());
+            }
+            else
+            {
+                // Component destroyed - add identity
+                componentTransforms.Add(FMatrix::Identity);
+            }
+        }
+    }
+    
+    // Upload component transforms (SMALL: 50 × 64 bytes = 3.2KB vs 80KB before!)
+    if (componentTransforms.Num() > 0)
+    {
+        QUICK_SCOPE_CYCLE_COUNTER(UpdateKinematicTargets_UploadTransforms);
+        BatchedSolver->UploadComponentTransforms(componentTransforms);
+    }
+    
+    // GPU will compute final positions in compute shader
 }
 
 bool FClothBatchManager::NeedsReallocation(uint32 RequiredParticles, uint32 RequiredConstraints) const

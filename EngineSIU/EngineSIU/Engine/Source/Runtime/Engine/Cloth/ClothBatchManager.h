@@ -12,6 +12,7 @@
 #include "Math/Vector.h"
 #include "ClothBatchTypes.h"
 #include "ClothSimulationData.h"
+#include "UObject/WeakObjectPtr.h"
 
 // Forward declarations
 class FClothBatchedSolver;
@@ -20,6 +21,7 @@ class FClothCollisionManager;
 class FGraphicsDevice;
 class FDXDBufferManager;
 class FDXDShaderManager;
+class USceneComponent;
 struct ID3D11ShaderResourceView;
 
 /**
@@ -75,6 +77,10 @@ private:
     void UpdateGPUBuffers();
     void UpdateInstanceParameterBuffer();
     void UpdateKinematicTargets(float DeltaTime);
+    
+    // NEW: GPU-based kinematic target methods
+    void BuildKinematicAttachmentData();
+    void UpdateKinematicTargetsGPU(float DeltaTime);
 
     bool NeedsReallocation(uint32 RequiredParticles, uint32 RequiredConstraints) const;
     uint32 CalculateNewCapacity(uint32 CurrentCapacity, uint32 RequiredCapacity) const;
@@ -113,6 +119,12 @@ private:
     FGraphicsDevice *Graphics;
     FDXDBufferManager *BufferManager;
     FDXDShaderManager *ShaderManager;
+
+    // NEW: Component deduplication for GPU-based kinematic targets (P1 optimization)
+    TMap<USceneComponent*, uint32> ComponentIndexMap;  // Component -> Index mapping
+    TArray<TWeakObjectPtr<USceneComponent>> UniqueComponents;  // Deduplicated component list
+    uint32 TotalAttachmentCount;  // Total number of attachments built for GPU
+    bool bAttachmentDataDirty;  // Needs rebuild when attachments change
 
     bool bIsInitialized;
 };

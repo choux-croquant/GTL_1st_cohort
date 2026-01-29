@@ -269,13 +269,15 @@ void FClothCollisionManager::UploadToGPU(ID3D11Device* Device, ID3D11DeviceConte
 		}
 	}
 	
-	// Build GPU data array
-	TArray<FClothColliderGPU> gpuColliders;
-	gpuColliders.Reserve(ColliderSources.Num());
+	// P3 OPTIMIZATION: Reuse pre-allocated buffer (NO allocation in hot path)
+	// Clear array but keep allocated capacity to avoid reallocations
+	int32 CurrentCapacity = StagingColliders.Max();
+	StagingColliders.Empty(ColliderSources.Num());  // Clear and reserve in one call
 	
+	// Fill buffer
 	for (const FClothColliderSource& Source : ColliderSources)
 	{
-		gpuColliders.Add(ConvertToGPU(Source));
+		StagingColliders.Add(ConvertToGPU(Source));
 	}
 	
 	// Upload to GPU
@@ -283,7 +285,7 @@ void FClothCollisionManager::UploadToGPU(ID3D11Device* Device, ID3D11DeviceConte
 	HRESULT hr = Context->Map(ColliderBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &msr);
 	if (SUCCEEDED(hr))
 	{
-		memcpy(msr.pData, gpuColliders.GetData(), gpuColliders.Num() * sizeof(FClothColliderGPU));
+		memcpy(msr.pData, StagingColliders.GetData(), StagingColliders.Num() * sizeof(FClothColliderGPU));
 		Context->Unmap(ColliderBuffer, 0);
 		bGPUDirty = false;
 	}

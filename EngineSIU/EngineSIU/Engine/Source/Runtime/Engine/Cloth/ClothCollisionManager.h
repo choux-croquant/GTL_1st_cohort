@@ -161,5 +161,8 @@ private:
 	TArray<FClothColliderSource> ColliderSources;
 	TMap<UPrimitiveComponent*, TArray<int32>> ComponentToColliderMap;  // Component -> ColliderSource indices
 	
+	// P3 OPTIMIZATION: Pre-allocated staging buffer (reused every frame)
+	TArray<FClothColliderGPU> StagingColliders;
+	
 	bool bGPUDirty;  // Global dirty flag
 };
