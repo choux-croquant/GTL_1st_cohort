@@ -45,6 +45,7 @@ private:
     void RenderBoxInstanced(uint64 ShowFlag);
     void RenderSphereInstanced(uint64 ShowFlag);
     void RenderCapsuleInstanced(uint64 ShowFlag);
+    void RenderClothColliders(uint64 ShowFlag);
 
     // Grid
     // void RenderGrid(std::shared_ptr<FEditorViewportClient> ActiveViewport);

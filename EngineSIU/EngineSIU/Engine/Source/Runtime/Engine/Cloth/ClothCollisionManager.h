@@ -136,6 +136,9 @@ public:
 	
 	// Debug
 	void DebugDraw();
+	
+	// Public access for rendering (read-only)
+	const TArray<FClothColliderSource>& GetColliderSources() const { return ColliderSources; }
 
 private:
 	// Extract colliders from BodySetup

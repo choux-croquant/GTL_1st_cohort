@@ -404,13 +404,13 @@ void FRenderer::RenderOpaque(const std::shared_ptr<FEditorViewportClient> &Viewp
 
 void FRenderer::RenderEditorDepthElement(const std::shared_ptr<FEditorViewportClient> &Viewport) const
 {
+    {
+        QUICK_SCOPE_CYCLE_COUNTER(EditorRenderPass_CPU)
+        QUICK_GPU_SCOPE_CYCLE_COUNTER(EditorRenderPass_GPU, *GPUTimingManager)
+        EditorRenderPass->Render(Viewport); // TODO: 임시로 이전에 작성되었던 와이어 프레임 렌더 패스이므로, 이후 개선 필요.
+    }
     if (GEngine->ActiveWorld->WorldType != EWorldType::PIE)
     {
-        {
-            QUICK_SCOPE_CYCLE_COUNTER(EditorRenderPass_CPU)
-            QUICK_GPU_SCOPE_CYCLE_COUNTER(EditorRenderPass_GPU, *GPUTimingManager)
-            EditorRenderPass->Render(Viewport); // TODO: 임시로 이전에 작성되었던 와이어 프레임 렌더 패스이므로, 이후 개선 필요.
-        }
         {
             QUICK_SCOPE_CYCLE_COUNTER(LinePass_CPU)
             QUICK_GPU_SCOPE_CYCLE_COUNTER(LinePass_GPU, *GPUTimingManager)
