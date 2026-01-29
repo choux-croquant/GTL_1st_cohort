@@ -43,9 +43,9 @@ void FClothWorld::Initialize(FGraphicsDevice *InGraphics, FDXDBufferManager *InB
     {
         // Create shared collision manager (used by all LOD solvers)
         SharedCollisionManager = new FClothCollisionManager();
-        SharedCollisionManager->Initialize(512);  // Max 512 world-space colliders
+        SharedCollisionManager->Initialize(512); // Max 512 world-space colliders
         UE_LOG(ELogLevel::Display, TEXT("ClothWorld: Created shared collision manager"));
-        
+
         // Initialize batch managers for batched mode
         InitializeBatchManagers();
         UE_LOG(ELogLevel::Display, TEXT("ClothWorld: Initialized in Batched mode"));
@@ -77,7 +77,7 @@ void FClothWorld::Release()
 
     // Release batch managers (batched mode)
     ReleaseBatchManagers();
-    
+
     // Release shared collision manager
     if (SharedCollisionManager)
     {
@@ -112,7 +112,7 @@ void FClothWorld::Update(float DeltaTime)
             GlobalForces.Explosions.RemoveAt(i);
         }
     }
-   
+
     {
         // Process LOD transitions first
         ProcessLODTransitions();
@@ -198,6 +198,7 @@ FClothInstanceHandle *FClothWorld::RegisterClothInstanceBatched(UClothComponent 
     Params.Indices = Asset->GetIndices();
     Params.Constraints = Asset->GetDistanceConstraints();
     Params.BendConstraints = Asset->GetBendConstraints();
+    Params.AreaConstraints = Asset->GetAreaConstraints(); // NEW: Area constraints
     Params.Attachments = Asset->GetAttachmentData();
 
     // CRITICAL FIX: Get component's world transform for converting local positions to world space

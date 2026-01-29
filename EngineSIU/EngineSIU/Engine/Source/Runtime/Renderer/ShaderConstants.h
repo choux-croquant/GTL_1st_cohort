@@ -279,13 +279,18 @@ struct alignas(16) FClothSimConstants
 
     uint32 CurrentIteration;
     uint32 UseXPBD;
-    float RelaxationFactor;        // NEW: Jacobi convergence control (Velvet-inspired)
-    float MaxSpeed;                // NEW: Velocity clamping (Velvet-inspired)
-    
-    float LongRangeStretchiness;   // NEW: LRA slack multiplier (Velvet default: 1.2)
-    uint32 NumColliders;           // NEW: Number of active colliders
-    float CollisionThickness;      // NEW: Collision distance threshold
-    float CollisionFriction;       // NEW: Friction coefficient (0-1)
+    float RelaxationFactor; // NEW: Jacobi convergence control (Velvet-inspired)
+    float MaxSpeed;         // NEW: Velocity clamping (Velvet-inspired)
+
+    float LongRangeStretchiness; // NEW: LRA slack multiplier (Velvet default: 1.2)
+    uint32 NumColliders;         // NEW: Number of active colliders
+    float CollisionThickness;    // NEW: Collision distance threshold
+    float CollisionFriction;     // NEW: Friction coefficient (0-1)
+
+    uint32 NumAreaConstraints; // NEW: Number of area constraints
+    float AreaStiffness;       // NEW: Global area constraint stiffness
+    float Padding0;            // Alignment padding
+    float Padding1;            // Alignment padding
 
     alignas(16) FMatrix WorldMatrix;
 };

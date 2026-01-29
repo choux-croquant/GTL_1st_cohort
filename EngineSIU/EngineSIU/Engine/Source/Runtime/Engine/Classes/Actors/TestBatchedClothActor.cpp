@@ -56,14 +56,14 @@ void ATestBatchedClothActor::Tick(float DeltaTime)
         return;
     }
 
-    //for (int32 i = 0; i < NumClothInstances; ++i)
+    // for (int32 i = 0; i < NumClothInstances; ++i)
     //{
-    //     if (AttachmentDrivers[i])
-    //     {
-    //         float phaseOffset = (float)i / (float)NumClothInstances * 2.0f * PI;
-    //         const float Speed = 1.2f;
-    //         const float MoveRadius = 200.0f;
-    //         const float SwayAngleScale = 30.0f;
+    //      if (AttachmentDrivers[i])
+    //      {
+    //          float phaseOffset = (float)i / (float)NumClothInstances * 2.0f * PI;
+    //          const float Speed = 1.2f;
+    //          const float MoveRadius = 200.0f;
+    //          const float SwayAngleScale = 30.0f;
 
     //        float Time = AnimationTime * Speed + phaseOffset;
 
@@ -281,6 +281,55 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, int32 
         }
     }
 
+    // NEW: Generate area constraints (one per triangle)
+    // Area constraints preserve triangle area to resist in-plane stretching/compression
+    // This complements distance constraints by preventing triangle collapse or excessive expansion
+    TArray<FClothAreaConstraint> areaConstraints;
+
+    for (int32 y = 0; y < GridSize - 1; ++y)
+    {
+        for (int32 x = 0; x < GridSize - 1; ++x)
+        {
+            int32 i0 = y * GridSize + x;
+            int32 i1 = y * GridSize + (x + 1);
+            int32 i2 = (y + 1) * GridSize + x;
+            int32 i3 = (y + 1) * GridSize + (x + 1);
+
+            // Triangle 1: (i0, i1, i2)
+            {
+                FVector e1 = positions[i1] - positions[i0];
+                FVector e2 = positions[i2] - positions[i0];
+                FVector crossProd = FVector::CrossProduct(e1, e2);
+                float restArea = 0.5f * crossProd.Length();
+                FVector restNormal = crossProd;
+                restNormal.Normalize();
+
+                // XPBD compliance: lower = stiffer area preservation
+                // 1e-5 is quite stiff, preventing significant area change
+                float compliance = 1e-5f;
+
+                areaConstraints.Add(FClothAreaConstraint(i0, i1, i2, restArea, restNormal, compliance));
+            }
+
+            // Triangle 2: (i1, i3, i2)
+            {
+                FVector e1 = positions[i3] - positions[i1];
+                FVector e2 = positions[i2] - positions[i1];
+                FVector crossProd = FVector::CrossProduct(e1, e2);
+                float restArea = 0.5f * crossProd.Length();
+                FVector restNormal = crossProd;
+                restNormal.Normalize();
+
+                float compliance = 1e-5f;
+
+                areaConstraints.Add(FClothAreaConstraint(i1, i3, i2, restArea, restNormal, compliance));
+            }
+        }
+    }
+
+    UE_LOG(ELogLevel::Display, TEXT("TestBatchedClothActor: Generated %d area constraints for cloth %d"),
+           areaConstraints.Num(), Index);
+
     // DATA-DRIVEN ATTACHMENT CONFIGURATION
     // Set up attachments for top row by configuring them directly on the cloth asset.
     // The simulation system will automatically resolve world positions each frame
@@ -365,6 +414,12 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, int32 
         ClothAssets[Index]->AddBendConstraint(constraint);
     }
 
+    // NEW: Add area constraints to cloth asset
+    for (const FClothAreaConstraint &constraint : areaConstraints)
+    {
+        ClothAssets[Index]->AddAreaConstraint(constraint);
+    }
+
     // Configure simulation parameters with variations per instance
     FClothConfig config;
     config.Mass = 1.0f;
@@ -444,9 +499,9 @@ void ATestBatchedClothActor::PostSpawnInitialize()
     // LOD 0 (High detail) - Batch Test
     for (int32 i = 0; i < NumClothInstances; i++)
     {
-        //CreateTestCloth(i, 20 - i * 2, 5.0f, EClothLODLevel::LOD_0);
+        // CreateTestCloth(i, 20 - i * 2, 5.0f, EClothLODLevel::LOD_0);
         CreateTestCloth(i, 20, 2.5f, EClothLODLevel::LOD_0);
-        //CreateTestCloth(i, 100, 0.5f, EClothLODLevel::LOD_0);
+        // CreateTestCloth(i, 100, 0.5f, EClothLODLevel::LOD_0);
     }
 
     // Position instances in a grid layout

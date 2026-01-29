@@ -77,7 +77,7 @@ private:
     void UpdateGPUBuffers();
     void UpdateInstanceParameterBuffer();
     void UpdateKinematicTargets(float DeltaTime);
-    
+
     // NEW: GPU-based kinematic target methods
     void BuildKinematicAttachmentData();
     void UpdateKinematicTargetsGPU(float DeltaTime);
@@ -100,6 +100,7 @@ private:
     uint32 TotalBendConstraintCount;
     uint32 TotalKinematicTargetCount;
     uint32 TotalTriangleCount;
+    uint32 TotalAreaConstraintCount; // NEW: Total area constraints
 
     // Buffer management
     uint32 AllocatedParticleCapacity;
@@ -108,6 +109,7 @@ private:
     uint32 AllocatedKinematicTargetCapacity;
     uint32 AllocatedTriangleCapacity;
     uint32 AllocatedInstanceCapacity;
+    uint32 AllocatedAreaConstraintCapacity; // NEW: Allocated area constraints
     bool bNeedsReallocation;
     bool bNeedsCompaction;
     float GrowthFactor;
@@ -121,10 +123,10 @@ private:
     FDXDShaderManager *ShaderManager;
 
     // NEW: Component deduplication for GPU-based kinematic targets (P1 optimization)
-    TMap<USceneComponent*, uint32> ComponentIndexMap;  // Component -> Index mapping
-    TArray<TWeakObjectPtr<USceneComponent>> UniqueComponents;  // Deduplicated component list
-    uint32 TotalAttachmentCount;  // Total number of attachments built for GPU
-    bool bAttachmentDataDirty;  // Needs rebuild when attachments change
+    TMap<USceneComponent *, uint32> ComponentIndexMap;        // Component -> Index mapping
+    TArray<TWeakObjectPtr<USceneComponent>> UniqueComponents; // Deduplicated component list
+    uint32 TotalAttachmentCount;                              // Total number of attachments built for GPU
+    bool bAttachmentDataDirty;                                // Needs rebuild when attachments change
 
     bool bIsInitialized;
 };

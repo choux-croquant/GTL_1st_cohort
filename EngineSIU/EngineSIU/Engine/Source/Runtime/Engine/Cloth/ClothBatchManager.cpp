@@ -18,7 +18,7 @@
 #include "ClothGPUStructs.h"
 
 FClothBatchManager::FClothBatchManager(EClothLODLevel InLODLevel)
-    : LODLevel(InLODLevel), BatchedSolver(nullptr), TotalParticleCount(0), TotalConstraintCount(0), TotalBendConstraintCount(0), TotalKinematicTargetCount(0), TotalTriangleCount(0), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), bNeedsReallocation(false), bNeedsCompaction(false), GrowthFactor(1.5f), TotalAttachmentCount(0), bAttachmentDataDirty(true), Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), bIsInitialized(false)
+    : LODLevel(InLODLevel), BatchedSolver(nullptr), TotalParticleCount(0), TotalConstraintCount(0), TotalBendConstraintCount(0), TotalKinematicTargetCount(0), TotalTriangleCount(0), TotalAreaConstraintCount(0), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), AllocatedAreaConstraintCapacity(0), bNeedsReallocation(false), bNeedsCompaction(false), GrowthFactor(1.5f), TotalAttachmentCount(0), bAttachmentDataDirty(true), Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), bIsInitialized(false)
 {
 }
 
@@ -55,13 +55,15 @@ void FClothBatchManager::Initialize(FGraphicsDevice *InGraphics,
     uint32 initialKinematicTargets = 20000;
     uint32 initialTriangles = 5000000; // CRITICAL: 5M triangles = 15M indices
     uint32 initialInstances = 512;
+    uint32 initialAreaConstraints = 10000000; // NEW: 2 area constraints per triangle
 
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Allocating buffers - Triangles: %u (Indices: %u), Particles: %u"),
            static_cast<int32>(LODLevel), initialTriangles, initialTriangles * 3, initialParticles);
 
     if (!BatchedSolver->AllocateBuffers(initialParticles, initialConstraints,
                                         initialBendConstraints, initialKinematicTargets,
-                                        initialTriangles, initialInstances))
+                                        initialTriangles, initialInstances,
+                                        initialAreaConstraints))
     {
         UE_LOG(ELogLevel::Error, TEXT("ClothBatchManager[LOD%d]: Failed to allocate initial buffers"),
                static_cast<int32>(LODLevel));
@@ -74,6 +76,7 @@ void FClothBatchManager::Initialize(FGraphicsDevice *InGraphics,
     AllocatedKinematicTargetCapacity = initialKinematicTargets;
     AllocatedTriangleCapacity = initialTriangles;
     AllocatedInstanceCapacity = initialInstances;
+    AllocatedAreaConstraintCapacity = initialAreaConstraints;
 
     // Check if solver is fully initialized (shaders + buffers)
     if (BatchedSolver && BatchedSolver->IsInitialized())
@@ -135,6 +138,7 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
     uint32 bendConstraintCount = Params.BendConstraints.Num();
     uint32 kinematicTargetCount = Params.Attachments.Num();
     uint32 triangleCount = Params.Indices.Num() / 3;
+    uint32 areaConstraintCount = Params.AreaConstraints.Num();
 
     // Check if we need reallocation
     uint32 requiredParticles = TotalParticleCount + particleCount;
@@ -157,6 +161,8 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
     metadata.KinematicTargetCount = kinematicTargetCount;
     metadata.TriangleOffset = TotalTriangleCount;
     metadata.TriangleCount = triangleCount;
+    metadata.AreaConstraintOffset = TotalAreaConstraintCount; // NEW
+    metadata.AreaConstraintCount = areaConstraintCount;       // NEW
     metadata.InstanceParameterIndex = Instances.Num();
     metadata.bIsActive = Params.bStartActive;
     metadata.CurrentLOD = Params.InitialLOD;
@@ -189,10 +195,12 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
     TotalBendConstraintCount += bendConstraintCount;
     TotalKinematicTargetCount += kinematicTargetCount;
     TotalTriangleCount += triangleCount;
+    TotalAreaConstraintCount += areaConstraintCount; // NEW
 
     // Update solver counts
     BatchedSolver->SetUsedCounts(TotalParticleCount, TotalConstraintCount, TotalBendConstraintCount,
-                                 TotalKinematicTargetCount, TotalTriangleCount, Instances.Num());
+                                 TotalKinematicTargetCount, TotalTriangleCount, Instances.Num(),
+                                 TotalAreaConstraintCount); // NEW
 
     // ===== UPLOAD INSTANCE DATA TO GPU BUFFERS =====
 
@@ -324,6 +332,33 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         BatchedSolver->UploadBendConstraintData(bendConstraintsGPU, metadata.BendConstraintOffset);
     }
 
+    // NEW: Upload area constraints with global particle indices
+    if (Params.AreaConstraints.Num() > 0)
+    {
+        TArray<FClothAreaConstraintGPU> areaConstraintsGPU;
+        areaConstraintsGPU.Reserve(Params.AreaConstraints.Num());
+
+        for (const FClothAreaConstraint &ac : Params.AreaConstraints)
+        {
+            FClothAreaConstraintGPU gpu;
+            // Convert local particle indices to global indices
+            gpu.ParticleA = ac.ParticleA + metadata.ParticleOffset;
+            gpu.ParticleB = ac.ParticleB + metadata.ParticleOffset;
+            gpu.ParticleC = ac.ParticleC + metadata.ParticleOffset;
+            gpu.RestArea = ac.RestArea;
+            gpu.RestNormal = ac.RestNormal;
+            gpu.Compliance = ac.Compliance;
+            gpu.Lambda = ac.Lambda;
+            gpu.Stiffness = ac.Stiffness;
+            gpu.Padding0 = 0.0f;
+            gpu.Padding1 = 0.0f;
+
+            areaConstraintsGPU.Add(gpu);
+        }
+
+        BatchedSolver->UploadAreaConstraintData(areaConstraintsGPU, metadata.AreaConstraintOffset);
+    }
+
     // 5. Upload triangle indices with global particle indices
     if (Params.Indices.Num() > 0)
     {
@@ -416,6 +451,7 @@ void FClothBatchManager::RemoveInstance(FClothInstanceHandle *Instance)
     TotalBendConstraintCount -= metadata.BendConstraintCount;
     TotalKinematicTargetCount -= metadata.KinematicTargetCount;
     TotalTriangleCount -= metadata.TriangleCount;
+    TotalAreaConstraintCount -= metadata.AreaConstraintCount; // NEW
 
     // Remove from tracking
     Instances.Remove(Instance);
@@ -426,7 +462,8 @@ void FClothBatchManager::RemoveInstance(FClothInstanceHandle *Instance)
 
     // Update solver counts
     BatchedSolver->SetUsedCounts(TotalParticleCount, TotalConstraintCount, TotalBendConstraintCount,
-                                 TotalKinematicTargetCount, TotalTriangleCount, Instances.Num());
+                                 TotalKinematicTargetCount, TotalTriangleCount, Instances.Num(),
+                                 TotalAreaConstraintCount); // NEW
 
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Removed instance - Remaining: %d instances, %d particles"),
            static_cast<int32>(LODLevel), Instances.Num(), TotalParticleCount);

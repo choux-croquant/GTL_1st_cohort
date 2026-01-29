@@ -34,6 +34,11 @@ cbuffer ClothSimConstants : register(b0)
     uint NumColliders;             // NEW: Number of active colliders
     float CollisionThickness;      // NEW: Collision distance threshold
     float CollisionFriction;       // NEW: Friction coefficient (0-1)
+    
+    uint NumAreaConstraints;       // NEW: Number of area constraints
+    float AreaStiffness;           // NEW: Global area constraint stiffness
+    float Padding0;                // Alignment padding
+    float Padding1;                // Alignment padding
 
     float4x4 WorldMatrix;
 };
@@ -94,6 +99,31 @@ struct FBendConstraint
 };
 
 /**
+ * Area constraint structure (48 bytes, aligned)
+ * Preserves triangle area to resist in-plane stretching/compression
+ *
+ * Complements distance constraints by preventing triangle collapse or excessive expansion.
+ * Uses XPBD formulation with compliance-based stiffness control.
+ *
+ * Must match FClothAreaConstraintGPU in ClothGPUStructs.h
+ */
+struct FAreaConstraint
+{
+    uint ParticleA;     // First triangle vertex
+    uint ParticleB;     // Second triangle vertex
+    uint ParticleC;     // Third triangle vertex
+    float RestArea;     // Rest area of triangle
+    
+    float3 RestNormal;  // Rest normal (for signed area computation)
+    float Compliance;   // XPBD compliance (inverse stiffness)
+    
+    float Lambda;       // XPBD accumulated Lagrange multiplier
+    float Stiffness;    // Authoring parameter (not used in XPBD solve)
+    float Padding0;     // Alignment padding
+    float Padding1;     // Alignment padding
+};
+
+/**
  * Kinematic target structure
  * Used for pinning cloth vertices to kinematic targets (e.g., flag on pole)
  * Supports both hard kinematic attachment and Long Range Attachment (LRA)
@@ -129,6 +159,7 @@ struct FKinematicAttachment
 /**
  * Per-instance parameters for batched simulation
  * Allows different instances to have different material properties
+ * Must match FClothInstanceParameters in ClothBatchTypes.h (104 bytes)
  */
 struct FClothInstanceParameters
 {
@@ -158,6 +189,9 @@ struct FClothInstanceParameters
     
     uint TriangleOffset;
     uint TriangleCount;
+    uint AreaConstraintOffset;  // NEW: Area constraint offset
+    uint AreaConstraintCount;   // NEW: Area constraint count
+    
     uint IsActive;
     uint Padding;
 };

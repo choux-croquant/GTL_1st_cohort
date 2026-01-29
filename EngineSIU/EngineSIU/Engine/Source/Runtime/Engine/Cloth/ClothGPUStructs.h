@@ -95,6 +95,38 @@ struct FClothBendConstraintGPU
 };
 
 /**
+ * Area constraint structure (32 bytes, aligned)
+ * Used for triangle area preservation to resist in-plane stretching/compression
+ *
+ * XPBD formulation:
+ *   - Constraint: C = current_area - rest_area
+ *   - Gradients computed from cross products of triangle edges
+ *   - Lambda accumulates constraint force (warm starting)
+ *   - Compliance controls stiffness (0 = rigid, higher = softer)
+ *
+ * Benefits:
+ *   - Prevents excessive stretching/shearing beyond what distance constraints allow
+ *   - Improves volume preservation
+ *   - More stable at lower iteration counts
+ */
+struct FClothAreaConstraintGPU
+{
+    uint32 ParticleA; // 4 bytes - First triangle vertex
+    uint32 ParticleB; // 4 bytes - Second triangle vertex
+    uint32 ParticleC; // 4 bytes - Third triangle vertex
+    float RestArea;   // 4 bytes - Rest area of triangle
+
+    FVector RestNormal; // 12 bytes - Rest normal (for signed area computation)
+    float Compliance;   // 4 bytes - XPBD compliance (inverse stiffness)
+
+    float Lambda;    // 4 bytes - XPBD accumulated Lagrange multiplier
+    float Stiffness; // 4 bytes - Authoring parameter (not used in XPBD solve)
+    float Padding0;  // 4 bytes - Alignment padding
+    float Padding1;  // 4 bytes - Alignment padding
+                     // Total: 48 bytes
+};
+
+/**
  * Kinematic target structure (32 bytes, aligned)
  * Used for pinning cloth vertices to kinematic targets (e.g., flag on pole, cape on shoulders)
  * Supports both hard kinematic attachment and Long Range Attachment (LRA)
@@ -178,6 +210,7 @@ static_assert(sizeof(FClothParticleGPU) == 16, "FClothParticleGPU must be 16 byt
 static_assert(sizeof(FClothVelocityGPU) == 16, "FClothVelocityGPU must be 16 bytes");
 static_assert(sizeof(FClothDistanceConstraintGPU) == 32, "FClothConstraintGPU must be 32 bytes");
 static_assert(sizeof(FClothBendConstraintGPU) == 32, "FClothBendConstraintGPU must be 32 bytes");
+static_assert(sizeof(FClothAreaConstraintGPU) == 48, "FClothAreaConstraintGPU must be 48 bytes");
 static_assert(sizeof(FClothKinematicTargetGPU) == 32, "FClothKinematicTargetGPU must be 32 bytes");
 static_assert(sizeof(FKinematicAttachmentGPU) == 32, "FKinematicAttachmentGPU must be 32 bytes");
 static_assert(sizeof(FClothCollisionSphereGPU) == 16, "FClothCollisionSphereGPU must be 16 bytes");
@@ -189,5 +222,6 @@ static_assert(alignof(FClothParticleGPU) == 4, "FClothParticleGPU alignment");
 static_assert(alignof(FClothVelocityGPU) == 4, "FClothVelocityGPU alignment");
 static_assert(alignof(FClothDistanceConstraintGPU) == 4, "FClothConstraintGPU alignment");
 static_assert(alignof(FClothBendConstraintGPU) == 4, "FClothBendConstraintGPU alignment");
+static_assert(alignof(FClothAreaConstraintGPU) == 4, "FClothAreaConstraintGPU alignment");
 static_assert(alignof(FClothKinematicTargetGPU) == 4, "FClothKinematicTargetGPU alignment");
 static_assert(alignof(FKinematicAttachmentGPU) == 4, "FKinematicAttachmentGPU alignment");

@@ -45,7 +45,8 @@ public:
                          uint32 MaxBendConstraints,
                          uint32 MaxKinematicTargets,
                          uint32 MaxTriangles,
-                         uint32 MaxInstances);
+                         uint32 MaxInstances,
+                         uint32 MaxAreaConstraints = 0);
 
     // Simulation
     void Simulate(float DeltaTime);
@@ -60,6 +61,9 @@ public:
                               uint32 DestOffset);
 
     void UploadBendConstraintData(const TArray<FClothBendConstraintGPU> &BendConstraints,
+                                  uint32 DestOffset);
+
+    void UploadAreaConstraintData(const TArray<FClothAreaConstraintGPU> &AreaConstraints,
                                   uint32 DestOffset);
 
     void UploadKinematicTargets(const TArray<FClothKinematicTargetGPU> &Targets,
@@ -95,7 +99,8 @@ public:
 
     // Update tracking counts
     void SetUsedCounts(uint32 Particles, uint32 Constraints, uint32 BendConstraints,
-                       uint32 KinematicTargets, uint32 Triangles, uint32 Instances);
+                       uint32 KinematicTargets, uint32 Triangles, uint32 Instances,
+                       uint32 AreaConstraints = 0);
 
     // NEW: Set attachment count for GPU-based kinematic targets (P1)
     void SetAttachmentCount(uint32 AttachmentCount) { UsedAttachmentCount = AttachmentCount; }
@@ -110,6 +115,7 @@ private:
     void DispatchIntegration(uint32 ParticleCount);
     void DispatchConstraintSolver(uint32 ConstraintCount);
     void DispatchBendConstraintSolver(uint32 BendConstraintCount);
+    void DispatchAreaConstraintSolver(uint32 AreaConstraintCount);
     void DispatchApplyDeltas(uint32 ParticleCount);
     void DispatchApplyKinematicTargets(uint32 TargetCount);
     void DispatchComputeKinematicTargets(uint32 AttachmentCount); // NEW: GPU-based kinematic (P1)
@@ -139,6 +145,7 @@ private:
     ID3D11ComputeShader *IntegrateCS;
     ID3D11ComputeShader *ConstraintSolverCS;
     ID3D11ComputeShader *BendConstraintSolverCS;
+    ID3D11ComputeShader *AreaConstraintSolverCS; // NEW: Area constraint solver
     ID3D11ComputeShader *ApplyDeltasCS;
     ID3D11ComputeShader *ApplyKinematicTargetsCS;
     ID3D11ComputeShader *ComputeKinematicTargetsCS; // NEW: GPU-based kinematic (P1)
@@ -158,6 +165,7 @@ private:
     ID3D11Buffer *UnifiedInvMassBuffer;
     ID3D11Buffer *UnifiedConstraintBuffer;
     ID3D11Buffer *UnifiedBendConstraintBuffer;
+    ID3D11Buffer *UnifiedAreaConstraintBuffer; // NEW: Area constraint buffer
     ID3D11Buffer *UnifiedKinematicTargetBuffer;
     ID3D11Buffer *UnifiedIndexBuffer;
     ID3D11Buffer *UnifiedNormalBuffer;
@@ -177,6 +185,7 @@ private:
     ID3D11UnorderedAccessView *UnifiedPositionWeightUAV;
     ID3D11UnorderedAccessView *UnifiedConstraintUAV;     // NEW: For XPBD lambda write-back (distance constraints)
     ID3D11UnorderedAccessView *UnifiedBendConstraintUAV; // NEW: For XPBD lambda write-back (bend constraints)
+    ID3D11UnorderedAccessView *UnifiedAreaConstraintUAV; // NEW: For XPBD lambda write-back (area constraints)
 
     ID3D11ShaderResourceView *UnifiedPositionSRV;
     ID3D11ShaderResourceView *UnifiedPredictedSRV;
@@ -184,6 +193,7 @@ private:
     ID3D11ShaderResourceView *UnifiedInvMassSRV;
     ID3D11ShaderResourceView *UnifiedConstraintSRV;
     ID3D11ShaderResourceView *UnifiedBendConstraintSRV;
+    ID3D11ShaderResourceView *UnifiedAreaConstraintSRV; // NEW: Area constraint SRV
     ID3D11ShaderResourceView *UnifiedKinematicTargetSRV;
     ID3D11ShaderResourceView *UnifiedIndexSRV;
     ID3D11ShaderResourceView *UnifiedNormalSRV;
@@ -207,6 +217,7 @@ private:
     uint32 AllocatedKinematicTargetCapacity;
     uint32 AllocatedTriangleCapacity;
     uint32 AllocatedInstanceCapacity;
+    uint32 AllocatedAreaConstraintCapacity; // NEW: Area constraint capacity
 
     uint32 UsedParticleCount;
     uint32 UsedConstraintCount;
@@ -214,7 +225,8 @@ private:
     uint32 UsedKinematicTargetCount;
     uint32 UsedTriangleCount;
     uint32 UsedInstanceCount;
-    uint32 UsedAttachmentCount; // NEW: For GPU-based kinematic targets (P1)
+    uint32 UsedAttachmentCount;     // NEW: For GPU-based kinematic targets (P1)
+    uint32 UsedAreaConstraintCount; // NEW: Area constraint count
 
     bool bInitialized;
 
