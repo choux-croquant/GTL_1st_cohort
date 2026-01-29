@@ -120,7 +120,7 @@ private:
     void DispatchCollisionSDF(uint32 ParticleCount); // NEW: SDF collision solver
 
     void ClearAccumulationBuffers(uint32 ParticleCount);
-    void UpdateConstantBuffers(float DeltaTime);
+    //void UpdateConstantBuffers(float DeltaTime);
     void UpdateFrameConstants(float DeltaTime); // NEW: P2 optimization
     void UpdateIterationConstants(int32 CurrentIteration); // NEW: P2 optimization
 

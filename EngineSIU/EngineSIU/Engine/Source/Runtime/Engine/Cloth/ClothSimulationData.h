@@ -20,10 +20,11 @@
 struct FClothConfig
 {
     // Global simulation settings
+    FVector Gravity = {0.0f, 0.0f, -980.0f};
     float Mass = 1.0f;
     float Damping = 0.5f;
     float Friction = 0.1f;
-
+    
     // Constraint stiffness (0-1)
     float StretchStiffness = 0.9f;
     float BendStiffness = 0.9f;

@@ -5,6 +5,7 @@
 #include "Cloth/ClothSimulationData.h"
 #include "Cloth/ClothBatchManager.h"
 #include "Cloth/ClothBatchedSolver.h"
+#include "UnrealEd/ImGuiWidget.h"
 #include "imgui/imgui.h"
 
 ClothConfigPanel::ClothConfigPanel()
@@ -94,6 +95,10 @@ void ClothConfigPanel::RenderClothConfig()
     // Global Simulation Settings
     if (ImGui::TreeNodeEx("Global Settings", ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen))
     {
+        FVector Gravity = Config.Gravity;
+        bConfigChanged |= FImGuiWidget::DrawVec3Control("Gravity", Gravity, 0, 100);
+        Config.Gravity = Gravity;
+
         //bConfigChanged |= ImGui::SliderFloat("Mass", &Config.Mass, 0.1f, 10.0f, "%.2f");
         bConfigChanged |= ImGui::SliderFloat("Damping", &Config.Damping, 0.0f, 10.0f, "%.3f");
         //bConfigChanged |= ImGui::SliderFloat("Friction", &Config.Friction, 0.0f, 1.0f, "%.3f");

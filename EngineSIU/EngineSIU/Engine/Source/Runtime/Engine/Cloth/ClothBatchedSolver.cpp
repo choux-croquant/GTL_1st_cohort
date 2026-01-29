@@ -1524,47 +1524,47 @@ void FClothBatchedSolver::ClearAccumulationBuffers(uint32 ParticleCount)
         Graphics->DeviceContext->ClearUnorderedAccessViewUint(UnifiedPositionWeightUAV, clearValues);
 }
 
-void FClothBatchedSolver::UpdateConstantBuffers(float DeltaTime)
-{
-    if (!Graphics || !Graphics->DeviceContext || !BatchSimConstantBuffer)
-        return;
-
-    FClothSimConstants constants = {};
-    constants.NumParticles = UsedParticleCount;
-    constants.NumConstraints = UsedConstraintCount;
-    constants.NumBendConstraints = UsedBendConstraintCount;
-    constants.NumKinematicTargets = UsedKinematicTargetCount;
-    constants.DeltaTime = DeltaTime;
-    constants.Damping = Config.Damping;
-    constants.Gravity = FVector(0.0f, 0.0f, -9.80f); // Default gravity
-    constants.StretchStiffness = Config.StretchStiffness;
-    constants.Wind = FVector::ZeroVector;
-    constants.BendStiffness = Config.BendStiffness;
-    constants.AirDrag = Config.AirDrag;
-    constants.NumIterations = Config.NumIterations;
-    constants.CurrentIteration = 0;
-    constants.UseXPBD = Config.bUseXPBD ? 1 : 0;
-
-    // NEW: Velvet-inspired parameters
-    constants.RelaxationFactor = Config.RelaxationFactor;
-    constants.MaxSpeed = Config.MaxSpeed;
-    constants.LongRangeStretchiness = Config.LongRangeStretchiness;
-    
-    // NEW: Collision parameters
-    constants.NumColliders = CollisionManager ? CollisionManager->GetColliderCount() : 0;
-    constants.CollisionThickness = 0.1f;   // TODO: Make configurable in FClothConfig
-    constants.CollisionFriction = 0.2f;    // TODO: Make configurable
-
-    constants.WorldMatrix = FMatrix::Identity;
-
-    D3D11_MAPPED_SUBRESOURCE msr;
-    HRESULT hr = Graphics->DeviceContext->Map(BatchSimConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &msr);
-    if (SUCCEEDED(hr))
-    {
-        memcpy(msr.pData, &constants, sizeof(FClothSimConstants));
-        Graphics->DeviceContext->Unmap(BatchSimConstantBuffer, 0);
-    }
-}
+//void FClothBatchedSolver::UpdateConstantBuffers(float DeltaTime)
+//{
+//    if (!Graphics || !Graphics->DeviceContext || !BatchSimConstantBuffer)
+//        return;
+//
+//    FClothSimConstants constants = {};
+//    constants.NumParticles = UsedParticleCount;
+//    constants.NumConstraints = UsedConstraintCount;
+//    constants.NumBendConstraints = UsedBendConstraintCount;
+//    constants.NumKinematicTargets = UsedKinematicTargetCount;
+//    constants.DeltaTime = DeltaTime;
+//    constants.Damping = Config.Damping;
+//    constants.Gravity = Config.Gravity; // Default gravity
+//    constants.StretchStiffness = Config.StretchStiffness;
+//    constants.Wind = FVector::ZeroVector;
+//    constants.BendStiffness = Config.BendStiffness;
+//    constants.AirDrag = Config.AirDrag;
+//    constants.NumIterations = Config.NumIterations;
+//    constants.CurrentIteration = 0;
+//    constants.UseXPBD = Config.bUseXPBD ? 1 : 0;
+//
+//    // NEW: Velvet-inspired parameters
+//    constants.RelaxationFactor = Config.RelaxationFactor;
+//    constants.MaxSpeed = Config.MaxSpeed;
+//    constants.LongRangeStretchiness = Config.LongRangeStretchiness;
+//    
+//    // NEW: Collision parameters
+//    constants.NumColliders = CollisionManager ? CollisionManager->GetColliderCount() : 0;
+//    constants.CollisionThickness = 0.1f;   // TODO: Make configurable in FClothConfig
+//    constants.CollisionFriction = 0.2f;    // TODO: Make configurable
+//
+//    constants.WorldMatrix = FMatrix::Identity;
+//
+//    D3D11_MAPPED_SUBRESOURCE msr;
+//    HRESULT hr = Graphics->DeviceContext->Map(BatchSimConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &msr);
+//    if (SUCCEEDED(hr))
+//    {
+//        memcpy(msr.pData, &constants, sizeof(FClothSimConstants));
+//        Graphics->DeviceContext->Unmap(BatchSimConstantBuffer, 0);
+//    }
+//}
 
 // NEW: P2 Optimization - Split constant buffer updates
 void FClothBatchedSolver::UpdateFrameConstants(float DeltaTime)
@@ -1579,7 +1579,7 @@ void FClothBatchedSolver::UpdateFrameConstants(float DeltaTime)
     CachedConstants.NumKinematicTargets = UsedKinematicTargetCount;
     CachedConstants.DeltaTime = DeltaTime;
     CachedConstants.Damping = Config.Damping;
-    CachedConstants.Gravity = FVector(0.0f, 0.0f, -9.80f);
+    CachedConstants.Gravity = Config.Gravity;
     CachedConstants.StretchStiffness = Config.StretchStiffness;
     CachedConstants.Wind = FVector::ZeroVector;
     CachedConstants.BendStiffness = Config.BendStiffness;
