@@ -214,7 +214,7 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
            Params.WorldTransform.GetTranslation().X,
            Params.WorldTransform.GetTranslation().Y,
            Params.WorldTransform.GetTranslation().Z);
-    
+
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Instance %d Metadata - ParticleOffset=%d, ParticleCount=%d, ConstraintOffset=%d, TotalParticlesBefore=%d"),
            static_cast<int32>(LODLevel), Instances.Num(), metadata.ParticleOffset, metadata.ParticleCount,
            metadata.ConstraintOffset, TotalParticleCount - particleCount);
@@ -240,6 +240,9 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         TArray<FClothDistanceConstraintGPU> constraintsGPU;
         constraintsGPU.Reserve(Params.Constraints.Num());
 
+        // Get solver config for XPBD compliance calculation
+        const FClothConfig &config = BatchedSolver->GetConfig();
+
         for (const FClothDistanceConstraint &c : Params.Constraints)
         {
             FClothDistanceConstraintGPU gpu;
@@ -248,8 +251,45 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
             gpu.ParticleB = c.ParticleB + metadata.ParticleOffset;
             gpu.RestLength = c.RestLength;
             gpu.Stiffness = c.Stiffness;
-            gpu.Compliance = c.Compliance;
-            gpu.Lambda = c.Lambda;
+
+            // XPBD compliance calculation:
+            // Compliance determines how much the constraint can "give" under force.
+            // Lower compliance = stiffer constraint, higher compliance = softer constraint.
+            //
+            // Convert authoring-time stiffness (0-1) to XPBD compliance:
+            // - Very stiff (stiffness ~1.0) → very low compliance (approaching 0)
+            // - Soft (stiffness ~0.0) → high compliance
+            //
+            // Formula: compliance = (1 - stiffness^4) * scale
+            // - Use stiffness^4 to keep constraints stiff even at moderate stiffness values
+            // - Scale factor controls absolute compliance range
+            //
+            // If constraint already has compliance set (from asset), use it; otherwise compute from stiffness
+            if (c.Compliance > 0.0f)
+            {
+                // Use pre-authored compliance value (advanced usage)
+                gpu.Compliance = c.Compliance;
+            }
+            else
+            {
+                // Compute compliance from stiffness and global config
+                // Scale: typical range 0.0001 to 0.1 for cloth constraints
+                const float complianceScale = 1e-7f; // Tunable parameter
+                float effectiveStiffness = FMath::Clamp(config.StretchStiffness * c.Stiffness, 0.0f, 1.0f);
+
+                // Map stiffness [0,1] to compliance [high, low]
+                // Use power curve to maintain stiffness at high values
+                float softness = 1.0f - FMath::Pow(effectiveStiffness, 4.0f);
+                gpu.Compliance = softness * complianceScale;
+
+                // Ensure minimum compliance for numerical stability
+                gpu.Compliance = FMath::Max(gpu.Compliance, 1e-8f);
+            }
+
+            // Initialize lambda to 0 (no accumulated force yet)
+            // Lambda will be updated by XPBD solver and warm-started across iterations
+            gpu.Lambda = 0.0f;
+
             gpu.Padding0 = 0.0f;
             gpu.Padding1 = 0.0f;
 
@@ -344,7 +384,7 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
 
     // 7. Update instance parameters
     UpdateInstanceParameterBuffer();
-    
+
     // NEW: Mark attachment data dirty so GPU-based kinematic targets are rebuilt
     bAttachmentDataDirty = true;
 
@@ -407,7 +447,7 @@ void FClothBatchManager::UpdateInstanceParameters(FClothInstanceHandle *Instance
 void FClothBatchManager::Update(float DeltaTime)
 {
     QUICK_SCOPE_CYCLE_COUNTER(ClothBatch_Update);
-    
+
     if (!bIsInitialized || Instances.Num() == 0)
         return;
 
@@ -639,7 +679,7 @@ void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
 
             target.TargetPosition = worldPosition;
             target.Stiffness = attachment.Stiffness;
-            target.AttachDistance = attachment.AttachDistance;  // CRITICAL FIX: Initialize AttachDistance field
+            target.AttachDistance = attachment.AttachDistance; // CRITICAL FIX: Initialize AttachDistance field
             target.Padding0 = 0.0f;
             target.Padding1 = 0.0f;
 
@@ -660,26 +700,26 @@ void FClothBatchManager::BuildKinematicAttachmentData()
     ComponentIndexMap.Empty();
     UniqueComponents.Empty();
     TArray<FKinematicAttachmentGPU> attachmentData;
-    
+
     // Collect all attachments and deduplicate components
-    for (FClothInstanceHandle* Handle : Instances)
+    for (FClothInstanceHandle *Handle : Instances)
     {
         if (!Handle || !Handle->GetOwnerComponent() || !Handle->GetOwnerComponent()->GetClothAsset())
             continue;
-            
-        const FClothInstanceMetadata& metadata = Handle->GetMetadata();
-        UClothComponent* owner = Handle->GetOwnerComponent();
-        const TArray<FClothAttachmentData>& attachments = owner->GetClothAsset()->AttachmentsData;
-        
-        for (const FClothAttachmentData& attachment : attachments)
+
+        const FClothInstanceMetadata &metadata = Handle->GetMetadata();
+        UClothComponent *owner = Handle->GetOwnerComponent();
+        const TArray<FClothAttachmentData> &attachments = owner->GetClothAsset()->AttachmentsData;
+
+        for (const FClothAttachmentData &attachment : attachments)
         {
             if (!attachment.DriverComponent)
                 continue;
-                
+
             // Get or create component index (deduplication!)
-            uint32* ComponentIndexPtr = ComponentIndexMap.Find(attachment.DriverComponent);
+            uint32 *ComponentIndexPtr = ComponentIndexMap.Find(attachment.DriverComponent);
             uint32 ComponentIndex;
-            
+
             if (!ComponentIndexPtr)
             {
                 ComponentIndex = UniqueComponents.Num();
@@ -690,7 +730,7 @@ void FClothBatchManager::BuildKinematicAttachmentData()
             {
                 ComponentIndex = *ComponentIndexPtr;
             }
-            
+
             // Build GPU attachment data
             FKinematicAttachmentGPU gpuAttachment;
             gpuAttachment.ComponentIndex = ComponentIndex;
@@ -699,53 +739,52 @@ void FClothBatchManager::BuildKinematicAttachmentData()
             gpuAttachment.AttachDistance = attachment.AttachDistance;
             gpuAttachment.LocalOffset = attachment.LocalOffset.GetTranslation();
             gpuAttachment.Padding = 0.0f;
-            
+
             attachmentData.Add(gpuAttachment);
         }
     }
-    
+
     // Store total attachment count for GPU dispatch
     TotalAttachmentCount = attachmentData.Num();
-    
+
     // Upload to GPU (ONCE - this data is static)
     if (attachmentData.Num() > 0 && BatchedSolver)
     {
         BatchedSolver->UploadAttachmentData(attachmentData);
-        BatchedSolver->SetAttachmentCount(attachmentData.Num());  // Set count for dispatch
+        BatchedSolver->SetAttachmentCount(attachmentData.Num()); // Set count for dispatch
     }
-    
-    float dedupPercent = attachmentData.Num() > 0 ?
-        (1.0f - (float)UniqueComponents.Num() / attachmentData.Num()) * 100.0f : 0.0f;
-    
+
+    float dedupPercent = attachmentData.Num() > 0 ? (1.0f - (float)UniqueComponents.Num() / attachmentData.Num()) * 100.0f : 0.0f;
+
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Built kinematic attachments - %d attachments, %d unique components (%.1f%% dedup)"),
            static_cast<int32>(LODLevel),
            attachmentData.Num(),
            UniqueComponents.Num(),
            dedupPercent);
-    
+
     bAttachmentDataDirty = false;
 }
 
 void FClothBatchManager::UpdateKinematicTargetsGPU(float DeltaTime)
 {
     QUICK_SCOPE_CYCLE_COUNTER(UpdateKinematicTargets_GPU);
-    
+
     if (!BatchedSolver || TotalKinematicTargetCount == 0)
         return;
-    
+
     // Rebuild attachment data if needed (rare - only when attachments change)
     if (bAttachmentDataDirty)
     {
         BuildKinematicAttachmentData();
     }
-    
+
     // Collect component transforms (ONLY unique components - 10-50 instead of 2,500!)
     TArray<FMatrix> componentTransforms;
     componentTransforms.Reserve(UniqueComponents.Num());
-    
+
     {
         QUICK_SCOPE_CYCLE_COUNTER(UpdateKinematicTargets_CollectTransforms);
-        for (const TWeakObjectPtr<USceneComponent>& Component : UniqueComponents)
+        for (const TWeakObjectPtr<USceneComponent> &Component : UniqueComponents)
         {
             if (Component.IsValid())
             {
@@ -758,14 +797,14 @@ void FClothBatchManager::UpdateKinematicTargetsGPU(float DeltaTime)
             }
         }
     }
-    
+
     // Upload component transforms (SMALL: 50 × 64 bytes = 3.2KB vs 80KB before!)
     if (componentTransforms.Num() > 0)
     {
         QUICK_SCOPE_CYCLE_COUNTER(UpdateKinematicTargets_UploadTransforms);
         BatchedSolver->UploadComponentTransforms(componentTransforms);
     }
-    
+
     // GPU will compute final positions in compute shader
 }
 

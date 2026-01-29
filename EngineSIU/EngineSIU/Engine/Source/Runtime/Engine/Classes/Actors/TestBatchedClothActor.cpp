@@ -445,7 +445,7 @@ void ATestBatchedClothActor::PostSpawnInitialize()
     for (int32 i = 0; i < NumClothInstances; i++)
     {
         //CreateTestCloth(i, 20 - i * 2, 5.0f, EClothLODLevel::LOD_0);
-        CreateTestCloth(i, 200, 0.25f, EClothLODLevel::LOD_0);
+        CreateTestCloth(i, 20, 2.5f, EClothLODLevel::LOD_0);
         //CreateTestCloth(i, 100, 0.5f, EClothLODLevel::LOD_0);
     }
 

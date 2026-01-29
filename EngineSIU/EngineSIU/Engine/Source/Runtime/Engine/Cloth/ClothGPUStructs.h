@@ -41,20 +41,43 @@ struct FClothVelocityGPU
 };
 
 /**
- * GPU constraint structure (32 bytes, aligned)
+ * GPU distance constraint structure (32 bytes, aligned)
  * Must match FDistanceConstraint in ClothCommon.hlsli
+ *
+ * Supports both PBD and XPBD formulations:
+ *
+ * PBD (legacy):
+ *   - Uses Stiffness directly to scale constraint violation
+ *   - Simple but time-step and iteration-count dependent
+ *
+ * XPBD (recommended):
+ *   - Uses Compliance for time-step independent stiffness
+ *   - Uses Lambda to accumulate constraint force (warm starting)
+ *   - Much more stable and predictable across varying time steps
+ *
+ * Compliance Calculation:
+ *   - Lower compliance = stiffer (0.0 = perfectly rigid)
+ *   - Higher compliance = softer (allows more violation under force)
+ *   - Typical range: 1e-8 to 0.1 for cloth
+ *   - Computed from: compliance = (1 - stiffness^4) * scale
+ *
+ * Lambda (Lagrange Multiplier):
+ *   - Accumulated constraint force from XPBD solver
+ *   - Provides warm starting between iterations and frames
+ *   - Reset to 0 on cloth initialization or optionally per frame
+ *   - Updated by GPU solver (requires writable buffer)
  */
 struct FClothDistanceConstraintGPU
 {
-    uint32 ParticleA; // 4 bytes
-    uint32 ParticleB; // 4 bytes
-    float RestLength; // 4 bytes
-    float Stiffness;  // 4 bytes
+    uint32 ParticleA; // 4 bytes - First particle index
+    uint32 ParticleB; // 4 bytes - Second particle index
+    float RestLength; // 4 bytes - Rest distance between particles
+    float Stiffness;  // 4 bytes - PBD stiffness (0-1) or XPBD authoring parameter
 
-    float Compliance; // 4 bytes (XPBD)
-    float Lambda;     // 4 bytes (XPBD state)
-    float Padding0;   // 4 bytes
-    float Padding1;   // 4 bytes
+    float Compliance; // 4 bytes - XPBD compliance (inverse stiffness in force space)
+    float Lambda;     // 4 bytes - XPBD accumulated Lagrange multiplier
+    float Padding0;   // 4 bytes - Alignment padding
+    float Padding1;   // 4 bytes - Alignment padding
     // Total: 32 bytes
 };
 
@@ -68,42 +91,42 @@ struct FClothBendConstraintGPU
     float Stiffness;  // Bend stiffness [0-1]
     float Compliance; // XPBD compliance
     float Lambda;     // XPBD lambda (warm start)
-    // Total: 32bytes
-   };
-   
-   /**
-    * Kinematic target structure (32 bytes, aligned)
-    * Used for pinning cloth vertices to kinematic targets (e.g., flag on pole, cape on shoulders)
-    * Supports both hard kinematic attachment and Long Range Attachment (LRA)
-    */
-   struct FClothKinematicTargetGPU
-   {
+                      // Total: 32bytes
+};
+
+/**
+ * Kinematic target structure (32 bytes, aligned)
+ * Used for pinning cloth vertices to kinematic targets (e.g., flag on pole, cape on shoulders)
+ * Supports both hard kinematic attachment and Long Range Attachment (LRA)
+ */
+struct FClothKinematicTargetGPU
+{
     uint32 ParticleIndex; // 4 bytes - Which particle to constrain
     float Stiffness;      // 4 bytes - 1.0 = hard kinematic, <1.0 = soft spring
     float AttachDistance; // 4 bytes - NEW: Max distance for LRA (0 = hard kinematic)
     float Padding0;       // 4 bytes
-   
+
     FVector TargetPosition; // 12 bytes - World-space target position
     float Padding1;         // 4 bytes
-    // Total: 32 bytes
-   };
-   
-   /**
-    * GPU attachment data structure (32 bytes, aligned)
-    * Compact representation for GPU-based kinematic target computation
-    * CPU uploads component transforms, GPU computes final positions
-    */
-   struct FKinematicAttachmentGPU
-   {
-    uint32 ComponentIndex;  // 4 bytes - Index into ComponentTransforms buffer
-    uint32 ParticleIndex;   // 4 bytes - Target particle index in batch
-    float Stiffness;        // 4 bytes - Attachment strength (0-1)
-    float AttachDistance;   // 4 bytes - Max distance for LRA (0 = hard kinematic)
-    
-    FVector LocalOffset;    // 12 bytes - Local space offset from component
-    float Padding;          // 4 bytes - Align to 32 bytes
-    // Total: 32 bytes
-   };
+                            // Total: 32 bytes
+};
+
+/**
+ * GPU attachment data structure (32 bytes, aligned)
+ * Compact representation for GPU-based kinematic target computation
+ * CPU uploads component transforms, GPU computes final positions
+ */
+struct FKinematicAttachmentGPU
+{
+    uint32 ComponentIndex; // 4 bytes - Index into ComponentTransforms buffer
+    uint32 ParticleIndex;  // 4 bytes - Target particle index in batch
+    float Stiffness;       // 4 bytes - Attachment strength (0-1)
+    float AttachDistance;  // 4 bytes - Max distance for LRA (0 = hard kinematic)
+
+    FVector LocalOffset; // 12 bytes - Local space offset from component
+    float Padding;       // 4 bytes - Align to 32 bytes
+                         // Total: 32 bytes
+};
 
 /**
  * Cloth collision sphere (16 bytes, aligned)
@@ -134,20 +157,20 @@ struct FClothCollisionCapsuleGPU
  */
 struct FClothColliderGPU
 {
-	uint32 Type;            // 4 bytes - EClothColliderType: 0=Sphere, 1=Capsule, 2=Box
-	float Radius;           // 4 bytes - Sphere/Capsule radius
-	float HalfHeight;       // 4 bytes - Capsule half-height (0 for others)
-	float Padding0;         // 4 bytes
-	
-	FVector Center;         // 12 bytes - World-space center
-	float Padding1;         // 4 bytes
-	
-	FVector Axis;           // 12 bytes - Capsule axis (normalized), Box orientation
-	float Padding2;         // 4 bytes
-	
-	FVector Extents;        // 12 bytes - Box half-extents (0 for sphere/capsule)
-	float Padding3;         // 4 bytes
-	// Total: 64 bytes
+    uint32 Type;      // 4 bytes - EClothColliderType: 0=Sphere, 1=Capsule, 2=Box
+    float Radius;     // 4 bytes - Sphere/Capsule radius
+    float HalfHeight; // 4 bytes - Capsule half-height (0 for others)
+    float Padding0;   // 4 bytes
+
+    FVector Center; // 12 bytes - World-space center
+    float Padding1; // 4 bytes
+
+    FVector Axis;   // 12 bytes - Capsule axis (normalized), Box orientation
+    float Padding2; // 4 bytes
+
+    FVector Extents; // 12 bytes - Box half-extents (0 for sphere/capsule)
+    float Padding3;  // 4 bytes
+                     // Total: 64 bytes
 };
 
 // Static assertions to verify structure sizes (C++ only)
