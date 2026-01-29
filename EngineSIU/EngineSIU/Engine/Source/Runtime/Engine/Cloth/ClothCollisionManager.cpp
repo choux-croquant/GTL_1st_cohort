@@ -414,6 +414,7 @@ void FClothCollisionManager::ExtractBoxFromShape(physx::PxShape* Shape, UPrimiti
 	Source.ElementIndex = ElementIndex;
 	Source.CachedTransform = Component->GetComponentTransform();
 	Source.CachedLocalCenter = FVector(localPose.p.x, localPose.p.y, localPose.p.z);
+	Source.CachedLocalRotation = FQuat(localPose.q.x, localPose.q.y, localPose.q.z, localPose.q.w);  // Store local rotation!
 	Source.CachedExtents = FVector(boxGeom.halfExtents.x, boxGeom.halfExtents.y, boxGeom.halfExtents.z);
 	Source.bIsDirty = true;
 	Source.GPUBufferIndex = ColliderSources.Num();

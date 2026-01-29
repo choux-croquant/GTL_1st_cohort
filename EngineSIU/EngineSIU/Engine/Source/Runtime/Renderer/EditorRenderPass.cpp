@@ -402,18 +402,20 @@ void FEditorRenderPass::Render(const std::shared_ptr<FEditorViewportClient>& Vie
     }
 
     const uint64 ShowFlag = Viewport->GetShowFlag();
+    const EWorldType WorldType = GEngine->ActiveWorld->WorldType;
 
     BindRenderTarget(Viewport);    
 
     if (ShowFlag & EEngineShowFlags::SF_LightWireframe)
     {
-        RenderPointlightInstanced(ShowFlag);
-        RenderSpotlightInstanced(ShowFlag);
+        if (WorldType != EWorldType::PIE) {
+            RenderPointlightInstanced(ShowFlag);
+            RenderSpotlightInstanced(ShowFlag);
+        }
     }
 
     if (ShowFlag & EEngineShowFlags::SF_Collision)
     {
-        const EWorldType WorldType = GEngine->ActiveWorld->WorldType;
         if (WorldType != EWorldType::PIE) {
             RenderBoxInstanced(ShowFlag);
             RenderSphereInstanced(ShowFlag);
@@ -723,10 +725,10 @@ void FEditorRenderPass::RenderBoxInstanced(uint64 ShowFlag)
                 {
                     FConstantBufferDebugBox b;
                     FMatrix WorldMatrix =
-                        FTransform(GeomAttribute.Rotation, GeomAttribute.Offset, GeomAttribute.Extent).ToMatrixWithScale()
+                        FTransform(GeomAttribute.Rotation, GeomAttribute.Offset, GeomAttribute.Extent / 2.0f).ToMatrixWithScale()
                         * StaticComp->GetWorldMatrix().GetMatrixWithoutScale();
                     b.WorldMatrix = WorldMatrix;
-                    b.Extent = GeomAttribute.Extent;
+                    b.Extent = GeomAttribute.Extent / 2.0f;
                     BufferAll.Add(b);
                 }
             }
@@ -1147,7 +1149,14 @@ void FEditorRenderPass::RenderClothColliders(uint64 ShowFlag)
             if (Source.Type == EClothColliderType::Box)
             {
                 FConstantBufferDebugBox b;
-                b.WorldMatrix = Source.CachedTransform.ToMatrixWithScale();
+                
+                // Build local transform from PhysX shape data (rotation + offset)
+                FTransform LocalTransform(Source.CachedLocalRotation, Source.CachedLocalCenter, FVector::OneVector);
+                
+                // Compose: LocalTransform * ComponentTransform = World transform with proper rotation and offset
+                FTransform WorldTransform = LocalTransform * Source.CachedTransform;
+                
+                b.WorldMatrix = WorldTransform.ToMatrixWithScale();
                 b.Extent = Source.CachedExtents;
                 BufferAll.Add(b);
             }

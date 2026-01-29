@@ -624,7 +624,7 @@ void UPrimitiveComponent::CreatePhysXGameObject()
         }
         case EGeomType::EBox:
         {
-            PxShape* PxBox = GEngine->PhysicsManager->CreateBoxShape(Offset, GeomPQuat, Extent);
+            PxShape* PxBox = GEngine->PhysicsManager->CreateBoxShape(Offset, GeomPQuat, Extent * 2.0f);
             BodySetup->AggGeom.BoxElems.Add(PxBox);
             break;
         }

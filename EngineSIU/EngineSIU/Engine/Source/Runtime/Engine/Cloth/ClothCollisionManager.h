@@ -41,9 +41,10 @@ struct FClothColliderSource
 	TWeakObjectPtr<UPrimitiveComponent> Component;  // Component providing the collider (SAFE weak pointer)
 	int32 ElementIndex;                              // Index in BodySetup->AggGeom array
 	
-	FTransform CachedTransform;             // Last uploaded transform
+	FTransform CachedTransform;             // Last uploaded component transform
 	FVector CachedLocalCenter;              // Local-space center/start point
 	FVector CachedLocalAxis;                // Local-space axis/end point (for capsules)
+	FQuat CachedLocalRotation;              // Local-space rotation (for boxes, from PhysX shape)
 	float CachedRadius;
 	FVector CachedExtents;                  // For boxes
 	
@@ -57,6 +58,7 @@ struct FClothColliderSource
 		, CachedTransform(FTransform::Identity)
 		, CachedLocalCenter(FVector::ZeroVector)
 		, CachedLocalAxis(FVector::ZeroVector)
+		, CachedLocalRotation(FQuat::Identity)
 		, CachedRadius(0.0f)
 		, CachedExtents(FVector::ZeroVector)
 		, bIsDirty(true)
