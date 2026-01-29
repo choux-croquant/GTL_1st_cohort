@@ -14,6 +14,7 @@
 #include "ClothSimulationData.h"
 #include "ClothGPUStructs.h"
 #include "ClothBatchTypes.h"
+#include "ShaderConstants.h"
 
 // Forward declarations
 class FGraphicsDevice;
@@ -67,6 +68,10 @@ public:
     void UploadInstanceParameters(const TArray<FClothInstanceParameters> &Parameters);
 
     void UploadIndexData(const TArray<uint32> &Indices, uint32 DestOffset);
+    
+    // NEW: GPU-based kinematic target computation (P1 optimization)
+    void UploadAttachmentData(const TArray<FKinematicAttachmentGPU> &Attachments);
+    void UploadComponentTransforms(const TArray<FMatrix> &Transforms);
 
     // Index buffer access
     ID3D11Buffer *GetUnifiedIndexBuffer() const { return UnifiedIndexBuffer; }
@@ -91,6 +96,9 @@ public:
     // Update tracking counts
     void SetUsedCounts(uint32 Particles, uint32 Constraints, uint32 BendConstraints,
                        uint32 KinematicTargets, uint32 Triangles, uint32 Instances);
+    
+    // NEW: Set attachment count for GPU-based kinematic targets (P1)
+    void SetAttachmentCount(uint32 AttachmentCount) { UsedAttachmentCount = AttachmentCount; }
 
     FClothCollisionManager* GetCollisionManager() { return CollisionManager; }
 
@@ -104,6 +112,7 @@ private:
     void DispatchBendConstraintSolver(uint32 BendConstraintCount);
     void DispatchApplyDeltas(uint32 ParticleCount);
     void DispatchApplyKinematicTargets(uint32 TargetCount);
+    void DispatchComputeKinematicTargets(uint32 AttachmentCount); // NEW: GPU-based kinematic (P1)
     void DispatchFinalize(uint32 ParticleCount); // NEW: Velocity finalization
     void DispatchClearNormals(uint32 ParticleCount);
     void DispatchUpdateNormals(uint32 TriangleCount);
@@ -112,6 +121,8 @@ private:
 
     void ClearAccumulationBuffers(uint32 ParticleCount);
     void UpdateConstantBuffers(float DeltaTime);
+    void UpdateFrameConstants(float DeltaTime); // NEW: P2 optimization
+    void UpdateIterationConstants(int32 CurrentIteration); // NEW: P2 optimization
 
     bool CreateGPUResources();
     bool LoadComputeShaders();
@@ -130,6 +141,7 @@ private:
     ID3D11ComputeShader *BendConstraintSolverCS;
     ID3D11ComputeShader *ApplyDeltasCS;
     ID3D11ComputeShader *ApplyKinematicTargetsCS;
+    ID3D11ComputeShader *ComputeKinematicTargetsCS; // NEW: GPU-based kinematic (P1)
     ID3D11ComputeShader *FinalizeCS; // NEW: Velocity finalization shader
     ID3D11ComputeShader *ClearNormalsCS;
     ID3D11ComputeShader *UpdateNormalsCS;
@@ -151,6 +163,10 @@ private:
     ID3D11Buffer *UnifiedNormalBuffer;
     ID3D11Buffer *UnifiedPositionDeltaBuffer;
     ID3D11Buffer *UnifiedPositionWeightBuffer;
+    
+    // NEW: GPU-based kinematic target buffers (P1 optimization)
+    ID3D11Buffer *AttachmentDataBuffer;  // Static attachment data
+    ID3D11Buffer *ComponentTransformBuffer;  // Dynamic component transforms
 
     // UAVs and SRVs
     ID3D11UnorderedAccessView *UnifiedPositionUAV;
@@ -170,6 +186,10 @@ private:
     ID3D11ShaderResourceView *UnifiedKinematicTargetSRV;
     ID3D11ShaderResourceView *UnifiedIndexSRV;
     ID3D11ShaderResourceView *UnifiedNormalSRV;
+    
+    // NEW: GPU-based kinematic target SRVs (P1 optimization)
+    ID3D11ShaderResourceView *AttachmentDataSRV;
+    ID3D11ShaderResourceView *ComponentTransformSRV;
 
     // Per-instance parameter buffer
     ID3D11Buffer *InstanceParameterBuffer;
@@ -193,11 +213,15 @@ private:
     uint32 UsedKinematicTargetCount;
     uint32 UsedTriangleCount;
     uint32 UsedInstanceCount;
+    uint32 UsedAttachmentCount;  // NEW: For GPU-based kinematic targets (P1)
 
     bool bInitialized;
 
     // NEW: Substep timing state
     float AccumulatedTime;
+    
+    // NEW: P2 optimization - cached constants to avoid repeated full buffer uploads
+    FClothSimConstants CachedConstants;
 
     static constexpr uint32 THREAD_GROUP_SIZE = 64;
 };
