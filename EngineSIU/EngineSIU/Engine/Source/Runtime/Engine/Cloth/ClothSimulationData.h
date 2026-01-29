@@ -23,7 +23,6 @@ struct FClothConfig
     FVector Gravity = {0.0f, 0.0f, -980.0f};
     float Mass = 1.0f;
     float Damping = 0.5f;
-    float Friction = 0.1f;
     
     // Constraint stiffness (0-1)
     float StretchStiffness = 0.9f;
@@ -49,6 +48,7 @@ struct FClothConfig
 
     // Collision
     float CollisionThickness = 0.01f;
+    float CollisionFriction = 0.1f;
     bool bEnableSelfCollision = false;
 };
 
@@ -314,13 +314,14 @@ struct FClothCollisionPrimitive
 
 inline FArchive &operator<<(FArchive &Ar, FClothConfig &Cfg)
 {
+    Ar << Cfg.Gravity;
     Ar << Cfg.Mass;
     Ar << Cfg.Damping;
-    Ar << Cfg.Friction;
 
     Ar << Cfg.StretchStiffness;
     Ar << Cfg.BendStiffness;
     Ar << Cfg.AttachStiffness;
+    Ar << Cfg.LongRangeStretchiness;
 
     Ar << Cfg.NumIterations;
     Ar << Cfg.TimeStep;
@@ -337,6 +338,7 @@ inline FArchive &operator<<(FArchive &Ar, FClothConfig &Cfg)
     Ar << Cfg.WindStrength;
 
     Ar << Cfg.CollisionThickness;
+    Ar << Cfg.CollisionFriction;
     Ar << Cfg.bEnableSelfCollision;
 
     return Ar;

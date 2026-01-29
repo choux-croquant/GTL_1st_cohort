@@ -101,7 +101,6 @@ void ClothConfigPanel::RenderClothConfig()
 
         //bConfigChanged |= ImGui::SliderFloat("Mass", &Config.Mass, 0.1f, 10.0f, "%.2f");
         bConfigChanged |= ImGui::SliderFloat("Damping", &Config.Damping, 0.0f, 10.0f, "%.3f");
-        //bConfigChanged |= ImGui::SliderFloat("Friction", &Config.Friction, 0.0f, 1.0f, "%.3f");
 
         ImGui::TreePop();
     }
@@ -196,7 +195,7 @@ void ClothConfigPanel::RenderClothConfig()
     if (ImGui::TreeNodeEx("Collision", ImGuiTreeNodeFlags_Framed))
     {
         bConfigChanged |= ImGui::SliderFloat("Collision Thickness", &Config.CollisionThickness, 0.001f, 10.0f, "%.3f");
-
+        bConfigChanged |= ImGui::SliderFloat("Friction", &Config.CollisionFriction, 0.0f, 10.0f, "%.3f");
         /*bool bSelfCollision = Config.bEnableSelfCollision;
         if (ImGui::Checkbox("Enable Self Collision", &bSelfCollision))
         {
