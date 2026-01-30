@@ -221,7 +221,7 @@ void ClothConfigPanel::RenderClothConfig()
         int32 NumInstances = ClothWorld->GetNumInstancesInLOD(EClothLODLevel::LOD_0);
         ImGui::Text("Active Instances: %d", NumInstances);
         ImGui::Text("Total Particles: %u", Solver->GetUsedParticleCount());
-        ImGui::Text("Total Constraints: %u", Solver->GetUsedConstraintCount());
+        ImGui::Text("Total Constraints: %u", Solver->GetUsedConstraintCount() + Solver->GetUsedBendConstraintCount() + Solver->GetUsedAttachmentCount());
 
         EClothSystemMode SystemMode = ClothWorld->GetSystemMode();
         const char *ModeStr = (SystemMode == EClothSystemMode::Batched) ? "Batched" : "Legacy";
