@@ -51,6 +51,10 @@ struct FClothConfig
     float CollisionThickness = 0.01f;
     float CollisionFriction = 0.1f;
     bool bEnableSelfCollision = false;
+    
+    // Edge-based collision (NEW: Prevents edge penetration in low-resolution meshes)
+    bool bEnableEdgeCollision = true;      // Enable edge-based SDF collision
+    int32 EdgeSamplesPerEdge = 3;          // Number of sample points per edge (3-5 recommended)
 };
 
 /**
@@ -140,6 +144,29 @@ struct FClothAreaConstraint
 
     FClothAreaConstraint(uint32 InA, uint32 InB, uint32 InC, float InRestArea, const FVector &InRestNormal, float InCompliance, float InStiffness)
         : ParticleA(InA), ParticleB(InB), ParticleC(InC), RestArea(InRestArea), RestNormal(InRestNormal), Compliance(InCompliance), Lambda(0.0f), Stiffness(InStiffness)
+    {
+    }
+};
+
+/**
+ * Edge collision constraint structure
+ * Used for edge-based SDF collision to prevent low-resolution cloth edges from penetrating colliders
+ * Each edge samples multiple points along its length and checks collision for all sample points
+ */
+struct FClothEdgeCollisionConstraint
+{
+    uint32 ParticleA;   // First edge vertex
+    uint32 ParticleB;   // Second edge vertex
+    float RestLength;   // Rest length of edge (for validation/debugging)
+    float Padding;      // Alignment padding
+
+    FClothEdgeCollisionConstraint()
+        : ParticleA(0), ParticleB(0), RestLength(0.0f), Padding(0.0f)
+    {
+    }
+
+    FClothEdgeCollisionConstraint(uint32 InA, uint32 InB, float InRestLength)
+        : ParticleA(InA), ParticleB(InB), RestLength(InRestLength), Padding(0.0f)
     {
     }
 };
@@ -373,6 +400,10 @@ inline FArchive &operator<<(FArchive &Ar, FClothConfig &Cfg)
     Ar << Cfg.CollisionThickness;
     Ar << Cfg.CollisionFriction;
     Ar << Cfg.bEnableSelfCollision;
+    
+    // NEW: Edge collision parameters
+    Ar << Cfg.bEnableEdgeCollision;
+    Ar << Cfg.EdgeSamplesPerEdge;
 
     return Ar;
 }

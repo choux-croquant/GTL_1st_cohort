@@ -287,10 +287,10 @@ struct alignas(16) FClothSimConstants
     float CollisionThickness;    // NEW: Collision distance threshold
     float CollisionFriction;     // NEW: Friction coefficient (0-1)
 
-    uint32 NumAreaConstraints; // NEW: Number of area constraints
-    float AreaStiffness;       // NEW: Global area constraint stiffness
-    float Padding0;            // Alignment padding
-    float Padding1;            // Alignment padding
+    uint32 NumAreaConstraints;   // NEW: Number of area constraints
+    float AreaStiffness;         // NEW: Global area constraint stiffness
+    uint32 NumEdgeCollisions;    // NEW: Number of edge collision constraints
+    uint32 EdgeSamplesPerEdge;   // NEW: Number of samples per edge (3-5 recommended)
 
     alignas(16) FMatrix WorldMatrix;
 };

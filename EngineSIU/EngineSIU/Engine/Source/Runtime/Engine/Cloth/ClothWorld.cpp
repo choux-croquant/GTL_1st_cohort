@@ -198,7 +198,8 @@ FClothInstanceHandle *FClothWorld::RegisterClothInstanceBatched(UClothComponent 
     Params.Indices = Asset->GetIndices();
     Params.Constraints = Asset->GetDistanceConstraints();
     Params.BendConstraints = Asset->GetBendConstraints();
-    Params.AreaConstraints = Asset->GetAreaConstraints(); // NEW: Area constraints
+    Params.AreaConstraints = Asset->GetAreaConstraints();  // NEW: Area constraints
+    Params.EdgeCollisions = Asset->GetEdgeCollisions();    // NEW: Edge collision constraints
     Params.Attachments = Asset->GetAttachmentData();
 
     // CRITICAL FIX: Get component's world transform for converting local positions to world space

@@ -37,8 +37,8 @@ cbuffer ClothSimConstants : register(b0)
     
     uint NumAreaConstraints;       // NEW: Number of area constraints
     float AreaStiffness;           // NEW: Global area constraint stiffness
-    float Padding0;                // Alignment padding
-    float Padding1;                // Alignment padding
+    uint NumEdgeCollisions;        // NEW: Number of edge collision constraints
+    uint EdgeSamplesPerEdge;       // NEW: Number of samples per edge (3-5 recommended)
 
     float4x4 WorldMatrix;
 };
@@ -192,6 +192,8 @@ struct FClothInstanceParameters
     uint AreaConstraintOffset;  // NEW: Area constraint offset
     uint AreaConstraintCount;   // NEW: Area constraint count
     
+    uint EdgeCollisionOffset;   // NEW: Edge collision offset
+    uint EdgeCollisionCount;    // NEW: Edge collision count
     uint IsActive;
     uint Padding;
 };
@@ -236,6 +238,19 @@ struct FClothCollider
     
     float3 Extents;         // Box half-extents
     float Padding3;
+};
+
+/**
+ * Edge collision constraint structure (16 bytes, aligned)
+ * Used for edge-based SDF collision to prevent low-resolution cloth edges from penetrating colliders
+ * Must match FClothEdgeCollisionConstraintGPU in ClothGPUStructs.h
+ */
+struct FEdgeCollisionConstraint
+{
+    uint ParticleA;    // First edge vertex
+    uint ParticleB;    // Second edge vertex
+    float RestLength;  // Rest length of edge (for validation/debugging)
+    float Padding;     // Alignment padding
 };
 
 // Helper functions

@@ -100,7 +100,8 @@ private:
     uint32 TotalBendConstraintCount;
     uint32 TotalKinematicTargetCount;
     uint32 TotalTriangleCount;
-    uint32 TotalAreaConstraintCount; // NEW: Total area constraints
+    uint32 TotalAreaConstraintCount;      // NEW: Total area constraints
+    uint32 TotalEdgeCollisionCount;       // NEW: Total edge collision constraints
 
     // Buffer management
     uint32 AllocatedParticleCapacity;
@@ -109,7 +110,8 @@ private:
     uint32 AllocatedKinematicTargetCapacity;
     uint32 AllocatedTriangleCapacity;
     uint32 AllocatedInstanceCapacity;
-    uint32 AllocatedAreaConstraintCapacity; // NEW: Allocated area constraints
+    uint32 AllocatedAreaConstraintCapacity;      // NEW: Allocated area constraints
+    uint32 AllocatedEdgeCollisionCapacity;       // NEW: Allocated edge collisions
     bool bNeedsReallocation;
     bool bNeedsCompaction;
     float GrowthFactor;

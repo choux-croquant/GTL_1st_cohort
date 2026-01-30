@@ -38,6 +38,7 @@ public:
     const TArray<FClothDistanceConstraint> &GetDistanceConstraints() const { return DistanceConstraints; }
     const TArray<FClothBendConstraint> &GetBendConstraints() const { return BendConstraints; }
     const TArray<FClothAreaConstraint> &GetAreaConstraints() const { return AreaConstraints; }
+    const TArray<FClothEdgeCollisionConstraint> &GetEdgeCollisions() const { return EdgeCollisions; }
     const TArray<FClothAttachmentData> &GetAttachmentData() const { return AttachmentsData; }
     const TArray<uint32> &GetAttachmentIndices() const { return AttachmentIndices; }
     const TArray<FClothVertexPaintData> &GetVertexPaintData() const { return VertexPaintData; }
@@ -49,6 +50,7 @@ public:
     void AddDistanceConstraint(const FClothDistanceConstraint &Constraint) { DistanceConstraints.Add(Constraint); }
     void AddBendConstraint(const FClothBendConstraint &Constraint) { BendConstraints.Add(Constraint); }
     void AddAreaConstraint(const FClothAreaConstraint &Constraint) { AreaConstraints.Add(Constraint); }
+    void AddEdgeCollision(const FClothEdgeCollisionConstraint &EdgeCollision) { EdgeCollisions.Add(EdgeCollision); }
     void AddAttachmentData(const FClothAttachmentData &Data) { AttachmentsData.Add(Data); }
     void AddAttachmentIndex(uint32 VertexIndex) { AttachmentIndices.Add(VertexIndex); }
 
@@ -80,6 +82,8 @@ public:
     TArray<FClothBendConstraint> BendConstraints;
 
     TArray<FClothAreaConstraint> AreaConstraints;
+    
+    TArray<FClothEdgeCollisionConstraint> EdgeCollisions;
 
     TArray<FClothAttachmentData> AttachmentsData;
 

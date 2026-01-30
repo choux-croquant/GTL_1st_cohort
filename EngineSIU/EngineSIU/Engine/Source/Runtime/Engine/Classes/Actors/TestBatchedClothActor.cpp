@@ -84,6 +84,35 @@ void ATestBatchedClothActor::Tick(float DeltaTime)
     //    }
     //}
 
+    // Simple move
+    //for (int32 i = 0; i < NumClothInstances; ++i)
+    //{
+    //    if (AttachmentDrivers[i])
+    //    {
+    //        // === MOTION PARAMETERS ===
+    //        const float Frequency = 0.5f;        // Hz (0.5 = 2초 주기)
+    //        const float Amplitude = 100.0f;      // 왕복 거리 (cm)
+    //        const float Speed = 0.5f * PI * Frequency;
+
+    //        // Phase offset per instance (optional, for multiple cloths)
+    //        float phaseOffset = (float)i / (float)NumClothInstances * PI;
+
+    //        // === SIMPLE SINUSOIDAL MOTION ===
+    //        // Y-axis only: -Amplitude → 0 → +Amplitude → 0 → -Amplitude
+    //        float Time = AnimationTime * Speed + phaseOffset;
+    //        float OffsetY = FMath::Sin(Time) * Amplitude;
+
+    //        // Position: oscillate along Y from initial position
+    //        FVector NewLocation = DriverInitialPositions[i] + FVector(0.0f, OffsetY, 0.0f);
+
+    //        // Rotation: Fixed 90° yaw (facing right), no roll/pitch
+    //        FRotator NewRotation = FRotator(-89.9f, 0.0f, 0.0f);
+
+    //        // Apply
+    //        AttachmentDrivers[i]->SetActorLocation(NewLocation);
+    //        AttachmentDrivers[i]->SetActorRotation(NewRotation);
+    //    }
+    //}
     // Accumulate animation time
     AnimationTime += DeltaTime;
 }
@@ -330,6 +359,51 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, int32 
     UE_LOG(ELogLevel::Display, TEXT("TestBatchedClothActor: Generated %d area constraints for cloth %d"),
            areaConstraints.Num(), Index);
 
+    // NEW: Generate edge collision constraints
+    // Extract unique edges from triangles to prevent edge penetration in low-resolution meshes
+    TArray<FClothEdgeCollisionConstraint> edgeCollisions;
+    
+    // Use a map to track unique edges (order-independent: {A,B} == {B,A})
+    // Map key is (minIdx << 16 | maxIdx) to create unique identifier
+    TMap<uint64, bool> uniqueEdges;
+    
+    // Extract edges from all triangles
+    for (int32 triIdx = 0; triIdx < indices.Num(); triIdx += 3)
+    {
+        uint32 i0 = indices[triIdx + 0];
+        uint32 i1 = indices[triIdx + 1];
+        uint32 i2 = indices[triIdx + 2];
+        
+        // Lambda to add edge ensuring A < B for uniqueness
+        auto AddEdge = [&uniqueEdges](uint32 a, uint32 b)
+        {
+            uint32 minIdx = FMath::Min(a, b);
+            uint32 maxIdx = FMath::Max(a, b);
+            uint64 key = (static_cast<uint64>(minIdx) << 32) | static_cast<uint64>(maxIdx);
+            uniqueEdges.Add(key, true);
+        };
+        
+        AddEdge(i0, i1);
+        AddEdge(i1, i2);
+        AddEdge(i2, i0);
+    }
+    
+    // Build edge collision constraints from unique edges
+    for (const auto& edgePair : uniqueEdges)
+    {
+        uint64 key = edgePair.Key;
+        uint32 idxA = static_cast<uint32>(key >> 32);
+        uint32 idxB = static_cast<uint32>(key & 0xFFFFFFFF);
+        
+        // Calculate rest length
+        float restLength = (positions[idxB] - positions[idxA]).Length();
+        
+        edgeCollisions.Add(FClothEdgeCollisionConstraint(idxA, idxB, restLength));
+    }
+    
+    UE_LOG(ELogLevel::Display, TEXT("TestBatchedClothActor: Generated %d edge collision constraints for cloth %d"),
+           edgeCollisions.Num(), Index);
+
     // DATA-DRIVEN ATTACHMENT CONFIGURATION
     // Set up attachments for top row by configuring them directly on the cloth asset.
     // The simulation system will automatically resolve world positions each frame
@@ -420,6 +494,12 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, int32 
         ClothAssets[Index]->AddAreaConstraint(constraint);
     }
 
+    // NEW: Add edge collision constraints to cloth asset
+    for (const FClothEdgeCollisionConstraint &edgeCollision : edgeCollisions)
+    {
+        ClothAssets[Index]->AddEdgeCollision(edgeCollision);
+    }
+
     // Configure simulation parameters with variations per instance
     FClothConfig config;
     config.Mass = 1.0f;
@@ -500,7 +580,8 @@ void ATestBatchedClothActor::PostSpawnInitialize()
     for (int32 i = 0; i < NumClothInstances; i++)
     {
         // CreateTestCloth(i, 20 - i * 2, 5.0f, EClothLODLevel::LOD_0);
-        CreateTestCloth(i, 20, 2.5f, EClothLODLevel::LOD_0);
+        CreateTestCloth(i, 10, 5.0f, EClothLODLevel::LOD_0);
+        //CreateTestCloth(i, 20, 2.5f, EClothLODLevel::LOD_0);
         // CreateTestCloth(i, 100, 0.5f, EClothLODLevel::LOD_0);
     }
 

@@ -46,7 +46,8 @@ public:
                          uint32 MaxKinematicTargets,
                          uint32 MaxTriangles,
                          uint32 MaxInstances,
-                         uint32 MaxAreaConstraints = 0);
+                         uint32 MaxAreaConstraints = 0,
+                         uint32 MaxEdgeCollisions = 0);
 
     // Simulation
     void Simulate(float DeltaTime);
@@ -65,6 +66,9 @@ public:
 
     void UploadAreaConstraintData(const TArray<FClothAreaConstraintGPU> &AreaConstraints,
                                   uint32 DestOffset);
+
+    void UploadEdgeCollisionData(const TArray<FClothEdgeCollisionConstraintGPU> &EdgeCollisions,
+                                 uint32 DestOffset);
 
     void UploadKinematicTargets(const TArray<FClothKinematicTargetGPU> &Targets,
                                 uint32 DestOffset);
@@ -102,7 +106,7 @@ public:
     // Update tracking counts
     void SetUsedCounts(uint32 Particles, uint32 Constraints, uint32 BendConstraints,
                        uint32 KinematicTargets, uint32 Triangles, uint32 Instances,
-                       uint32 AreaConstraints = 0);
+                       uint32 AreaConstraints = 0, uint32 EdgeCollisions = 0);
 
     // NEW: Set attachment count for GPU-based kinematic targets (P1)
     void SetAttachmentCount(uint32 AttachmentCount) { UsedAttachmentCount = AttachmentCount; }
@@ -125,7 +129,8 @@ private:
     void DispatchClearNormals(uint32 ParticleCount);
     void DispatchUpdateNormals(uint32 TriangleCount);
     void DispatchNormalizeNormals(uint32 ParticleCount);
-    void DispatchCollisionSDF(uint32 ParticleCount); // NEW: SDF collision solver
+    void DispatchCollisionSDF(uint32 ParticleCount);         // NEW: SDF collision solver
+    void DispatchEdgeCollisionSDF(uint32 EdgeCollisionCount); // NEW: Edge-based SDF collision
 
     void ClearAccumulationBuffers(uint32 ParticleCount);
     // void UpdateConstantBuffers(float DeltaTime);
@@ -155,7 +160,8 @@ private:
     ID3D11ComputeShader *ClearNormalsCS;
     ID3D11ComputeShader *UpdateNormalsCS;
     ID3D11ComputeShader *NormalizeNormalsCS;
-    ID3D11ComputeShader *CollisionSolverCS; // NEW: SDF collision shader
+    ID3D11ComputeShader *CollisionSolverCS;     // NEW: SDF collision shader
+    ID3D11ComputeShader *EdgeCollisionSolverCS; // NEW: Edge-based SDF collision shader
 
     // Collision manager (NEW)
     FClothCollisionManager *CollisionManager;
@@ -167,7 +173,8 @@ private:
     ID3D11Buffer *UnifiedInvMassBuffer;
     ID3D11Buffer *UnifiedConstraintBuffer;
     ID3D11Buffer *UnifiedBendConstraintBuffer;
-    ID3D11Buffer *UnifiedAreaConstraintBuffer; // NEW: Area constraint buffer
+    ID3D11Buffer *UnifiedAreaConstraintBuffer;       // NEW: Area constraint buffer
+    ID3D11Buffer *UnifiedEdgeCollisionBuffer;        // NEW: Edge collision constraint buffer
     ID3D11Buffer *UnifiedKinematicTargetBuffer;
     ID3D11Buffer *UnifiedIndexBuffer;
     ID3D11Buffer *UnifiedNormalBuffer;
@@ -195,7 +202,8 @@ private:
     ID3D11ShaderResourceView *UnifiedInvMassSRV;
     ID3D11ShaderResourceView *UnifiedConstraintSRV;
     ID3D11ShaderResourceView *UnifiedBendConstraintSRV;
-    ID3D11ShaderResourceView *UnifiedAreaConstraintSRV; // NEW: Area constraint SRV
+    ID3D11ShaderResourceView *UnifiedAreaConstraintSRV;       // NEW: Area constraint SRV
+    ID3D11ShaderResourceView *UnifiedEdgeCollisionSRV;        // NEW: Edge collision SRV
     ID3D11ShaderResourceView *UnifiedKinematicTargetSRV;
     ID3D11ShaderResourceView *UnifiedIndexSRV;
     ID3D11ShaderResourceView *UnifiedNormalSRV;
@@ -219,7 +227,8 @@ private:
     uint32 AllocatedKinematicTargetCapacity;
     uint32 AllocatedTriangleCapacity;
     uint32 AllocatedInstanceCapacity;
-    uint32 AllocatedAreaConstraintCapacity; // NEW: Area constraint capacity
+    uint32 AllocatedAreaConstraintCapacity;      // NEW: Area constraint capacity
+    uint32 AllocatedEdgeCollisionCapacity;       // NEW: Edge collision capacity
 
     uint32 UsedParticleCount;
     uint32 UsedConstraintCount;
@@ -227,8 +236,9 @@ private:
     uint32 UsedKinematicTargetCount;
     uint32 UsedTriangleCount;
     uint32 UsedInstanceCount;
-    uint32 UsedAttachmentCount;     // NEW: For GPU-based kinematic targets (P1)
-    uint32 UsedAreaConstraintCount; // NEW: Area constraint count
+    uint32 UsedAttachmentCount;                  // NEW: For GPU-based kinematic targets (P1)
+    uint32 UsedAreaConstraintCount;              // NEW: Area constraint count
+    uint32 UsedEdgeCollisionCount;               // NEW: Edge collision count
 
     bool bInitialized;
 

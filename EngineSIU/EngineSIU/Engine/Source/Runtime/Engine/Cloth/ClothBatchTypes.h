@@ -75,17 +75,19 @@ struct FClothInstanceParameters
     uint32 AreaConstraintOffset; // 4 bytes - NEW: Area constraint offset
     uint32 AreaConstraintCount;  // 4 bytes - NEW: Area constraint count
 
-    uint32 IsActive; // 4 bytes - Enable/disable flag
-    uint32 Padding;  // 4 bytes
+    uint32 EdgeCollisionOffset;  // 4 bytes - NEW: Edge collision offset
+    uint32 EdgeCollisionCount;   // 4 bytes - NEW: Edge collision count
+    uint32 IsActive;             // 4 bytes - Enable/disable flag
+    uint32 Padding;              // 4 bytes
 
     FClothInstanceParameters()
-        : Gravity(0.0f, 0.0f, -980.0f), GravityMultiplier(1.0f), Wind(0.0f, 0.0f, 0.0f), WindStrength(1.0f), AirDrag(1.0f), Damping(0.5f), StretchStiffness(0.9f), BendStiffness(0.9f), ParticleOffset(0), ParticleCount(0), ConstraintOffset(0), ConstraintCount(0), BendConstraintOffset(0), BendConstraintCount(0), KinematicTargetOffset(0), KinematicTargetCount(0), TriangleOffset(0), TriangleCount(0), AreaConstraintOffset(0), AreaConstraintCount(0), IsActive(1), Padding(0)
+        : Gravity(0.0f, 0.0f, -980.0f), GravityMultiplier(1.0f), Wind(0.0f, 0.0f, 0.0f), WindStrength(1.0f), AirDrag(1.0f), Damping(0.5f), StretchStiffness(0.9f), BendStiffness(0.9f), ParticleOffset(0), ParticleCount(0), ConstraintOffset(0), ConstraintCount(0), BendConstraintOffset(0), BendConstraintCount(0), KinematicTargetOffset(0), KinematicTargetCount(0), TriangleOffset(0), TriangleCount(0), AreaConstraintOffset(0), AreaConstraintCount(0), EdgeCollisionOffset(0), EdgeCollisionCount(0), IsActive(1), Padding(0)
     {
     }
 };
 
 // Verify structure size for GPU compatibility
-static_assert(sizeof(FClothInstanceParameters) == 104, "FClothInstanceParameters must be 104 bytes");
+static_assert(sizeof(FClothInstanceParameters) == 112, "FClothInstanceParameters must be 112 bytes");
 
 /**
  * Instance metadata for tracking buffer ranges
@@ -103,8 +105,10 @@ struct FClothInstanceMetadata
     uint32 KinematicTargetCount;
     uint32 TriangleOffset;
     uint32 TriangleCount;
-    uint32 AreaConstraintOffset; // NEW: Area constraint offset
-    uint32 AreaConstraintCount;  // NEW: Area constraint count
+    uint32 AreaConstraintOffset;   // NEW: Area constraint offset
+    uint32 AreaConstraintCount;    // NEW: Area constraint count
+    uint32 EdgeCollisionOffset;    // NEW: Edge collision offset
+    uint32 EdgeCollisionCount;     // NEW: Edge collision count
 
     // Instance ID in parameter buffer
     uint32 InstanceParameterIndex;
@@ -114,7 +118,7 @@ struct FClothInstanceMetadata
     EClothLODLevel CurrentLOD;
 
     FClothInstanceMetadata()
-        : ParticleOffset(0), ParticleCount(0), ConstraintOffset(0), ConstraintCount(0), BendConstraintOffset(0), BendConstraintCount(0), KinematicTargetOffset(0), KinematicTargetCount(0), TriangleOffset(0), TriangleCount(0), AreaConstraintOffset(0), AreaConstraintCount(0), InstanceParameterIndex(0), bIsActive(true), CurrentLOD(EClothLODLevel::LOD_0)
+        : ParticleOffset(0), ParticleCount(0), ConstraintOffset(0), ConstraintCount(0), BendConstraintOffset(0), BendConstraintCount(0), KinematicTargetOffset(0), KinematicTargetCount(0), TriangleOffset(0), TriangleCount(0), AreaConstraintOffset(0), AreaConstraintCount(0), EdgeCollisionOffset(0), EdgeCollisionCount(0), InstanceParameterIndex(0), bIsActive(true), CurrentLOD(EClothLODLevel::LOD_0)
     {
     }
 };
@@ -130,7 +134,8 @@ struct FClothInstanceCreationParams
     TArray<uint32> Indices;
     TArray<FClothDistanceConstraint> Constraints;
     TArray<FClothBendConstraint> BendConstraints;
-    TArray<FClothAreaConstraint> AreaConstraints; // NEW: Area constraints
+    TArray<FClothAreaConstraint> AreaConstraints;           // NEW: Area constraints
+    TArray<FClothEdgeCollisionConstraint> EdgeCollisions;   // NEW: Edge collision constraints
     TArray<FClothAttachmentData> Attachments;
 
     // Configuration

@@ -20,7 +20,7 @@
     }
 
 FClothBatchedSolver::FClothBatchedSolver()
-    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), IntegrateCS(nullptr), ConstraintSolverCS(nullptr), BendConstraintSolverCS(nullptr), AreaConstraintSolverCS(nullptr), ApplyDeltasCS(nullptr), ApplyKinematicTargetsCS(nullptr), ComputeKinematicTargetsCS(nullptr), FinalizeCS(nullptr), ClearNormalsCS(nullptr), UpdateNormalsCS(nullptr), NormalizeNormalsCS(nullptr), CollisionSolverCS(nullptr), CollisionManager(nullptr), BatchSimConstantBuffer(nullptr), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), AllocatedAreaConstraintCapacity(0), UsedParticleCount(0), UsedConstraintCount(0), UsedBendConstraintCount(0), UsedKinematicTargetCount(0), UsedTriangleCount(0), UsedInstanceCount(0), UsedAttachmentCount(0), UsedAreaConstraintCount(0), bInitialized(false), AccumulatedTime(0.0f)
+    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), IntegrateCS(nullptr), ConstraintSolverCS(nullptr), BendConstraintSolverCS(nullptr), AreaConstraintSolverCS(nullptr), ApplyDeltasCS(nullptr), ApplyKinematicTargetsCS(nullptr), ComputeKinematicTargetsCS(nullptr), FinalizeCS(nullptr), ClearNormalsCS(nullptr), UpdateNormalsCS(nullptr), NormalizeNormalsCS(nullptr), CollisionSolverCS(nullptr), EdgeCollisionSolverCS(nullptr), CollisionManager(nullptr), BatchSimConstantBuffer(nullptr), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), AllocatedAreaConstraintCapacity(0), AllocatedEdgeCollisionCapacity(0), UsedParticleCount(0), UsedConstraintCount(0), UsedBendConstraintCount(0), UsedKinematicTargetCount(0), UsedTriangleCount(0), UsedInstanceCount(0), UsedAttachmentCount(0), UsedAreaConstraintCount(0), UsedEdgeCollisionCount(0), bInitialized(false), AccumulatedTime(0.0f)
 {
     // Initialize all buffer pointers to nullptr (Velvet pattern - single working buffer)
     UnifiedPositionBuffer = nullptr;
@@ -35,7 +35,8 @@ FClothBatchedSolver::FClothBatchedSolver()
     UnifiedInvMassBuffer = nullptr;
     UnifiedConstraintBuffer = nullptr;
     UnifiedBendConstraintBuffer = nullptr;
-    UnifiedAreaConstraintBuffer = nullptr; // NEW: Area constraint buffer
+    UnifiedAreaConstraintBuffer = nullptr;    // NEW: Area constraint buffer
+    UnifiedEdgeCollisionBuffer = nullptr;     // NEW: Edge collision buffer
     UnifiedKinematicTargetBuffer = nullptr;
     UnifiedIndexBuffer = nullptr;
     UnifiedNormalBuffer = nullptr;
@@ -54,7 +55,8 @@ FClothBatchedSolver::FClothBatchedSolver()
     UnifiedInvMassSRV = nullptr;
     UnifiedConstraintSRV = nullptr;
     UnifiedBendConstraintSRV = nullptr;
-    UnifiedAreaConstraintSRV = nullptr; // NEW: Area constraint SRV
+    UnifiedAreaConstraintSRV = nullptr;      // NEW: Area constraint SRV
+    UnifiedEdgeCollisionSRV = nullptr;       // NEW: Edge collision SRV
     UnifiedKinematicTargetSRV = nullptr;
     UnifiedIndexSRV = nullptr;
     UnifiedNormalSRV = nullptr;
@@ -112,7 +114,7 @@ void FClothBatchedSolver::Release()
     IntegrateCS = nullptr;
     ConstraintSolverCS = nullptr;
     BendConstraintSolverCS = nullptr;
-    AreaConstraintSolverCS = nullptr; // NEW: Area constraint solver
+    AreaConstraintSolverCS = nullptr;    // NEW: Area constraint solver
     ApplyDeltasCS = nullptr;
     ApplyKinematicTargetsCS = nullptr;
     ComputeKinematicTargetsCS = nullptr; // NEW: P1 optimization
@@ -121,6 +123,7 @@ void FClothBatchedSolver::Release()
     UpdateNormalsCS = nullptr;
     NormalizeNormalsCS = nullptr;
     CollisionSolverCS = nullptr;
+    EdgeCollisionSolverCS = nullptr;     // NEW: Edge collision solver
 
     // Do NOT release collision manager - it's shared and owned by ClothWorld
     CollisionManager = nullptr;
@@ -159,6 +162,9 @@ void FClothBatchedSolver::Release()
     SAFE_RELEASE(UnifiedAreaConstraintUAV); // NEW: XPBD lambda write-back
     SAFE_RELEASE(UnifiedAreaConstraintSRV);
 
+    SAFE_RELEASE(UnifiedEdgeCollisionBuffer);
+    SAFE_RELEASE(UnifiedEdgeCollisionSRV);
+
     SAFE_RELEASE(UnifiedKinematicTargetBuffer);
     SAFE_RELEASE(UnifiedKinematicTargetSRV);
 
@@ -188,7 +194,7 @@ void FClothBatchedSolver::Release()
 bool FClothBatchedSolver::AllocateBuffers(uint32 MaxParticles, uint32 MaxConstraints,
                                           uint32 MaxBendConstraints, uint32 MaxKinematicTargets,
                                           uint32 MaxTriangles, uint32 MaxInstances,
-                                          uint32 MaxAreaConstraints)
+                                          uint32 MaxAreaConstraints, uint32 MaxEdgeCollisions)
 {
     if (!Graphics || !Graphics->Device)
     {
@@ -204,6 +210,7 @@ bool FClothBatchedSolver::AllocateBuffers(uint32 MaxParticles, uint32 MaxConstra
     AllocatedTriangleCapacity = MaxTriangles;
     AllocatedInstanceCapacity = MaxInstances;
     AllocatedAreaConstraintCapacity = MaxAreaConstraints;
+    AllocatedEdgeCollisionCapacity = MaxEdgeCollisions;
 
     HRESULT hr;
     D3D11_BUFFER_DESC bufferDesc = {};
@@ -454,6 +461,34 @@ bool FClothBatchedSolver::AllocateBuffers(uint32 MaxParticles, uint32 MaxConstra
         }
 
         UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Created area constraint buffer (MaxAreaConstraints: %u)"), MaxAreaConstraints);
+    }
+
+    // Create edge collision buffer
+    if (MaxEdgeCollisions > 0)
+    {
+        bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+        bufferDesc.ByteWidth = sizeof(FClothEdgeCollisionConstraintGPU) * MaxEdgeCollisions;
+        bufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        bufferDesc.StructureByteStride = sizeof(FClothEdgeCollisionConstraintGPU);
+        bufferDesc.CPUAccessFlags = 0;
+        bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+
+        hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &UnifiedEdgeCollisionBuffer);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create edge collision buffer"));
+            return false;
+        }
+
+        srvDesc.Buffer.NumElements = MaxEdgeCollisions;
+        hr = Graphics->Device->CreateShaderResourceView(UnifiedEdgeCollisionBuffer, &srvDesc, &UnifiedEdgeCollisionSRV);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create edge collision SRV"));
+            return false;
+        }
+
+        UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Created edge collision buffer (MaxEdgeCollisions: %u)"), MaxEdgeCollisions);
     }
 
     // Create kinematic target buffer (dynamic)
@@ -717,6 +752,12 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
 
     // Collision (collision data updated once per frame in Simulate, not here)
     DispatchCollisionSDF(UsedParticleCount);
+    
+    // Edge-based collision (NEW: Prevents edge penetration in low-resolution meshes)
+    if (UsedEdgeCollisionCount > 0)
+    {
+        DispatchEdgeCollisionSDF(UsedEdgeCollisionCount);
+    }
 
     for (int32 iter = 0; iter < Config.NumIterations; ++iter)
     {
@@ -872,6 +913,17 @@ bool FClothBatchedSolver::LoadComputeShaders()
     }
     CollisionSolverCS = ShaderManager->GetComputeShaderByKey(L"ClothCollisionSDFCS");
 
+    // Load or get Edge Collision SDF shader (NEW)
+    hr = ShaderManager->AddComputeShader(L"ClothEdgeCollisionSDFCS",
+                                         L"Shaders/Cloth/ClothCollisionEdgeSDF.hlsl",
+                                         "SolveEdgeCollisionsCS");
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to compile ClothCollisionEdgeSDF shader (optional)"));
+        // Not critical - edge collision is optional
+    }
+    EdgeCollisionSolverCS = ShaderManager->GetComputeShaderByKey(L"ClothEdgeCollisionSDFCS");
+
     // Load GPU-based kinematic targets shader (P1 optimization)
     hr = ShaderManager->AddComputeShader(L"ClothComputeKinematicTargetsCS",
                                          L"Shaders/Cloth/ClothComputeKinematicTargets.hlsl",
@@ -899,7 +951,7 @@ bool FClothBatchedSolver::LoadComputeShaders()
 
 void FClothBatchedSolver::SetUsedCounts(uint32 Particles, uint32 Constraints, uint32 BendConstraints,
                                         uint32 KinematicTargets, uint32 Triangles, uint32 Instances,
-                                        uint32 AreaConstraints)
+                                        uint32 AreaConstraints, uint32 EdgeCollisions)
 {
     UsedParticleCount = Particles;
     UsedConstraintCount = Constraints;
@@ -908,6 +960,7 @@ void FClothBatchedSolver::SetUsedCounts(uint32 Particles, uint32 Constraints, ui
     UsedTriangleCount = Triangles;
     UsedInstanceCount = Instances;
     UsedAreaConstraintCount = AreaConstraints;
+    UsedEdgeCollisionCount = EdgeCollisions;
 }
 
 ID3D11ShaderResourceView *FClothBatchedSolver::GetPositionBufferSRV() const
@@ -1062,6 +1115,27 @@ void FClothBatchedSolver::UploadAreaConstraintData(const TArray<FClothAreaConstr
 
     Graphics->DeviceContext->UpdateSubresource(UnifiedAreaConstraintBuffer, 0, &destBox,
                                                AreaConstraints.GetData(), 0, 0);
+}
+
+void FClothBatchedSolver::UploadEdgeCollisionData(const TArray<FClothEdgeCollisionConstraintGPU> &EdgeCollisions,
+                                                   uint32 DestOffset)
+{
+    if (!Graphics || !Graphics->DeviceContext || EdgeCollisions.Num() == 0)
+        return;
+
+    if (!UnifiedEdgeCollisionBuffer)
+        return;
+
+    D3D11_BOX destBox;
+    destBox.left = DestOffset * sizeof(FClothEdgeCollisionConstraintGPU);
+    destBox.right = destBox.left + EdgeCollisions.Num() * sizeof(FClothEdgeCollisionConstraintGPU);
+    destBox.top = 0;
+    destBox.bottom = 1;
+    destBox.front = 0;
+    destBox.back = 1;
+
+    Graphics->DeviceContext->UpdateSubresource(UnifiedEdgeCollisionBuffer, 0, &destBox,
+                                               EdgeCollisions.GetData(), 0, 0);
 }
 
 // ClothBatchedSolver.cpp
@@ -1656,6 +1730,57 @@ void FClothBatchedSolver::DispatchCollisionSDF(uint32 ParticleCount)
     Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
 }
 
+void FClothBatchedSolver::DispatchEdgeCollisionSDF(uint32 EdgeCollisionCount)
+{
+    if (!Graphics || !Graphics->DeviceContext || !EdgeCollisionSolverCS || EdgeCollisionCount == 0)
+        return;
+
+    if (!CollisionManager || CollisionManager->GetColliderCount() == 0)
+        return;
+
+    if (!Config.bEnableEdgeCollision)
+        return;
+
+    // Bind constant buffer (contains NumColliders, CollisionThickness, EdgeSamplesPerEdge, etc.)
+    Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
+
+    // Bind SRVs:
+    // t0: Edge collision constraints
+    // t1: Collider buffer
+    // t2: InvMass
+    // t3: Predicted positions
+    ID3D11ShaderResourceView *srvs[4] = {
+        UnifiedEdgeCollisionSRV,              // t0
+        CollisionManager->GetColliderBufferSRV(), // t1
+        UnifiedInvMassSRV,                    // t2
+        UnifiedPredictedSRV                   // t3
+    };
+    Graphics->DeviceContext->CSSetShaderResources(0, 4, srvs);
+
+    // Bind UAVs:
+    // u0: Position delta accumulation
+    // u1: Position weight accumulation
+    ID3D11UnorderedAccessView *uavs[] = {
+        UnifiedPositionDeltaUAV,
+        UnifiedPositionWeightUAV
+    };
+    UINT initialCounts[2] = {0, 0};
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, initialCounts);
+
+    // Bind shader
+    Graphics->DeviceContext->CSSetShader(EdgeCollisionSolverCS, nullptr, 0);
+
+    // Dispatch (one thread per edge)
+    uint32 dispatchCount = GetDispatchCount(EdgeCollisionCount, 256);
+    Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
+
+    // Unbind
+    ID3D11UnorderedAccessView *nullUAVs[2] = {nullptr, nullptr};
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
+    ID3D11ShaderResourceView *nullSRVs[4] = {nullptr, nullptr, nullptr, nullptr};
+    Graphics->DeviceContext->CSSetShaderResources(0, 4, nullSRVs);
+}
+
 void FClothBatchedSolver::ClearAccumulationBuffers(uint32 ParticleCount)
 {
     if (!Graphics || !Graphics->DeviceContext)
@@ -1738,8 +1863,8 @@ void FClothBatchedSolver::UpdateFrameConstants(float DeltaTime)
     CachedConstants.CollisionFriction = Config.CollisionFriction;
     CachedConstants.NumAreaConstraints = UsedAreaConstraintCount;
     CachedConstants.AreaStiffness = 1.0f; // Global area stiffness multiplier
-    CachedConstants.Padding0 = 0.0f;
-    CachedConstants.Padding1 = 0.0f;
+    CachedConstants.NumEdgeCollisions = UsedEdgeCollisionCount;
+    CachedConstants.EdgeSamplesPerEdge = static_cast<uint32>(Config.EdgeSamplesPerEdge);
     CachedConstants.WorldMatrix = FMatrix::Identity;
     CachedConstants.CurrentIteration = 0; // Will be updated per iteration
 

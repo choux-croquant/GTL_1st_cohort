@@ -205,6 +205,21 @@ struct FClothColliderGPU
                      // Total: 64 bytes
 };
 
+/**
+ * Edge collision constraint structure (16 bytes, aligned)
+ * Used for edge-based SDF collision to prevent low-resolution cloth edges from penetrating colliders
+ * The shader samples multiple points along each edge and checks collision for all sample points
+ * Must match FEdgeCollisionConstraint in ClothCommon.hlsli
+ */
+struct FClothEdgeCollisionConstraintGPU
+{
+    uint32 ParticleA;  // 4 bytes - First edge vertex
+    uint32 ParticleB;  // 4 bytes - Second edge vertex
+    float RestLength;  // 4 bytes - Rest length of edge (for validation/debugging)
+    float Padding;     // 4 bytes - Alignment padding
+                       // Total: 16 bytes
+};
+
 // Static assertions to verify structure sizes (C++ only)
 static_assert(sizeof(FClothParticleGPU) == 16, "FClothParticleGPU must be 16 bytes");
 static_assert(sizeof(FClothVelocityGPU) == 16, "FClothVelocityGPU must be 16 bytes");
@@ -216,6 +231,7 @@ static_assert(sizeof(FKinematicAttachmentGPU) == 32, "FKinematicAttachmentGPU mu
 static_assert(sizeof(FClothCollisionSphereGPU) == 16, "FClothCollisionSphereGPU must be 16 bytes");
 static_assert(sizeof(FClothCollisionCapsuleGPU) == 32, "FClothCollisionCapsuleGPU must be 32 bytes");
 static_assert(sizeof(FClothColliderGPU) == 64, "FClothColliderGPU must be 64 bytes");
+static_assert(sizeof(FClothEdgeCollisionConstraintGPU) == 16, "FClothEdgeCollisionConstraintGPU must be 16 bytes");
 
 // Verify alignment
 static_assert(alignof(FClothParticleGPU) == 4, "FClothParticleGPU alignment");
