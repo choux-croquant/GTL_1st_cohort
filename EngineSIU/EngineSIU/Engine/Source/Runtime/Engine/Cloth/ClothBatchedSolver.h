@@ -95,6 +95,8 @@ public:
     uint32 GetAllocatedParticleCapacity() const { return AllocatedParticleCapacity; }
     uint32 GetUsedParticleCount() const { return UsedParticleCount; }
     uint32 GetUsedConstraintCount() const { return UsedConstraintCount; }
+    uint32 GetUsedBendConstraintCount() const { return UsedBendConstraintCount; }
+    uint32 GetUsedAttachmentCount() const { return UsedAttachmentCount; }
     uint32 GetUsedInstanceCount() const { return UsedInstanceCount; }
 
     // Update tracking counts
