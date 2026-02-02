@@ -464,6 +464,11 @@ void PropertyEditorPanel::RenderForClothMesh(UClothMeshComponent* ClothMeshComp)
             ImGui::EndCombo();
         }
 
+        if (ImGui::Button("Create Cloth Asset"))
+        {
+            ClothMeshComp->GenerateClothAsset();
+        }
+
         ImGui::TreePop();
     }
     ImGui::PopStyleColor();
