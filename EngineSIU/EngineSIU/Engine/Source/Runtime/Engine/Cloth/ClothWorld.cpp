@@ -163,8 +163,7 @@ void FClothWorld::AddExplosionForce(const FVector &Position, float Strength, flo
 
 // ==================== BATCHED MODE METHODS ====================
 
-FClothInstanceHandle *FClothWorld::RegisterClothInstanceBatched(UClothComponent *Component, UClothAsset *Asset,
-                                                                const FClothConfig &Config, EClothLODLevel InitialLOD)
+FClothInstanceHandle *FClothWorld::RegisterClothInstanceBatched(UClothComponent *Component, UClothAsset *Asset, EClothLODLevel InitialLOD)
 {
     if (!bIsInitialized || !Component || !Asset)
     {
@@ -188,7 +187,6 @@ FClothInstanceHandle *FClothWorld::RegisterClothInstanceBatched(UClothComponent 
 
     // Create instance creation params
     FClothInstanceCreationParams Params;
-    Params.Config = Config;
     Params.OwnerComponent = Component;
     Params.InitialLOD = InitialLOD;
 

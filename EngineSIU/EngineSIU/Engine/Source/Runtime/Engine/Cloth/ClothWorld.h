@@ -89,8 +89,7 @@ public:
     /**
      * Registration API for components - Batched mode
      */
-    FClothInstanceHandle *RegisterClothInstanceBatched(UClothComponent *Component, UClothAsset *Asset,
-                                                       const FClothConfig &Config, EClothLODLevel InitialLOD = EClothLODLevel::LOD_0);
+    FClothInstanceHandle *RegisterClothInstanceBatched(UClothComponent *Component, UClothAsset *Asset, EClothLODLevel InitialLOD = EClothLODLevel::LOD_0);
     void UnregisterClothInstanceBatched(FClothInstanceHandle *Instance);
 
     /**
