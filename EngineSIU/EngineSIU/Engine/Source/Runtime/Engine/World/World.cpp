@@ -12,7 +12,6 @@
 #include "GameFramework/GameMode.h"
 #include "Engine/Classes/Actors/BehellaGameMode.h"
 #include "Classes/Components/TextComponent.h"
-#include "Actors/TestClothActor.h"
 #include "Actors/TestBatchedClothActor.h"
 #include "GameFramework/PIETestGameMode.h"
 #include "GameFramework/PIEFreeFlyPawn.h"
