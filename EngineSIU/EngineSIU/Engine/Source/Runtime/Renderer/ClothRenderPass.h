@@ -20,14 +20,15 @@ class FDXDBufferManager;
 
 /**
  * Constant buffer for cloth mesh rendering
+ * Updated to support batched mode with particle/index offsets
  */
 struct FClothMeshConstants
 {
     alignas(16) FMatrix ClothWorldMatrix;
     uint32 ClothNumVertices;
-    uint32 ClothPadding0;
-    uint32 ClothPadding1;
-    uint32 ClothPadding2;
+    uint32 ClothParticleOffset; // NEW: For batched mode
+    uint32 ClothIndexOffset;    // NEW: For batched mode
+    uint32 ClothPadding;
 };
 
 /**
@@ -55,7 +56,8 @@ protected:
 
 private:
     void RenderClothComponent(UClothMeshComponent *ClothComponent, const std::shared_ptr<FEditorViewportClient> &Viewport);
-    void UpdateClothMeshConstantBuffer(const FMatrix &WorldTransform, uint32 NumVertices);
+    void UpdateClothMeshConstantBuffer(const FMatrix &WorldTransform, uint32 NumVertices,
+                                       uint32 ParticleOffset = 0, uint32 IndexOffset = 0);
     ID3D11Buffer *CreateIndexBufferFromIndices(const TArray<uint32> &Indices);
 
 private:

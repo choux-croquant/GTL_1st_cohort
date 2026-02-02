@@ -14,7 +14,9 @@ cbuffer ClothMeshConstants : register(b10)
 {
     row_major matrix ClothWorldMatrix;
     uint ClothNumVertices;
-    uint3 ClothPadding;
+    uint ClothParticleOffset;  // NEW: For batched mode - offset into unified buffer
+    uint ClothIndexOffset;     // NEW: For batched mode - index offset
+    uint ClothPadding;
 };
 
 struct VS_INPUT_Cloth
@@ -27,14 +29,26 @@ PS_INPUT_CommonMesh main(VS_INPUT_Cloth Input)
 {
     PS_INPUT_CommonMesh Output;
     
+    // CRITICAL FIX: Input.VertexID is the value from the index buffer
+    // In batched mode, indices are ALREADY global particle indices (converted during upload)
+    // Adding ClothParticleOffset would cause double offset bug
+    //
+    // Batched mode: Indices in index buffer are global (e.g., [400-723] for instance 1)
+    // Legacy mode: ClothParticleOffset = 0, indices are local [0-N], works correctly
+    uint particleIndex = Input.VertexID;  // Use index directly, no offset
+    
     // Read dynamic position from simulation buffer
-    float4 particleData = ClothPositionBuffer[Input.VertexID];
+    // - Batched mode: Unified buffer, indices already point to correct particles
+    // - Legacy mode: Per-instance buffer, indices are 0-based
+    float4 particleData = ClothPositionBuffer[particleIndex];
     float3 position = particleData.xyz;
     
     // Read dynamic normal from simulation buffer
-    float3 normal = ClothNormalBuffer[Input.VertexID];
+    float3 normal = ClothNormalBuffer[particleIndex];
     
     // Transform to world space
+    // - Batched mode: ClothWorldMatrix = Identity (particles already in world space)
+    // - Legacy mode: ClothWorldMatrix = component transform (particles in local space)
     float4 worldPos = mul(float4(position, 1.0), ClothWorldMatrix);
     Output.WorldPosition = worldPos.xyz;
     

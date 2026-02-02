@@ -179,7 +179,7 @@ HRESULT FResourceManager::LoadTextureFromFile(ID3D11Device* Device, const wchar_
     const FWString Name = FWString(Filename);
     TextureMap[Name] = std::make_shared<FTexture>(TextureSrv, Texture2D, ESamplerType::Linear, Name, Width, Height);
 
-    FConsole::GetInstance().AddLog(ELogLevel::Warning, "Texture File Load Successs");
+    //FConsole::GetInstance().AddLog(ELogLevel::Warning, "Texture File Load Successs");
     return hr;
 }
 
@@ -217,7 +217,7 @@ HRESULT FResourceManager::LoadTextureFromDDS(ID3D11Device* Device, ID3D11DeviceC
     const FWString Name = FWString(Filename);
     TextureMap[Name] = std::make_shared<FTexture>(TextureView, Texture2D, ESamplerType::Linear, Name, Width, Height);
 
-    FConsole::GetInstance().AddLog(ELogLevel::Warning, "Texture File Load Successs");
+    //FConsole::GetInstance().AddLog(ELogLevel::Warning, "Texture File Load Successs");
 
     return hr;
 }

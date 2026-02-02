@@ -43,7 +43,7 @@ void UClothAsset::SerializeAsset(FArchive &Ar)
     // Serialize config
     Ar << ClothConfig.Mass;
     Ar << ClothConfig.Damping;
-    Ar << ClothConfig.Friction;
+    Ar << ClothConfig.CollisionFriction;
     Ar << ClothConfig.StretchStiffness;
     Ar << ClothConfig.BendStiffness;
     Ar << ClothConfig.AttachStiffness;

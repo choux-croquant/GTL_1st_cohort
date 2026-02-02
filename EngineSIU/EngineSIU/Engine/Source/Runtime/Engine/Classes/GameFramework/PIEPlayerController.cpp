@@ -267,7 +267,7 @@ void APiePlayerController::OnMouseButtonDown(const FPointerEvent &MouseEvent)
         bMousePositionInitialized = false; // Reset for next frame
         LastMousePosition = MouseEvent.GetScreenSpacePosition();
 
-        UE_LOG(ELogLevel::Display, TEXT("PIE: Camera rotation enabled (RMB held)"));
+        //UE_LOG(ELogLevel::Display, TEXT("PIE: Camera rotation enabled (RMB held)"));
     }
 }
 
@@ -286,7 +286,7 @@ void APiePlayerController::OnMouseButtonUp(const FPointerEvent &MouseEvent)
         bRightMouseDown = false;
         bMousePositionInitialized = false;
 
-        UE_LOG(ELogLevel::Display, TEXT("PIE: Camera rotation disabled (RMB released)"));
+        //UE_LOG(ELogLevel::Display, TEXT("PIE: Camera rotation disabled (RMB released)"));
     }
 }
 

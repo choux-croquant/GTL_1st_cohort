@@ -6,7 +6,6 @@
 #include "Engine/StaticMeshActor.h"
 #include "Components/StaticMeshComponent.h"
 #include "World/World.h"
-#include "Cloth/ClothInstance.h"
 #include "Classes/Engine/FObjLoader.h"
 #include <functional>
 
@@ -435,9 +434,9 @@ void ATestClothActor::UpdateAttachments()
 
     // Send updated attachments to the cloth component's instance
     // The component will forward them to the solver for GPU processing
-    FClothInstance *instance = ClothMesh->GetClothInstance();
+    /*FClothInstance *instance = ClothMesh->GetClothInstance();
     if (instance)
     {
         instance->UpdateAttachments(CachedAttachments);
-    }
+    }*/
 }

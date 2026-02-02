@@ -53,7 +53,6 @@ public:
     UPROPERTY_WITH_FLAGS(EditAnywhere, bool, bSimulate, = false)
     UPROPERTY_WITH_FLAGS(EditAnywhere, bool, bApplyGravity, = false)
     UPROPERTY_WITH_FLAGS(EditAnywhere, ERigidBodyType, RigidBodyType, = ERigidBodyType::DYNAMIC)
-
     UPROPERTY_WITH_FLAGS(EditAnywhere, TArray<AggregateGeomAttributes>, GeomAttributes)
 
     /** 
@@ -117,6 +116,8 @@ public:
 
     virtual void BeginPlay() override;
     
+    UBodySetup* GetBodySetup() { return BodySetup; }
+
 protected:
     TArray<FOverlapInfo> OverlappingComponents;
 

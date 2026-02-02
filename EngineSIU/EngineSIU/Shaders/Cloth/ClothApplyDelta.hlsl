@@ -1,40 +1,49 @@
+/**
+ * Cloth Apply Constraint Deltas
+ * Applies accumulated constraint corrections to particle positions
+ *
+ * VELVET PATTERN (Single Working Buffer):
+ * - Reads/writes PredictedBuffer IN-PLACE
+ * - Averages accumulated deltas and applies with relaxation
+ * - Clears delta accumulation buffers for next iteration
+ */
+
 #include "ClothCommon.hlsli"
 
-StructuredBuffer<FClothParticle> PositionRead : register(t0);
+// In-place modification of predicted buffer
+RWStructuredBuffer<FClothParticle> PredictedBuffer : register(u0);  // In-place modification
+RWStructuredBuffer<int3> PositionDelta : register(u1);
+RWStructuredBuffer<int>  PositionWeight : register(u2);
 
-RWStructuredBuffer<int3> PositionDelta  : register(u0);
-RWStructuredBuffer<int>  PositionWeight : register(u1);
-RWStructuredBuffer<FClothParticle> PositionWrite : register(u2);
-RWStructuredBuffer<FClothVelocity> VelocityBuffer : register(u3);
+static const float kScale = 10000.0f;  // Fixed-point scale for delta accumulation
 
-static const float kScale = 1000.0f;
-
-[numthreads(64, 1, 1)]
+[numthreads(256, 1, 1)]
 void ApplyConstraintDeltasCS(uint3 DTid : SV_DispatchThreadID)
 {
-    uint i = DTid.x;
-    if (i >= NumParticles) return;
+    uint idx = DTid.x;
+    if (idx >= NumParticles) return;
 
-    FClothParticle p = PositionRead[i];
-    FClothVelocity velocity = VelocityBuffer[i];
-
-    if (p.InvMass == 0.0f)
+    int weightFixed = PositionWeight[idx];
+    if (weightFixed > 0)
     {
-        PositionWrite[i] = p;
-        PositionDelta[i] = int3(0, 0, 0);
-        PositionWeight[i] = 0;
-        return;
+        // Convert fixed-point delta to float
+        int3 deltaInt = PositionDelta[idx];
+        float3 delta = float3(deltaInt) / kScale;
+
+        // Weight is now constraint count (not invMass sum)
+        float weight = (float)weightFixed;
+        if (weight > 0.0f)
+        {
+            // Average the accumulated deltas from all constraints
+            float3 avgDelta = delta / weight;
+
+            // Apply relaxation factor only (stiffness already applied in constraint solver)
+            // CRITICAL FIX: Removed double application of StretchStiffness
+            PredictedBuffer[idx].Position += avgDelta * RelaxationFactor;
+        }
+        
+        // Clear for next iteration
+        PositionDelta[idx] = int3(0, 0, 0);
+        PositionWeight[idx] = 0;
     }
-    int w = PositionWeight[i];
-    float3 avgDelta = (float3(PositionDelta[i]) / kScale) / max(1, w);
-    float3 delta = (w > 0) ? avgDelta : float3(0, 0, 0);
-
-    p.Position += delta;
-    PositionWrite[i] = p;
-    
-    velocity.Velocity = delta / DeltaTime;
-    VelocityBuffer[i] = velocity;
-
-    PositionDelta[i] = int3(0, 0, 0);
-    PositionWeight[i] = 0;
 }

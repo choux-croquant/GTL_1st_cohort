@@ -7,6 +7,7 @@
 #include "Math/Transform.h"
 #include "Math/Quat.h"
 #include "CoreUObject/UObject/NameTypes.h"
+#include "Components/SceneComponent.h"
 
 /**
  * Cloth Simulation Data Structures
@@ -19,19 +20,28 @@
 struct FClothConfig
 {
     // Global simulation settings
+    FVector Gravity = {0.0f, 0.0f, -980.0f};
     float Mass = 1.0f;
-    float Damping = 0.05f;
-    float Friction = 0.1f;
+    float Damping = 0.5f;
 
     // Constraint stiffness (0-1)
     float StretchStiffness = 0.9f;
     float BendStiffness = 0.9f;
+    float AreaStiffness = 0.001f; // NEW: Area constraint stiffness (0-1)
     float AttachStiffness = 1.0f;
+    float LongRangeStretchiness = 1.2f; // NEW: LRA slack multiplier (Velvet default)
 
     // Solver settings
-    int32 NumIterations = 5;
+    int32 NumIterations = 2;
     float TimeStep = 0.016f; // Fixed 60fps or variable
     bool bUseXPBD = false;   // Use XPBD instead of PBD
+
+    // NEW: Substep settings (Velvet-inspired)
+    int32 NumSubsteps = 3;                  // How many substeps per frame time
+    float FixedSubstepTime = 1.0f / 600.0f; // Target substep dt (120 Hz default)
+    int32 MaxSubstepsPerFrame = 10;         // Safety limit to prevent death spiral
+    float MaxSpeed = 1000.0f;               // Velocity clamping (cm/s)
+    float RelaxationFactor = 1.0f;          // Jacobi convergence control
 
     // Wind and drag
     float AirDrag = 1.0f;
@@ -39,7 +49,12 @@ struct FClothConfig
 
     // Collision
     float CollisionThickness = 0.01f;
+    float CollisionFriction = 0.1f;
     bool bEnableSelfCollision = false;
+    
+    // Edge-based collision (NEW: Prevents edge penetration in low-resolution meshes)
+    bool bEnableEdgeCollision = true;      // Enable edge-based SDF collision
+    int32 EdgeSamplesPerEdge = 3;          // Number of sample points per edge (3-5 recommended)
 };
 
 /**
@@ -97,6 +112,61 @@ struct FClothBendConstraint
     // 선택: XPBD 파라미터를 직접 지정하는 생성자
     FClothBendConstraint(uint32 InA, uint32 InB, uint32 InC, uint32 InD, float InRestAngle, float InStiffness, float InCompliance)
         : ParticleA(InA), ParticleB(InB), ParticleC(InC), ParticleD(InD), RestAngle(InRestAngle), Stiffness(InStiffness), Compliance(InCompliance), Lambda(0.0f)
+    {
+    }
+};
+
+/**
+ * Area constraint structure
+ * Preserves triangle area to prevent excessive in-plane deformation
+ * Complements distance constraints by resisting area change under shear/compression
+ */
+struct FClothAreaConstraint
+{
+    uint32 ParticleA;   // First triangle vertex
+    uint32 ParticleB;   // Second triangle vertex
+    uint32 ParticleC;   // Third triangle vertex
+    float RestArea;     // Rest area of triangle
+    FVector RestNormal; // Rest normal (for signed area computation)
+    float Compliance;   // XPBD compliance (inverse stiffness)
+    float Lambda;       // XPBD accumulated Lagrange multiplier
+    float Stiffness;    // Authoring parameter (not directly used in XPBD solve)
+
+    FClothAreaConstraint()
+        : ParticleA(0), ParticleB(0), ParticleC(0), RestArea(0.0f), RestNormal(FVector::ZeroVector), Compliance(0.0f), Lambda(0.0f), Stiffness(1.0f)
+    {
+    }
+
+    FClothAreaConstraint(uint32 InA, uint32 InB, uint32 InC, float InRestArea, const FVector &InRestNormal, float InCompliance = 1e-5f)
+        : ParticleA(InA), ParticleB(InB), ParticleC(InC), RestArea(InRestArea), RestNormal(InRestNormal), Compliance(InCompliance), Lambda(0.0f), Stiffness(1.0f)
+    {
+    }
+
+    FClothAreaConstraint(uint32 InA, uint32 InB, uint32 InC, float InRestArea, const FVector &InRestNormal, float InCompliance, float InStiffness)
+        : ParticleA(InA), ParticleB(InB), ParticleC(InC), RestArea(InRestArea), RestNormal(InRestNormal), Compliance(InCompliance), Lambda(0.0f), Stiffness(InStiffness)
+    {
+    }
+};
+
+/**
+ * Edge collision constraint structure
+ * Used for edge-based SDF collision to prevent low-resolution cloth edges from penetrating colliders
+ * Each edge samples multiple points along its length and checks collision for all sample points
+ */
+struct FClothEdgeCollisionConstraint
+{
+    uint32 ParticleA;   // First edge vertex
+    uint32 ParticleB;   // Second edge vertex
+    float RestLength;   // Rest length of edge (for validation/debugging)
+    float Padding;      // Alignment padding
+
+    FClothEdgeCollisionConstraint()
+        : ParticleA(0), ParticleB(0), RestLength(0.0f), Padding(0.0f)
+    {
+    }
+
+    FClothEdgeCollisionConstraint(uint32 InA, uint32 InB, float InRestLength)
+        : ParticleA(InA), ParticleB(InB), RestLength(InRestLength), Padding(0.0f)
     {
     }
 };
@@ -179,8 +249,13 @@ enum class EClothAttachmentType : uint8
     ActorTransform // Follow actor transform
 };
 
+// Forward declarations for driver references
+class USceneComponent;
+class AActor;
+
 /**
  * Attachment data for connecting cloth to skeletal meshes or static objects
+ * Now supports automatic transform resolution from driver references
  */
 struct FClothAttachmentData
 {
@@ -189,22 +264,32 @@ struct FClothAttachmentData
     // Attachment type
     EClothAttachmentType Type = EClothAttachmentType::WorldPosition;
 
+    // NEW: Driver references for automatic transform resolution
+    USceneComponent *DriverComponent = nullptr; // Reference to component that drives this attachment
+    AActor *DriverActor = nullptr;              // Alternative: reference to actor
+
     // For skeletal mesh attachment
     FName BoneName;
     int32 BoneIndex;
     FTransform LocalOffset;
 
-    // For world/actor attachment
+    // For world/actor attachment (cached, auto-updated from driver)
     FVector WorldPosition;
 
     // Constraint properties
     float Stiffness = 1.0f;
     bool bIsKinematic = true;
+    float AttachDistance = 0.0f; // NEW: LRA support - 0 = hard kinematic, >0 = max distance
 
     FClothAttachmentData()
-        : ClothVertexIndex(0), Type(EClothAttachmentType::WorldPosition), BoneName(FName()), BoneIndex(-1), LocalOffset(FTransform::Identity), WorldPosition(FVector::ZeroVector), Stiffness(1.0f), bIsKinematic(true)
+        : ClothVertexIndex(0), Type(EClothAttachmentType::WorldPosition), DriverComponent(nullptr), DriverActor(nullptr), BoneName(FName()), BoneIndex(-1), LocalOffset(FTransform::Identity), WorldPosition(FVector::ZeroVector), Stiffness(1.0f), bIsKinematic(true), AttachDistance(0.0f)
     {
     }
+
+    // NOTE: World position calculation is performed by the simulation system
+    // in ClothBatchManager::UpdateKinematicTargets() where all types are fully defined.
+    // The simulation system reads DriverComponent/DriverActor/LocalOffset and resolves
+    // the world position automatically each frame.
 };
 
 /**
@@ -289,23 +374,36 @@ struct FClothCollisionPrimitive
 
 inline FArchive &operator<<(FArchive &Ar, FClothConfig &Cfg)
 {
+    Ar << Cfg.Gravity;
     Ar << Cfg.Mass;
     Ar << Cfg.Damping;
-    Ar << Cfg.Friction;
 
     Ar << Cfg.StretchStiffness;
     Ar << Cfg.BendStiffness;
     Ar << Cfg.AttachStiffness;
+    Ar << Cfg.LongRangeStretchiness;
 
     Ar << Cfg.NumIterations;
     Ar << Cfg.TimeStep;
     Ar << Cfg.bUseXPBD;
 
+    // NEW: Substep parameters
+    Ar << Cfg.NumSubsteps;
+    Ar << Cfg.FixedSubstepTime;
+    Ar << Cfg.MaxSubstepsPerFrame;
+    Ar << Cfg.MaxSpeed;
+    Ar << Cfg.RelaxationFactor;
+
     Ar << Cfg.AirDrag;
     Ar << Cfg.WindStrength;
 
     Ar << Cfg.CollisionThickness;
+    Ar << Cfg.CollisionFriction;
     Ar << Cfg.bEnableSelfCollision;
+    
+    // NEW: Edge collision parameters
+    Ar << Cfg.bEnableEdgeCollision;
+    Ar << Cfg.EdgeSamplesPerEdge;
 
     return Ar;
 }
@@ -333,6 +431,20 @@ inline FArchive &operator<<(FArchive &Ar, FClothBendConstraint &C)
     Ar << C.Stiffness;
     Ar << C.Compliance;
     Ar << C.Lambda;
+
+    return Ar;
+}
+
+inline FArchive &operator<<(FArchive &Ar, FClothAreaConstraint &C)
+{
+    Ar << C.ParticleA;
+    Ar << C.ParticleB;
+    Ar << C.ParticleC;
+    Ar << C.RestArea;
+    Ar << C.RestNormal;
+    Ar << C.Compliance;
+    Ar << C.Lambda;
+    Ar << C.Stiffness;
 
     return Ar;
 }
@@ -398,6 +510,7 @@ inline FArchive &operator<<(FArchive &Ar, FClothAttachmentData &A)
     Ar << A.WorldPosition;
     Ar << A.Stiffness;
     Ar << A.bIsKinematic;
+    Ar << A.AttachDistance; // NEW: LRA support
     return Ar;
 }
 

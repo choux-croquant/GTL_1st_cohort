@@ -27,19 +27,31 @@ cbuffer ClothSimConstants : register(b0)
     
     uint CurrentIteration;
     uint UseXPBD;
-    float2 TempPadding;
+    float RelaxationFactor;        // NEW: Jacobi convergence control (Velvet-inspired)
+    float MaxSpeed;                // NEW: Velocity clamping (Velvet-inspired)
+    
+    float LongRangeStretchiness;   // NEW: LRA slack multiplier (Velvet default: 1.2)
+    uint NumColliders;             // NEW: Number of active colliders
+    float CollisionThickness;      // NEW: Collision distance threshold
+    float CollisionFriction;       // NEW: Friction coefficient (0-1)
+    
+    uint NumAreaConstraints;       // NEW: Number of area constraints
+    float AreaStiffness;           // NEW: Global area constraint stiffness
+    uint NumEdgeCollisions;        // NEW: Number of edge collision constraints
+    uint EdgeSamplesPerEdge;       // NEW: Number of samples per edge (3-5 recommended)
 
     float4x4 WorldMatrix;
 };
 
 /**
  * Particle data structure
- * Stores position and inverse mass for each cloth particle
+ * Stores position and instance ID for batched simulation
+ * InvMass is now stored in a separate buffer for batching support
  */
 struct FClothParticle
 {
     float3 Position;
-    float InvMass;  // 0 = fixed/kinematic particle
+    uint InstanceID;  // Which instance owns this particle (for batched simulation)
 };
 
 /**
@@ -87,18 +99,103 @@ struct FBendConstraint
 };
 
 /**
+ * Area constraint structure (48 bytes, aligned)
+ * Preserves triangle area to resist in-plane stretching/compression
+ *
+ * Complements distance constraints by preventing triangle collapse or excessive expansion.
+ * Uses XPBD formulation with compliance-based stiffness control.
+ *
+ * Must match FClothAreaConstraintGPU in ClothGPUStructs.h
+ */
+struct FAreaConstraint
+{
+    uint ParticleA;     // First triangle vertex
+    uint ParticleB;     // Second triangle vertex
+    uint ParticleC;     // Third triangle vertex
+    float RestArea;     // Rest area of triangle
+    
+    float3 RestNormal;  // Rest normal (for signed area computation)
+    float Compliance;   // XPBD compliance (inverse stiffness)
+    
+    float Lambda;       // XPBD accumulated Lagrange multiplier
+    float Stiffness;    // Authoring parameter (not used in XPBD solve)
+    float Padding0;     // Alignment padding
+    float Padding1;     // Alignment padding
+};
+
+/**
  * Kinematic target structure
  * Used for pinning cloth vertices to kinematic targets (e.g., flag on pole)
+ * Supports both hard kinematic attachment and Long Range Attachment (LRA)
  */
 struct FKinematicTarget
 {
     uint ParticleIndex;    // Which particle to constrain
-    float Stiffness;       // 1.0 = hard kinematic
+    float Stiffness;       // 1.0 = hard kinematic, <1.0 = soft spring
+    float AttachDistance;  // NEW: Max distance for LRA (0 = hard kinematic)
     float Padding0;
-    float Padding1;
     
     float3 TargetPosition; // World-space target position
-    float Padding2;
+    float Padding1;
+};
+
+/**
+ * Kinematic attachment structure (P1 Optimization - GPU-based computation)
+ * Compact representation for GPU-based kinematic target computation
+ * CPU uploads component transforms, GPU computes final positions
+ * Must match FKinematicAttachmentGPU in ClothGPUStructs.h
+ */
+struct FKinematicAttachment
+{
+    uint ComponentIndex;   // Index into ComponentTransforms buffer (deduplication!)
+    uint ParticleIndex;    // Target particle index in batch
+    float Stiffness;       // Attachment strength (0-1)
+    float AttachDistance;  // Max distance for LRA (0 = hard kinematic)
+    
+    float3 LocalOffset;    // Local space offset from component
+    float Padding;         // Align to 32 bytes
+};
+
+/**
+ * Per-instance parameters for batched simulation
+ * Allows different instances to have different material properties
+ * Must match FClothInstanceParameters in ClothBatchTypes.h (104 bytes)
+ */
+struct FClothInstanceParameters
+{
+    // Forces (world-space)
+    float3 Gravity;
+    float GravityMultiplier;
+    
+    float3 Wind;
+    float WindStrength;
+    
+    // Material properties
+    float AirDrag;
+    float Damping;
+    float StretchStiffness;
+    float BendStiffness;
+    
+    // Instance identification
+    uint ParticleOffset;
+    uint ParticleCount;
+    uint ConstraintOffset;
+    uint ConstraintCount;
+    
+    uint BendConstraintOffset;
+    uint BendConstraintCount;
+    uint KinematicTargetOffset;
+    uint KinematicTargetCount;
+    
+    uint TriangleOffset;
+    uint TriangleCount;
+    uint AreaConstraintOffset;  // NEW: Area constraint offset
+    uint AreaConstraintCount;   // NEW: Area constraint count
+    
+    uint EdgeCollisionOffset;   // NEW: Edge collision offset
+    uint EdgeCollisionCount;    // NEW: Edge collision count
+    uint IsActive;
+    uint Padding;
 };
 
 /**
@@ -119,6 +216,41 @@ struct FClothCollisionCapsule
     float Radius;
     float3 End;
     float Padding;
+};
+
+/**
+ * Unified collider structure (HLSL)
+ * Single structure for all collider types (sphere/capsule/box)
+ * Must match FClothColliderGPU in ClothGPUStructs.h
+ */
+struct FClothCollider
+{
+    uint Type;              // 0=Sphere, 1=Capsule, 2=Box
+    float Radius;
+    float HalfHeight;       // For capsule only
+    float Padding0;
+    
+    float3 Center;          // World-space center
+    float Padding1;
+    
+    float3 Axis;            // Capsule axis (normalized)
+    float Padding2;
+    
+    float3 Extents;         // Box half-extents
+    float Padding3;
+};
+
+/**
+ * Edge collision constraint structure (16 bytes, aligned)
+ * Used for edge-based SDF collision to prevent low-resolution cloth edges from penetrating colliders
+ * Must match FClothEdgeCollisionConstraintGPU in ClothGPUStructs.h
+ */
+struct FEdgeCollisionConstraint
+{
+    uint ParticleA;    // First edge vertex
+    uint ParticleB;    // Second edge vertex
+    float RestLength;  // Rest length of edge (for validation/debugging)
+    float Padding;     // Alignment padding
 };
 
 // Helper functions

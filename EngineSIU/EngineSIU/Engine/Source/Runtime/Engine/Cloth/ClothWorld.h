@@ -2,13 +2,14 @@
  * Cloth World - Centralized cloth simulation manager
  * Manages all cloth instances and runs simulation once per frame
  * Similar to PhysicsManager for physics bodies
+ *
+ * Now supports both Legacy (per-instance solver) and Batched (LOD-based batching) modes
  */
 
 #pragma once
 
 #include "HAL/PlatformType.h"
-#include "ClothInstance.h"
-#include "ClothSolver.h"
+#include "ClothBatchTypes.h"
 #include "Container/Array.h"
 
 // Forward declarations
@@ -16,7 +17,11 @@ class FGraphicsDevice;
 class FDXDBufferManager;
 class FDXDShaderManager;
 class UClothComponent;
+class UClothAsset;
 class UWorld;
+class FClothBatchManager;
+class FClothInstanceHandle;
+class FClothCollisionManager;
 
 /**
  * Explosion force - Transient radial force affecting all cloth
@@ -50,7 +55,7 @@ struct FClothGlobalForces
     TArray<FClothExplosionForce> Explosions; // Transient explosion forces
 
     FClothGlobalForces()
-        : GlobalGravity(0.0f, 0.0f, -1980.0f), GlobalWind(0.0f, 0.0f, 0.0f)
+        : GlobalGravity(0.0f, 0.0f, -9.80f), GlobalWind(0.0f, 0.0f, 0.0f)
     {
     }
 };
@@ -82,22 +87,16 @@ public:
     void Update(float DeltaTime);
 
     /**
-     * Registration API for components
+     * Registration API for components - Batched mode
      */
-    FClothInstance *RegisterClothInstance(UClothComponent *Component, UClothAsset *Asset, const FClothConfig &Config);
-    void UnregisterClothInstance(FClothInstance *Instance);
+    FClothInstanceHandle *RegisterClothInstanceBatched(UClothComponent *Component, UClothAsset *Asset,
+                                                       const FClothConfig &Config, EClothLODLevel InitialLOD = EClothLODLevel::LOD_0);
+    void UnregisterClothInstanceBatched(FClothInstanceHandle *Instance);
 
     /**
      * Query
      */
-    int32 GetNumActiveInstances() const;
     bool IsInitialized() const { return bIsInitialized; }
-
-    /**
-     * Get solver for direct access (rendering, debug)
-     */
-    FClothSolver *GetSolver() { return Solver; }
-    const FClothSolver *GetSolver() const { return Solver; }
 
     /**
      * Global force API - Forces applied to all cloth instances in world-space
@@ -107,21 +106,37 @@ public:
     void AddExplosionForce(const FVector &Position, float Strength, float Radius, float Duration);
     const FClothGlobalForces &GetGlobalForces() const { return GlobalForces; }
 
+    /**
+     * Mode management
+     */
+    void SetSystemMode(EClothSystemMode Mode);
+    EClothSystemMode GetSystemMode() const { return SystemMode; }
+
+    /**
+     * LOD management
+     */
+    void SetLODSelectionParams(const FClothLODSelectionParams &Params);
+    FClothBatchManager *GetBatchManager(EClothLODLevel LOD);
+    int32 GetNumInstancesInLOD(EClothLODLevel LOD) const;
+    
+    /**
+     * Get shared collision manager
+     */
+    FClothCollisionManager *GetCollisionManager() const { return SharedCollisionManager; }
+
 private:
-    /**
-     * Update all instances before simulation
-     */
-    void UpdateKinematicData(float DeltaTime);
+    void SimulateAllBatches(float DeltaTime);
 
     /**
-     * Run GPU simulation for all instances
+     * Process LOD transitions
      */
-    void SimulateAllInstances(float DeltaTime);
+    void ProcessLODTransitions();
 
     /**
-     * Clean up destroyed instances
+     * Initialize batch managers
      */
-    void CleanupDestroyedInstances();
+    void InitializeBatchManagers();
+    void ReleaseBatchManagers();
 
 private:
     // Graphics resources
@@ -129,14 +144,17 @@ private:
     FDXDBufferManager *BufferManager;
     FDXDShaderManager *ShaderManager;
 
-    // Shared solver for all instances
-    FClothSolver *Solver;
+    // System mode
+    EClothSystemMode SystemMode;
 
-    // All active cloth instances
-    TArray<FClothInstance *> ActiveInstances;
-
-    // Instances pending removal
-    TArray<FClothInstance *> PendingRemoval;
+    // Batched mode resources
+    FClothBatchManager *LODBatches[static_cast<int32>(EClothLODLevel::Max)];
+    TArray<FClothInstanceHandle *> BatchedInstances;
+    TArray<FClothInstanceHandle *> BatchedPendingRemoval;
+    FClothLODSelectionParams LODSelectionParams;
+    
+    // Shared collision manager (used by all LOD solvers)
+    FClothCollisionManager *SharedCollisionManager;
 
     // Global forces applied to all instances
     FClothGlobalForces GlobalForces;

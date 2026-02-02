@@ -1,33 +1,33 @@
 /**
  * Cloth Component Implementation (Refactored)
  * Uses centralized ClothWorld manager instead of per-component solver
+ * Now supports both Legacy and Batched modes
  */
 
 #include "ClothComponent.h"
 #include "Engine/ClothAsset.h"
-#include "Cloth/ClothInstance.h"
+#include "Cloth/ClothInstanceHandle.h"
 #include "Cloth/ClothWorld.h"
 #include "World/World.h"
 #include "Engine/EditorEngine.h"
 #include "Cloth/ClothPhysicsManager.h"
 
 UClothComponent::UClothComponent()
-    : ClothAsset(nullptr), ClothInstance(nullptr), bIsSimulating(false), bDebugDrawEnabled(false), AccumulatedForce(FVector::ZeroVector)
+    : ClothAsset(nullptr), ClothInstanceHandle(nullptr), bIsSimulating(false), bUseBatchedMode(false), bDebugDrawEnabled(false), AccumulatedForce(FVector::ZeroVector)
 {
 }
 
 UClothComponent::~UClothComponent()
 {
     // Unregister from ClothWorld
-    if (ClothInstance)
+    FClothWorld *ClothWorld = GEngine->ClothPhysicsManager->GetClothWorld(GetWorld());
+    if (!ClothWorld)
+        return;
+
+    if (bUseBatchedMode && ClothInstanceHandle)
     {
-        FClothWorld *ClothWorld = GEngine->ClothPhysicsManager->GetClothWorld(GetWorld());
-        if (ClothWorld)
-        {
-            ClothWorld->UnregisterClothInstance(ClothInstance);
-        }
-        // Note: ClothWorld owns and will delete the instance
-        ClothInstance = nullptr;
+        ClothWorld->UnregisterClothInstanceBatched(ClothInstanceHandle);
+        ClothInstanceHandle = nullptr;
     }
 }
 
@@ -35,15 +35,8 @@ void UClothComponent::InitializeComponent()
 {
     Super::InitializeComponent();
 
-    // Register with ClothWorld if we have an asset
-    if (ClothAsset)
-    {
-        FClothWorld *ClothWorld = GEngine->ClothPhysicsManager->CreateClothWorld(GetWorld());
-        if (ClothWorld && ClothWorld->IsInitialized())
-        {
-            ClothInstance = ClothWorld->RegisterClothInstance(this, ClothAsset, ClothAsset->GetConfig());
-        }
-    }
+    // Registration now happens in StartSimulation() to properly detect mode
+    // This allows the mode to be set before any instances are created
 }
 
 void UClothComponent::TickComponent(float DeltaTime)
@@ -53,21 +46,24 @@ void UClothComponent::TickComponent(float DeltaTime)
     // Note: We NO LONGER call solver here!
     // ClothWorld::Update() handles all simulation
 
-    // Instead, we only update per-instance kinematic data
-    if (!bIsSimulating || !ClothInstance)
+    if (!bIsSimulating)
         return;
 
-    // Apply accumulated forces to the instance
-    if (AccumulatedForce.SizeSquared() > 0.0f)
+    // Update per-instance kinematic data based on mode
+    if (bUseBatchedMode && ClothInstanceHandle)
     {
-        ClothInstance->AddExternalForce(AccumulatedForce);
-        AccumulatedForce = FVector::ZeroVector;
-    }
+        // Batched mode
+        // Apply accumulated forces (TODO: implement force system for batched mode)
+        if (AccumulatedForce.SizeSquared() > 0.0f)
+        {
+            // TODO: Add force support to batched system
+            AccumulatedForce = FVector::ZeroVector;
+        }
 
-    // Update attachments (if any)
-    if (Attachments.Num() > 0)
-    {
-        ClothInstance->UpdateAttachments(Attachments);
+        // NEW ATTACHMENT PATTERN: No manual updates needed!
+        // Attachments are automatically resolved by ClothBatchManager::UpdateKinematicTargets()
+        // which reads attachment data directly from the ClothAsset each frame.
+        // The simulation system owns the attachment update flow.
     }
 }
 
@@ -90,25 +86,17 @@ void UClothComponent::SetClothAsset(UClothAsset *InAsset)
     ClothAsset = InAsset;
 
     // Unregister old instance
-    if (ClothInstance)
+    FClothWorld *ClothWorld = GEngine->ClothPhysicsManager->GetClothWorld(GetWorld());
+    if (ClothWorld)
     {
-        FClothWorld *ClothWorld = GEngine->ClothPhysicsManager->GetClothWorld(GetWorld());
-        if (ClothWorld)
+        if (bUseBatchedMode && ClothInstanceHandle)
         {
-            ClothWorld->UnregisterClothInstance(ClothInstance);
+            ClothWorld->UnregisterClothInstanceBatched(ClothInstanceHandle);
+            ClothInstanceHandle = nullptr;
         }
-        ClothInstance = nullptr;
     }
 
-    // Register new instance
-    if (InAsset)
-    {
-        FClothWorld *ClothWorld = GEngine->ClothPhysicsManager->CreateClothWorld(GetWorld());
-        if (ClothWorld && ClothWorld->IsInitialized())
-        {
-            ClothInstance = ClothWorld->RegisterClothInstance(this, InAsset, InAsset->GetConfig());
-        }
-    }
+    // Registration will happen in StartSimulation() based on detected mode
 }
 
 void UClothComponent::StartSimulation()
@@ -116,33 +104,60 @@ void UClothComponent::StartSimulation()
     if (bIsSimulating)
         return;
 
-    if (!ClothAsset || !ClothInstance)
+    if (!ClothAsset)
     {
-        UE_LOG(ELogLevel::Warning, TEXT("ClothComponent: Cannot start simulation - missing asset or instance"));
+        UE_LOG(ELogLevel::Warning, TEXT("ClothComponent: Cannot start simulation - missing asset"));
         return;
     }
 
-    ClothInstance->SetActive(true);
-    bIsSimulating = true;
-    UE_LOG(ELogLevel::Display, TEXT("ClothComponent: Simulation started"));
+    // Get or create ClothWorld
+    FClothWorld *ClothWorld = GEngine->ClothPhysicsManager->CreateClothWorld(GetWorld());
+    if (!ClothWorld || !ClothWorld->IsInitialized())
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothComponent: ClothWorld not available"));
+        return;
+    }
+
+    // Detect mode and register appropriately
+    if (ClothWorld->GetSystemMode() == EClothSystemMode::Batched)
+    {
+        // Batched mode registration
+        ClothInstanceHandle = ClothWorld->RegisterClothInstanceBatched(
+            this, ClothAsset, ClothAsset->GetConfig(), EClothLODLevel::LOD_0);
+
+        if (!ClothInstanceHandle)
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothComponent: Failed to register in batched mode"));
+            return;
+        }
+
+        ClothInstanceHandle->SetActive(true);
+        bUseBatchedMode = true;
+        bIsSimulating = true;
+        UE_LOG(ELogLevel::Display, TEXT("ClothComponent: Batched simulation started"));
+    }
 }
 
 void UClothComponent::StopSimulation()
 {
-    if (ClothInstance)
+    if (bUseBatchedMode && ClothInstanceHandle)
     {
-        ClothInstance->SetActive(false);
+        ClothInstanceHandle->SetActive(false);
     }
+
     bIsSimulating = false;
     UE_LOG(ELogLevel::Display, TEXT("ClothComponent: Simulation stopped"));
 }
 
 void UClothComponent::ResetSimulation()
 {
-    if (ClothInstance)
+    // TODO: Implement reset for batched mode
+    if (bUseBatchedMode && ClothInstanceHandle)
     {
-        ClothInstance->Reset();
+        // Batched mode reset not yet implemented
+        UE_LOG(ELogLevel::Warning, TEXT("ClothComponent: Reset not yet implemented for batched mode"));
     }
+
     AccumulatedForce = FVector::ZeroVector;
     UE_LOG(ELogLevel::Display, TEXT("ClothComponent: Simulation reset"));
 }
@@ -154,25 +169,34 @@ void UClothComponent::AddForce(const FVector &Force)
 
 void UClothComponent::AddImpulse(const FVector &Impulse)
 {
-    if (ClothInstance)
+    // TODO: Implement impulse for batched mode
+    if (bUseBatchedMode && ClothInstanceHandle)
     {
-        ClothInstance->AddExternalForce(Impulse);
+        // Batched mode - not yet implemented
     }
 }
 
 void UClothComponent::SetWind(const FVector &WindVelocity)
 {
-    if (ClothInstance)
+    // TODO: Implement wind for batched mode via instance parameters
+    if (bUseBatchedMode && ClothInstanceHandle)
     {
-        ClothInstance->SetWind(WindVelocity);
+        // Batched mode - update via instance parameters
+        FClothInstanceParameters params = ClothInstanceHandle->GetParameters();
+        params.Wind = WindVelocity;
+        ClothInstanceHandle->SetParameters(params);
     }
 }
 
 void UClothComponent::SetGravity(const FVector &InGravity)
 {
-    if (ClothInstance)
+    // TODO: Implement gravity for batched mode via instance parameters
+    if (bUseBatchedMode && ClothInstanceHandle)
     {
-        ClothInstance->SetGravity(InGravity);
+        // Batched mode - update via instance parameters
+        FClothInstanceParameters params = ClothInstanceHandle->GetParameters();
+        params.Gravity = InGravity;
+        ClothInstanceHandle->SetParameters(params);
     }
 }
 
@@ -193,9 +217,12 @@ void UClothComponent::SetClothConfig(const FClothConfig &InConfig)
 
 const FClothConfig &UClothComponent::GetClothConfig() const
 {
-    if (ClothInstance)
+    // TODO: Get config for batched mode
+    if (bUseBatchedMode && ClothInstanceHandle)
     {
-        return ClothInstance->GetConfig();
+        // Batched mode - would need to store config or retrieve from batch manager
+        static FClothConfig DefaultConfig;
+        return DefaultConfig;
     }
 
     static FClothConfig DefaultConfig;

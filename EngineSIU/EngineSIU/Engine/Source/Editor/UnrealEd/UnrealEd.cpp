@@ -8,27 +8,32 @@
 #include "PropertyEditor/SkeletalMeshViewerPanel.h"
 #include "PropertyEditor/PhysicsAssetViewerPanel.h"
 #include "PropertyEditor/LuaUIPanel.h"
+#include "PropertyEditor/ClothConfigPanel.h"
 #include "World/World.h"
+
 void UnrealEd::Initialize()
 {
     auto ControlPanel = std::make_shared<ControlEditorPanel>();
     Panels["ControlPanel"] = ControlPanel;
-    
+
     auto OutlinerPanel = std::make_shared<OutlinerEditorPanel>();
     Panels["OutlinerPanel"] = OutlinerPanel;
-    
+
     auto PropertyPanel = std::make_shared<PropertyEditorPanel>();
     Panels["PropertyPanel"] = PropertyPanel;
 
     // TODO : SkeletalView 전용 UI 분리
     auto BoneHierarchyPanel = std::make_shared<SkeletalMeshViewerPanel>();
     Panels["BoneHierarchyPanel"] = BoneHierarchyPanel;
-    
+
     auto ParticleViewPanel = std::make_shared<ParticleViewerPanel>();
     Panels["ParticleViewerPanel"] = ParticleViewPanel;
 
     auto PhysicsAssetPanel = std::make_shared<PhysicsAssetViewerPanel>();
     Panels["PhysicsAssetViewerPanel"] = PhysicsAssetPanel;
+
+    auto ClothPanel = std::make_shared<ClothConfigPanel>();
+    Panels["ClothConfigPanel"] = ClothPanel;
 
     auto LuaUIPanel = std::make_shared<LuaUIViewPanel>();
     PreRenderPanels["LuaUIViewPanel"] = LuaUIPanel;
@@ -72,10 +77,9 @@ void UnrealEd::Render() const
     default:
         currentMask = EWorldTypeBitFlag::None;
         break;
-        
     }
 
-    for (const auto& Panel : PreRenderPanels)
+    for (const auto &Panel : PreRenderPanels)
     {
         if (HasFlag(Panel.Value->GetSupportedWorldTypes(), currentMask))
         {
@@ -83,7 +87,7 @@ void UnrealEd::Render() const
         }
     }
 
-    for (const auto& Panel : Panels)
+    for (const auto &Panel : Panels)
     {
         if (HasFlag(Panel.Value->GetSupportedWorldTypes(), currentMask))
         {
@@ -92,25 +96,25 @@ void UnrealEd::Render() const
     }
 }
 
-void UnrealEd::AddEditorPanel(const FString& PanelId, const std::shared_ptr<UEditorPanel>& EditorPanel)
+void UnrealEd::AddEditorPanel(const FString &PanelId, const std::shared_ptr<UEditorPanel> &EditorPanel)
 {
     Panels[PanelId] = EditorPanel;
 }
 
 void UnrealEd::OnResize(HWND hWnd) const
 {
-    for (auto& Panel : Panels)
+    for (auto &Panel : Panels)
     {
         Panel.Value->OnResize(hWnd);
     }
 
-    for (auto& Panel : PreRenderPanels)
+    for (auto &Panel : PreRenderPanels)
     {
         Panel.Value->OnResize(hWnd);
     }
 }
 
-std::shared_ptr<UEditorPanel> UnrealEd::GetEditorPanel(const FString& PanelId)
+std::shared_ptr<UEditorPanel> UnrealEd::GetEditorPanel(const FString &PanelId)
 {
     return Panels[PanelId];
 }

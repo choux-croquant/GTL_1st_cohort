@@ -112,4 +112,48 @@ struct FTransform
                   << Transform.Rotation
                   << Transform.Scale3D;
     }
+
+    // 비교 연산
+    bool Equals(const FTransform& Other, float Tolerance = KINDA_SMALL_NUMBER) const
+    {
+        return Translation.Equals(Other.Translation, Tolerance) &&
+            Rotation.Equals(Other.Rotation, Tolerance) &&
+            Scale3D.Equals(Other.Scale3D, Tolerance);
+    }
+
+    // 엄격한 비교 (매우 작은 tolerance)
+    bool ExactEquals(const FTransform& Other) const
+    {
+        return Translation.Equals(Other.Translation, SMALL_NUMBER) &&
+            Rotation.Equals(Other.Rotation, SMALL_NUMBER) &&
+            Scale3D.Equals(Other.Scale3D, SMALL_NUMBER);
+    }
+
+    // 회전만 무시하고 비교
+    bool EqualsNoRotation(const FTransform& Other, float Tolerance = KINDA_SMALL_NUMBER) const
+    {
+        return Translation.Equals(Other.Translation, Tolerance) &&
+            Scale3D.Equals(Other.Scale3D, Tolerance);
+    }
+
+    // 스케일만 무시하고 비교
+    bool EqualsNoScale(const FTransform& Other, float Tolerance = KINDA_SMALL_NUMBER) const
+    {
+        return Translation.Equals(Other.Translation, Tolerance) &&
+            Rotation.Equals(Other.Rotation, Tolerance);
+    }
+
+    // operator== (정확한 비교)
+    bool operator==(const FTransform& Other) const
+    {
+        return Translation == Other.Translation &&
+            Rotation == Other.Rotation &&
+            Scale3D == Other.Scale3D;
+    }
+
+    // operator!= (정확한 비교)
+    bool operator!=(const FTransform& Other) const
+    {
+        return !(*this == Other);
+    }
 };

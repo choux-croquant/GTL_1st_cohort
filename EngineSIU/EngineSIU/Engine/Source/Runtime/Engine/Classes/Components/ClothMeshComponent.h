@@ -10,17 +10,34 @@
 
 /**
  * Cloth render data structure for passing to render pass
+ * Now supports both legacy (per-instance buffers) and batched (unified buffers) rendering
  */
 struct FClothRenderData
 {
+    // Legacy mode: Per-instance SRVs
     ID3D11ShaderResourceView *PositionBufferSRV;
     ID3D11ShaderResourceView *NormalBufferSRV;
     ID3D11ShaderResourceView *IndexBufferSRV;
     const TArray<uint32> *Indices;
+
+    // Batched mode: Unified index buffer + rendering metadata
+    ID3D11Buffer *UnifiedIndexBuffer; // NEW: Direct access to unified D3D11 buffer
+    uint32 ParticleOffset;            // Offset into unified position/normal buffer
+    uint32 IndexOffset;               // Offset into unified index buffer (in indices, not bytes)
+
+    // Common
     uint32 NumVertices;
     uint32 NumTriangles;
     FMatrix WorldTransform;
     UMaterial *Material;
+
+    // Mode flag
+    bool bIsBatchedMode;
+
+    FClothRenderData()
+        : PositionBufferSRV(nullptr), NormalBufferSRV(nullptr), IndexBufferSRV(nullptr), Indices(nullptr), UnifiedIndexBuffer(nullptr), ParticleOffset(0), IndexOffset(0), NumVertices(0), NumTriangles(0), WorldTransform(FMatrix::Identity), Material(nullptr), bIsBatchedMode(false)
+    {
+    }
 };
 
 /**

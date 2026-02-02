@@ -13,6 +13,7 @@
 #include "Engine/Classes/Actors/BehellaGameMode.h"
 #include "Classes/Components/TextComponent.h"
 #include "Actors/TestClothActor.h"
+#include "Actors/TestBatchedClothActor.h"
 #include "GameFramework/PIETestGameMode.h"
 #include "GameFramework/PIEFreeFlyPawn.h"
 #include "GameFramework/PIEPlayerController.h"
@@ -80,10 +81,9 @@ void UWorld::Tick(float DeltaTime)
 
 void UWorld::BeginPlay()
 {
-    // TEST
-    /*ATestClothActor* ClothActor = this->SpawnActor<ATestClothActor>();
-    ClothActor->SetActorLocation(FVector(100, 0, 0));*/
-
+    // ===== LEGACY TEST - COMMENTED OUT =====
+    // Previous TestClothActor grid spawn (Legacy mode)
+    /*
     const int32 GridX = 4;
     const int32 GridY = 4;
     const float SpacingX = 150.0f;
@@ -101,9 +101,19 @@ void UWorld::BeginPlay()
             const float OffsetX = ix * SpacingX;
             const float OffsetY = iy * SpacingY;
 
-            //ClothActor->SetActorLocation(BaseLocation + FVector(OffsetX, OffsetY, 0.0f));
             ClothActor->DriverInitialPosition = BaseLocation + FVector(OffsetX, OffsetY, 0.0f);
         }
+    }
+    */
+
+    // ===== NEW BATCHED TEST =====
+    // Spawn TestBatchedClothActor to test batched cloth simulation system
+    // This creates 8 cloth instances across 3 LOD levels
+    ATestBatchedClothActor *BatchedClothTest = this->SpawnActor<ATestBatchedClothActor>();
+    if (BatchedClothTest)
+    {
+        BatchedClothTest->SetActorLocation(FVector(0.0f, -300.0f, 0.0f));
+        UE_LOG(ELogLevel::Display, TEXT("World: Spawned TestBatchedClothActor for batched simulation testing"));
     }
 
     if (!GameMode && this->WorldType == EWorldType::PIE)
@@ -116,7 +126,7 @@ void UWorld::BeginPlay()
             UE_LOG(ELogLevel::Display, TEXT("EditorEngine: PIETestGameMode spawned"));
         }
 
-        APieFreeFlyPawn* FreeFlyPawn = this->SpawnActor<APieFreeFlyPawn>();
+        APieFreeFlyPawn *FreeFlyPawn = this->SpawnActor<APieFreeFlyPawn>();
         if (FreeFlyPawn)
         {
             FreeFlyPawn->SetActorLabel(TEXT("PIE_FreeFlyPawn"));
@@ -124,7 +134,7 @@ void UWorld::BeginPlay()
             UE_LOG(ELogLevel::Display, TEXT("EditorEngine: PIEFreeFlyPawn spawned"));
         }
 
-        APiePlayerController* PlayerController = this->SpawnActor<APiePlayerController>();
+        APiePlayerController *PlayerController = this->SpawnActor<APiePlayerController>();
         if (PlayerController)
         {
             PlayerController->SetActorLabel(TEXT("PIE_PlayerController"));

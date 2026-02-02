@@ -1,6 +1,7 @@
 #pragma once
 #include <format>
 #include "Container/Array.h"
+#include "Container/Map.h"
 #include "D3D11RHI/GraphicDevice.h"
 #include "HAL/PlatformType.h"
 #include "UObject/NameTypes.h"
@@ -59,6 +60,84 @@ struct FProfiledScope
     FName GPUStatName;
 };
 
+/** Structure to track timing history for moving average calculation */
+struct FTimingHistory
+{
+    static constexpr int32 WindowSize = 60; // 60 frames = 1 second at 60fps
+    
+    TArray<double> CPUSamples;
+    TArray<double> GPUSamples;
+    int32 CurrentIndex = 0;
+    bool bIsFilled = false;
+
+    FTimingHistory()
+    {
+        CPUSamples.SetNum(WindowSize);
+        GPUSamples.SetNum(WindowSize);
+        
+        // Initialize with -1.0 to indicate no data
+        for (int32 i = 0; i < WindowSize; ++i)
+        {
+            CPUSamples[i] = -1.0;
+            GPUSamples[i] = -1.0;
+        }
+    }
+
+    void AddSample(double CPUTime, double GPUTime)
+    {
+        CPUSamples[CurrentIndex] = CPUTime;
+        GPUSamples[CurrentIndex] = GPUTime;
+        
+        CurrentIndex = (CurrentIndex + 1) % WindowSize;
+        
+        if (CurrentIndex == 0)
+        {
+            bIsFilled = true;
+        }
+    }
+
+    double GetCPUAverage() const
+    {
+        const int32 SampleCount = bIsFilled ? WindowSize : CurrentIndex;
+        if (SampleCount == 0) return -1.0;
+
+        double Sum = 0.0;
+        int32 ValidCount = 0;
+        
+        for (int32 i = 0; i < SampleCount; ++i)
+        {
+            if (CPUSamples[i] >= 0.0)
+            {
+                Sum += CPUSamples[i];
+                ++ValidCount;
+            }
+        }
+        
+        return ValidCount > 0 ? (Sum / ValidCount) : -1.0;
+    }
+
+    double GetGPUAverage() const
+    {
+        const int32 SampleCount = bIsFilled ? WindowSize : CurrentIndex;
+        if (SampleCount == 0) return -2.0; // Return "Waiting" state
+
+        double Sum = 0.0;
+        int32 ValidCount = 0;
+        
+        for (int32 i = 0; i < SampleCount; ++i)
+        {
+            // Special GPU states: -1.0 = Disjoint, -2.0 = Waiting
+            if (GPUSamples[i] >= 0.0)
+            {
+                Sum += GPUSamples[i];
+                ++ValidCount;
+            }
+        }
+        
+        return ValidCount > 0 ? (Sum / ValidCount) : -2.0;
+    }
+};
+
 class FGPUTimingManager;
 
 class FEngineProfiler
@@ -74,7 +153,9 @@ public:
 private:
     FGPUTimingManager* GPUTimingManager = nullptr;
     TArray<FProfiledScope> TrackedScopes;
+    TMap<FName, FTimingHistory> TimingHistories; // Track history per stat
     bool bShowWindow = true;
+    bool bShowMovingAverage = true; // Toggle between average and real-time
 };
 
 class FConsole : public IWindowToggleable

@@ -388,3 +388,30 @@ bool FQuat::IsIdentity() const
 {
     return X == 0.0f && Y == 0.0f && Z == 0.0f && W == 1.0f;
 }
+
+FVector FQuat::GetForwardVector() const
+{
+    return FVector(
+        1.0f - 2.0f * (Y * Y + Z * Z),
+        2.0f * (X * Y + W * Z),
+        2.0f * (X * Z - W * Y)
+    );
+}
+
+FVector FQuat::GetRightVector() const
+{
+    return FVector(
+        2.0f * (X * Y - W * Z),
+        1.0f - 2.0f * (X * X + Z * Z),
+        2.0f * (Y * Z + W * X)
+    );
+}
+
+FVector FQuat::GetUpVector() const
+{
+    return FVector(
+        2.0f * (X * Z + W * Y),
+        2.0f * (Y * Z - W * X),
+        1.0f - 2.0f * (X * X + Y * Y)
+    );
+}

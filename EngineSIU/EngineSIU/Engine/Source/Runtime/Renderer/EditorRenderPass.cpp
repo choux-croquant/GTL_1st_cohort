@@ -25,6 +25,9 @@
 #include "Engine/Classes/Components/HeightFogComponent.h"
 #include "Math/JungleMath.h"
 #include "PropertyEditor/ShowFlags.h"
+#include "Cloth/ClothPhysicsManager.h"
+#include "Cloth/ClothWorld.h"
+#include "Cloth/ClothCollisionManager.h"
 
 void FEditorRenderPass::Initialize(FDXDBufferManager* InBufferManager, FGraphicsDevice* InGraphics, FDXDShaderManager* InShaderManager)
 {
@@ -275,7 +278,8 @@ void FEditorRenderPass::BindBuffers(const FDebugPrimitiveData& InPrimitiveData) 
 void FEditorRenderPass::PrepareRenderArr()
 {
     const EWorldType WorldType = GEngine->ActiveWorld->WorldType;
-    if (WorldType != EWorldType::Editor && WorldType != EWorldType::PhysicsAssetViewer)
+    // Extended to support PIE mode for runtime collision debugging
+    if (WorldType != EWorldType::Editor && WorldType != EWorldType::PIE && WorldType != EWorldType::PhysicsAssetViewer)
     {
         return;
     }
@@ -398,20 +402,28 @@ void FEditorRenderPass::Render(const std::shared_ptr<FEditorViewportClient>& Vie
     }
 
     const uint64 ShowFlag = Viewport->GetShowFlag();
+    const EWorldType WorldType = GEngine->ActiveWorld->WorldType;
 
     BindRenderTarget(Viewport);    
 
     if (ShowFlag & EEngineShowFlags::SF_LightWireframe)
     {
-        RenderPointlightInstanced(ShowFlag);
-        RenderSpotlightInstanced(ShowFlag);
+        if (WorldType != EWorldType::PIE) {
+            RenderPointlightInstanced(ShowFlag);
+            RenderSpotlightInstanced(ShowFlag);
+        }
     }
 
     if (ShowFlag & EEngineShowFlags::SF_Collision)
     {
-        RenderBoxInstanced(ShowFlag);
-        RenderSphereInstanced(ShowFlag);
-        RenderCapsuleInstanced(ShowFlag);
+        if (WorldType != EWorldType::PIE) {
+            RenderBoxInstanced(ShowFlag);
+            RenderSphereInstanced(ShowFlag);
+            RenderCapsuleInstanced(ShowFlag);
+        }
+        else {
+            RenderClothColliders(ShowFlag);
+        }
     }
 
     RenderArrowInstanced();
@@ -713,10 +725,10 @@ void FEditorRenderPass::RenderBoxInstanced(uint64 ShowFlag)
                 {
                     FConstantBufferDebugBox b;
                     FMatrix WorldMatrix =
-                        FTransform(GeomAttribute.Rotation, GeomAttribute.Offset, GeomAttribute.Extent).ToMatrixWithScale()
+                        FTransform(GeomAttribute.Rotation, GeomAttribute.Offset, GeomAttribute.Extent / 2.0f).ToMatrixWithScale()
                         * StaticComp->GetWorldMatrix().GetMatrixWithoutScale();
                     b.WorldMatrix = WorldMatrix;
-                    b.Extent = GeomAttribute.Extent;
+                    b.Extent = GeomAttribute.Extent / 2.0f;
                     BufferAll.Add(b);
                 }
             }
@@ -991,6 +1003,191 @@ void FEditorRenderPass::RenderCapsuleInstanced(uint64 ShowFlag)
 
             // 수평 링 : stacks + 1개, 수직 줄 stacks 개
             Graphics->DeviceContext->DrawInstanced(1184, SubBuffer.Num(), 0, 0);
+        }
+    }
+}
+
+void FEditorRenderPass::RenderClothColliders(uint64 ShowFlag)
+{
+    // Only render in PIE mode where cloth simulation is active
+    const EWorldType WorldType = GEngine->ActiveWorld->WorldType;
+    if (WorldType != EWorldType::PIE)
+    {
+        return;
+    }
+    
+    // Get ClothPhysicsManager from engine loop
+    FClothPhysicsManager* GClothPhysicsManager = GEngine->ClothPhysicsManager;
+    
+    // Get current cloth world
+    FClothWorld* ClothWorld = GClothPhysicsManager->GetClothWorld(GEngine->ActiveWorld);
+    if (!ClothWorld)
+    {
+        return;
+    }
+    
+    // Get collision manager
+    FClothCollisionManager* CollisionMgr = ClothWorld->GetCollisionManager();
+    if (!CollisionMgr)
+    {
+        return;
+    }
+    
+    // Get registered colliders
+    const TArray<FClothColliderSource>& Colliders = CollisionMgr->GetColliderSources();
+    if (Colliders.Num() == 0)
+    {
+        return;
+    }
+    
+    // Render spheres
+    {
+        BindShaderResource(L"SphereVS", L"SpherePS", D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+        BindBuffers(Resources.Primitives.Sphere);
+        
+        TArray<FConstantBufferDebugSphere> BufferAll;
+        for (const FClothColliderSource& Source : Colliders)
+        {
+            if (Source.Type == EClothColliderType::Sphere)
+            {
+                FConstantBufferDebugSphere b;
+                // Transform local center to world space
+                b.Position = Source.CachedTransform.TransformPosition(Source.CachedLocalCenter);
+                b.Radius = Source.CachedRadius;
+                BufferAll.Add(b);
+            }
+        }
+        
+        if (BufferAll.Num() > 0)
+        {
+            BufferManager->BindConstantBuffer("SphereConstantBuffer", 11, EShaderStage::Vertex);
+            int BufferIndex = 0;
+            for (uint32 i = 0; i < (1 + BufferAll.Num() / ConstantBufferSizeSphere) * ConstantBufferSizeSphere; ++i)
+            {
+                TArray<FConstantBufferDebugSphere> SubBuffer;
+                for (uint32 j = 0; j < ConstantBufferSizeSphere; ++j)
+                {
+                    if (BufferIndex < BufferAll.Num())
+                    {
+                        SubBuffer.Add(BufferAll[BufferIndex]);
+                        ++BufferIndex;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                
+                if (SubBuffer.Num() > 0)
+                {
+                    BufferManager->UpdateConstantBuffer<FConstantBufferDebugSphere>(TEXT("SphereConstantBuffer"), SubBuffer);
+                    Graphics->DeviceContext->DrawIndexedInstanced(Resources.Primitives.Sphere.IndexInfo.NumIndices, SubBuffer.Num(), 0, 0, 0);
+                }
+            }
+        }
+    }
+    
+    // Render capsules
+    {
+        BindShaderResource(L"CapsuleVS", L"CapsulePS", D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+        
+        TArray<FConstantBufferDebugCapsule> BufferAll;
+        for (const FClothColliderSource& Source : Colliders)
+        {
+            if (Source.Type == EClothColliderType::Capsule)
+            {
+                FConstantBufferDebugCapsule b;
+                
+                // Build world matrix from cached transform
+                b.WorldMatrix = Source.CachedTransform.ToMatrixWithScale();
+                
+                // Use stored radius and half-height
+                b.Radius = Source.CachedRadius;
+                b.Height = Source.CachedExtents.X;  // Half-height stored in X
+                
+                BufferAll.Add(b);
+            }
+        }
+        
+        if (BufferAll.Num() > 0)
+        {
+            BufferManager->BindConstantBuffer("CapsuleConstantBuffer", 11, EShaderStage::Vertex);
+            int BufferIndex = 0;
+            for (int i = 0; i < (1 + BufferAll.Num() / ConstantBufferSizeCapsule) * ConstantBufferSizeCapsule; ++i)
+            {
+                TArray<FConstantBufferDebugCapsule> SubBuffer;
+                for (int j = 0; j < ConstantBufferSizeCapsule; ++j)
+                {
+                    if (BufferIndex < BufferAll.Num())
+                    {
+                        SubBuffer.Add(BufferAll[BufferIndex]);
+                        ++BufferIndex;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                
+                if (SubBuffer.Num() > 0)
+                {
+                    BufferManager->UpdateConstantBuffer<FConstantBufferDebugCapsule>(TEXT("CapsuleConstantBuffer"), SubBuffer);
+                    Graphics->DeviceContext->DrawInstanced(1184, SubBuffer.Num(), 0, 0);
+                }
+            }
+        }
+    }
+    
+    // Render boxes
+    {
+        BindShaderResource(L"BoxVS", L"BoxPS", D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+        BindBuffers(Resources.Primitives.Box);
+        
+        TArray<FConstantBufferDebugBox> BufferAll;
+        for (const FClothColliderSource& Source : Colliders)
+        {
+            if (Source.Type == EClothColliderType::Box)
+            {
+                FConstantBufferDebugBox b;
+                
+                // Build local transform from PhysX shape data (rotation + offset)
+                FTransform LocalTransform(Source.CachedLocalRotation, Source.CachedLocalCenter, FVector::OneVector);
+                
+                // Compose: LocalTransform * ComponentTransform = World transform with proper rotation and offset
+                FTransform WorldTransform = LocalTransform * Source.CachedTransform;
+                
+                b.WorldMatrix = WorldTransform.ToMatrixWithScale();
+                b.Extent = Source.CachedExtents;
+                BufferAll.Add(b);
+            }
+        }
+        
+        if (BufferAll.Num() > 0)
+        {
+            BufferManager->BindConstantBuffer("BoxConstantBuffer", 11, EShaderStage::Vertex);
+            int BufferIndex = 0;
+            for (uint32 i = 0; i < (1 + BufferAll.Num() / ConstantBufferSizeBox) * ConstantBufferSizeBox; ++i)
+            {
+                TArray<FConstantBufferDebugBox> SubBuffer;
+                for (uint32 j = 0; j < ConstantBufferSizeBox; ++j)
+                {
+                    if (BufferIndex < BufferAll.Num())
+                    {
+                        SubBuffer.Add(BufferAll[BufferIndex]);
+                        ++BufferIndex;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                
+                if (SubBuffer.Num() > 0)
+                {
+                    BufferManager->UpdateConstantBuffer<FConstantBufferDebugBox>(TEXT("BoxConstantBuffer"), SubBuffer);
+                    Graphics->DeviceContext->DrawIndexedInstanced(Resources.Primitives.Box.IndexInfo.NumIndices, SubBuffer.Num(), 0, 0, 0);
+                }
+            }
         }
     }
 }

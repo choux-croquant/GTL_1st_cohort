@@ -26,7 +26,7 @@ public:
 
         GUObjectArray.AddObject(Obj);
 
-        UE_LOGFMT(ELogLevel::Display, "Created Object: {}, Size: {}", Obj->GetName(), InClass->GetStructSize());
+        //UE_LOGFMT(ELogLevel::Display, "Created Object: {}, Size: {}", Obj->GetName(), InClass->GetStructSize());
 
         return Obj;
     }

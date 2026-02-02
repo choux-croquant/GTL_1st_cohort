@@ -430,6 +430,12 @@
     <ClInclude Include="Engine\Source\Editor\LevelEditor\SLevelEditor.h">
       <Filter>Engine\Source\Editor\LevelEditor</Filter>
     </ClInclude>
+    <ClCompile Include="Engine\Source\Editor\PropertyEditor\ClothConfigPanel.cpp">
+      <Filter>Engine\Source\Editor\PropertyEditor</Filter>
+    </ClCompile>
+    <ClInclude Include="Engine\Source\Editor\PropertyEditor\ClothConfigPanel.h">
+      <Filter>Engine\Source\Editor\PropertyEditor</Filter>
+    </ClInclude>
     <ClCompile Include="Engine\Source\Editor\PropertyEditor\ControlEditorPanel.cpp">
       <Filter>Engine\Source\Editor\PropertyEditor</Filter>
     </ClCompile>
@@ -1658,8 +1664,6 @@
       <Filter>Engine\Source\Runtime\Engine\Classes\Actors</Filter>
     </ClCompile>
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Engine\TimerManager.cpp" />
-    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothSolver.cpp" />
-    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothInstance.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothWorld.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Engine\ClothAsset.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Components\ClothComponent.cpp" />
@@ -1670,6 +1674,11 @@
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIEFreeFlyPawn.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIEPlayerController.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIETestGameMode.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchedSolver.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchManager.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothInstanceHandle.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\TestBatchedClothActor.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothCollisionManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="EngineSIU.natvis" />
@@ -1837,9 +1846,7 @@
       <Filter>Engine\Source\Runtime\Engine\Classes\Actors</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Engine\TimerManager.h" />
-    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothSolver.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothSimulationData.h" />
-    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothInstance.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothWorld.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Engine\ClothAsset.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Components\ClothComponent.h" />
@@ -1851,6 +1858,12 @@
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIEFreeFlyPawn.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIEPlayerController.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIETestGameMode.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchedSolver.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchManager.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchTypes.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothInstanceHandle.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\TestBatchedClothActor.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothCollisionManager.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\CompositingShader.hlsl" />
