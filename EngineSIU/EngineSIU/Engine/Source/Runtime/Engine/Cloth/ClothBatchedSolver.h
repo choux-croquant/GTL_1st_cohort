@@ -131,6 +131,7 @@ private:
     void DispatchNormalizeNormals(uint32 ParticleCount);
     void DispatchCollisionSDF(uint32 ParticleCount);         // NEW: SDF collision solver
     void DispatchEdgeCollisionSDF(uint32 EdgeCollisionCount); // NEW: Edge-based SDF collision
+    void DispatchNormalInterpolation(uint32 RenderVertexCount);  // NEW: Normal interpolation for render mesh
 
     void ClearAccumulationBuffers(uint32 ParticleCount);
     // void UpdateConstantBuffers(float DeltaTime);
@@ -160,8 +161,9 @@ private:
     ID3D11ComputeShader *ClearNormalsCS;
     ID3D11ComputeShader *UpdateNormalsCS;
     ID3D11ComputeShader *NormalizeNormalsCS;
-    ID3D11ComputeShader *CollisionSolverCS;     // NEW: SDF collision shader
-    ID3D11ComputeShader *EdgeCollisionSolverCS; // NEW: Edge-based SDF collision shader
+    ID3D11ComputeShader *CollisionSolverCS;        // NEW: SDF collision shader
+    ID3D11ComputeShader *EdgeCollisionSolverCS;    // NEW: Edge-based SDF collision shader
+    ID3D11ComputeShader *NormalInterpolationCS;    // NEW: Normal interpolation shader (render mesh)
 
     // Collision manager (NEW)
     FClothCollisionManager *CollisionManager;
@@ -184,6 +186,11 @@ private:
     // NEW: GPU-based kinematic target buffers (P1 optimization)
     ID3D11Buffer *AttachmentDataBuffer;     // Static attachment data
     ID3D11Buffer *ComponentTransformBuffer; // Dynamic component transforms
+    
+    // NEW: Render mesh buffers (for render/sim mesh separation)
+    ID3D11Buffer *RenderNormalsBuffer;              // Interpolated render mesh normals
+    ID3D11Buffer *SkinningWeightsBuffer;            // Render → Sim vertex mapping weights
+    ID3D11Buffer *RenderPositionsBuffer;            // Skinned render mesh positions (optional)
 
     // UAVs and SRVs
     ID3D11UnorderedAccessView *UnifiedPositionUAV;
@@ -211,6 +218,12 @@ private:
     // NEW: GPU-based kinematic target SRVs (P1 optimization)
     ID3D11ShaderResourceView *AttachmentDataSRV;
     ID3D11ShaderResourceView *ComponentTransformSRV;
+    
+    // NEW: Render mesh UAVs/SRVs (for render/sim mesh separation)
+    ID3D11UnorderedAccessView *RenderNormalsUAV;
+    ID3D11ShaderResourceView *RenderNormalsSRV;
+    ID3D11ShaderResourceView *SkinningWeightsSRV;
+    ID3D11ShaderResourceView *RenderPositionsSRV;
 
     // Per-instance parameter buffer
     ID3D11Buffer *InstanceParameterBuffer;
@@ -229,6 +242,7 @@ private:
     uint32 AllocatedInstanceCapacity;
     uint32 AllocatedAreaConstraintCapacity;      // NEW: Area constraint capacity
     uint32 AllocatedEdgeCollisionCapacity;       // NEW: Edge collision capacity
+    uint32 AllocatedRenderVertexCapacity;        // NEW: Render vertex capacity (for render mesh)
 
     uint32 UsedParticleCount;
     uint32 UsedConstraintCount;
@@ -239,6 +253,7 @@ private:
     uint32 UsedAttachmentCount;                  // NEW: For GPU-based kinematic targets (P1)
     uint32 UsedAreaConstraintCount;              // NEW: Area constraint count
     uint32 UsedEdgeCollisionCount;               // NEW: Edge collision count
+    uint32 UsedRenderVertexCount;                // NEW: Render vertex count (for render mesh)
 
     bool bInitialized;
 

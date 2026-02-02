@@ -1670,7 +1670,6 @@
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Components\ClothMeshComponent.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Renderer\ClothRenderPass.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothPhysicsManager.cpp" />
-    <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\TestClothActor.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIEFreeFlyPawn.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIEPlayerController.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIETestGameMode.cpp" />
@@ -1679,6 +1678,10 @@
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothInstanceHandle.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\TestBatchedClothActor.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothCollisionManager.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\ClothActor.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothAssetGenerator.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshDecimator.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothSkinningWeightGenerator.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="EngineSIU.natvis" />
@@ -1853,7 +1856,6 @@
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Components\ClothMeshComponent.h" />
     <ClInclude Include="Engine\Source\Runtime\Renderer\ClothRenderPass.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothPhysicsManager.h" />
-    <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\TestClothActor.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothGPUStructs.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIEFreeFlyPawn.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIEPlayerController.h" />
@@ -1864,6 +1866,10 @@
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothInstanceHandle.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\TestBatchedClothActor.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothCollisionManager.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\ClothActor.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothAssetGenerator.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshDecimator.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothSkinningWeightGenerator.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\CompositingShader.hlsl" />
