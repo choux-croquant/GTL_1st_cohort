@@ -45,6 +45,7 @@
 #include "Particles/ParticleEmitter.h"
 #include "Particles/ParticleSystem.h"
 #include "Particles/ParticleSystemComponent.h"
+#include "Classes/Components/ClothMeshComponent.h"
 
 PropertyEditorPanel::PropertyEditorPanel()
 {
@@ -130,6 +131,10 @@ void PropertyEditorPanel::Render()
     {
         RenderForStaticMesh(StaticMeshComponent);
         RenderForMaterial(StaticMeshComponent);
+    }
+    if (UClothMeshComponent* ClothMeshComponent = GetTargetComponent<UClothMeshComponent>(SelectedActor, SelectedComponent))
+    {
+        RenderForClothMesh(ClothMeshComponent);
     }
     if (USkeletalMeshComponent* SkeletalMeshComponent = GetTargetComponent<USkeletalMeshComponent>(SelectedActor, SelectedComponent))
     {
@@ -402,6 +407,57 @@ void PropertyEditorPanel::RenderForStaticMesh(UStaticMeshComponent* StaticMeshCo
                     if (StaticMesh)
                     {
                         StaticMeshComp->SetStaticMesh(StaticMesh);
+                    }
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        ImGui::TreePop();
+    }
+    ImGui::PopStyleColor();
+}
+
+void PropertyEditorPanel::RenderForClothMesh(UClothMeshComponent* ClothMeshComp) const
+{
+    ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
+    if (ImGui::TreeNodeEx("Static Mesh", ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen)) // 트리 노드 생성
+    {
+        ImGui::Text("StaticMesh");
+        ImGui::SameLine();
+
+        FString PreviewName = FString("None");
+        if (UStaticMesh* StaticMesh = ClothMeshComp->GetStaticMesh())
+        {
+            if (FStaticMeshRenderData* RenderData = StaticMesh->GetRenderData())
+            {
+                PreviewName = RenderData->DisplayName;
+            }
+        }
+
+        const TMap<FName, FAssetInfo> Assets = UAssetManager::Get().GetAssetRegistry();
+
+        if (ImGui::BeginCombo("##StaticMesh", GetData(PreviewName), ImGuiComboFlags_None))
+        {
+            for (const auto& Asset : Assets)
+            {
+                if (Asset.Value.AssetType != EAssetType::StaticMesh)
+                {
+                    continue;
+                }
+
+                if (ImGui::Selectable(GetData(Asset.Value.AssetName.ToString()), false))
+                {
+                    FString MeshName = Asset.Value.PackagePath.ToString() + "/" + Asset.Value.AssetName.ToString();
+                    UStaticMesh* StaticMesh = FObjManager::GetStaticMesh(MeshName.ToWideString());
+                    if (!StaticMesh)
+                    {
+                        StaticMesh = UAssetManager::Get().GetStaticMesh(MeshName);
+                    }
+
+                    if (StaticMesh)
+                    {
+                        ClothMeshComp->SetStaticMesh(StaticMesh);
                     }
                 }
             }

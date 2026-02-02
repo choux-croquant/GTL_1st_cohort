@@ -46,6 +46,8 @@
 #include "Particles/Emitter.h"
 #include "Particles/ParticleSystemComponent.h"
 
+#include "Actors/ClothActor.h"
+
 
 ControlEditorPanel::ControlEditorPanel()
 {
@@ -378,6 +380,7 @@ void ControlEditorPanel::CreateModifyButton(const ImVec2 ButtonSize, ImFont* Ico
             { .Label = "SkeletalMeshActor", .OBJ = OBJ_SKELETALMESH },
             { .Label = "Hero",             .OBJ = OBJ_HERO},
             { .Label = "Enemy",             .OBJ = OBJ_ENEMY},
+            { .Label = "Cloth",             .OBJ = OBJ_CLOTH},
             { .Label = "Camera",           .OBJ = OBJ_CAMERA},
         };
 
@@ -505,6 +508,11 @@ void ControlEditorPanel::CreateModifyButton(const ImVec2 ButtonSize, ImFont* Ico
                 case OBJ_CAMERA:
                 {
                     SpawnedActor = World->SpawnActor<ACamera>();
+                    break;
+                }
+                case OBJ_CLOTH:
+                {
+                    SpawnedActor = World->SpawnActor<AClothActor>();
                     break;
                 }
                 case OBJ_PLAYER:

@@ -17,6 +17,7 @@ class UShapeComponent;
 class UAmbientLightComponent;
 class UDirectionalLightComponent;
 class UPointLightComponent;
+class UClothMeshComponent;
 class USpotLightComponent;
 class ULightComponentBase;
 class UProjectileMovementComponent;
@@ -65,6 +66,7 @@ private:
     
     /* Static Mesh Settings */
     void RenderForStaticMesh(UStaticMeshComponent* StaticMeshComp) const;
+    void RenderForClothMesh(UClothMeshComponent* ClothMeshComp) const;
     void RenderForSkeletalMesh(USkeletalMeshComponent* SkeletalMeshComp) const;
     void RenderForPhysicsAsset(const USkeletalMeshComponent* SkeletalMeshComp) const;
     void RenderForSocketComponent(USocketComponent* SocketComponent) const;
