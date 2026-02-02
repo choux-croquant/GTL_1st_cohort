@@ -565,6 +565,8 @@ void ATestBatchedClothActor::PostSpawnInitialize()
                 if (meshComp)
                 {
                     FString MeshName = "Contents/pole/pole.obj";
+                    //FString MeshName = "Contents/TestClothMesh/TestClothMesh.obj";
+                    
                     UStaticMesh *StaticMesh = FObjManager::GetStaticMesh(MeshName.ToWideString());
                     meshComp->SetStaticMesh(StaticMesh);
                     meshComp->SetRelativeScale3D(FVector(1.5f, 1.5f, 3.0f));
