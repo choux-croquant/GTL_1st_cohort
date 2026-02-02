@@ -4,6 +4,8 @@
 #include "Cloth/ClothBatchedSolver.h"
 #include "Cloth/ClothWorld.h"
 #include "Classes/Engine/StaticMesh.h"
+#include "Classes/Engine/ClothAsset.h"
+#include "Engine/Asset/StaticMeshAsset.h"
 
 UClothMeshComponent::UClothMeshComponent()
     : WorldTransform(FMatrix::Identity), DebugDrawMode(EClothDebugDrawMode::None), bIsVisible(true), bSimulate(true)
@@ -98,4 +100,185 @@ void UClothMeshComponent::SetMaterial(uint32 Index, UMaterial *InMaterial)
         Materials.SetNum(Index + 1);
     }
     Materials[Index] = InMaterial;
+}
+
+
+void UClothMeshComponent::GenerateClothAsset()
+{
+    // Validate setup
+    FString errorMessage;
+    if (!ValidateSetup(errorMessage))
+    {
+        LastErrorMessage = "Validation failed: " + errorMessage;
+        UE_LOG(ELogLevel::Error, TEXT("ClothActor: %s"), *LastErrorMessage);
+        return;
+    }
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothActor: Starting cloth asset generation..."));
+
+    // Build generation parameters from editor properties
+    FClothAssetGenerationParams params = BuildGenerationParams();
+
+    // Generate asset
+    FClothAssetGenerationResult result;
+
+    bool success = FClothAssetGenerator::GenerateClothAssetFromStaticMesh(
+        SourceStaticMesh,
+        params,
+        result
+    );
+
+    if (success)
+    {
+        // Store generated asset
+        if (GeneratedClothAsset)
+        {
+            // Clean up old asset
+            GeneratedClothAsset = nullptr;
+        }
+
+        GeneratedClothAsset = result.Asset;
+        bAssetGenerated = true;
+
+        // Update status display
+        LastErrorMessage = "";
+    }
+    else
+    {
+        // Generation failed
+        bAssetGenerated = false;
+        LastErrorMessage = "Generation failed: " + result.ErrorMessage;
+        UE_LOG(ELogLevel::Error, TEXT("ClothActor: %s"), *LastErrorMessage);
+    }
+}
+
+void UClothMeshComponent::ClearClothAsset()
+{
+    // Unregister from simulation if active
+    UnregisterFromClothWorld();
+
+    // Clear asset
+    GeneratedClothAsset = nullptr;
+    bAssetGenerated = false;
+
+    LastErrorMessage = "";
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothActor: Cloth asset cleared"));
+}
+
+bool UClothMeshComponent::ValidateSetup(FString& OutErrorMessage)
+{
+    if (!SourceStaticMesh)
+    {
+        OutErrorMessage = "Source Static Mesh is not assigned";
+        return false;
+    }
+
+    FStaticMeshRenderData* renderData = SourceStaticMesh->GetRenderData();
+    if (!renderData)
+    {
+        OutErrorMessage = "Source Static Mesh has no render data";
+        return false;
+    }
+
+    if (renderData->Vertices.Num() < 3)
+    {
+        OutErrorMessage = "Source Static Mesh has too few vertices (minimum 3)";
+        return false;
+    }
+
+    if (renderData->Indices.Num() < 3)
+    {
+        OutErrorMessage = "Source Static Mesh has no triangles";
+        return false;
+    }
+
+    if (SimulationMeshReductionRatio <= 0.0f || SimulationMeshReductionRatio > 1.0f)
+    {
+        OutErrorMessage = "Reduction ratio must be between 0.01 and 1.0";
+        return false;
+    }
+
+    return true;
+}
+
+void UClothMeshComponent::RegisterWithClothWorld()
+{
+    if (bRegisteredWithWorld || !GeneratedClothAsset)
+    {
+        return;
+    }
+
+    // TODO Cloth Simulation world validation check
+
+    // Set asset to component
+    this->SetClothAsset(GeneratedClothAsset);
+
+    // Start simulation
+    this->StartSimulation();
+
+    // Get instance handle
+    ClothInstanceHandle = this->GetClothInstanceHandle();
+
+    if (ClothInstanceHandle)
+    {
+        bRegisteredWithWorld = true;
+        UE_LOG(ELogLevel::Display, TEXT("ClothActor: Registered with ClothWorld - MetadataIndex=%d"),
+            ClothInstanceHandle->GetMetadataIndex());
+    }
+    else
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothActor: Failed to get ClothInstanceHandle"));
+    }
+}
+
+void UClothMeshComponent::UnregisterFromClothWorld()
+{
+    if (!bRegisteredWithWorld)
+    {
+        return;
+    }
+
+    if (this)
+    {
+        this->StopSimulation();
+    }
+
+    ClothInstanceHandle = nullptr;
+    bRegisteredWithWorld = false;
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothActor: Unregistered from ClothWorld"));
+}
+
+FClothAssetGenerationParams UClothMeshComponent::BuildGenerationParams() const
+{
+    FClothAssetGenerationParams params;
+
+    // Decimation parameters
+    params.DecimationParams.ReductionRatio = SimulationMeshReductionRatio;
+    params.DecimationParams.bPreserveBoundaryEdges = bPreserveBoundaryEdges;
+    params.DecimationParams.bPreserveUVSeams = bPreserveUVSeams;
+    params.DecimationParams.BoundaryWeight = 1000.0f;
+    params.DecimationParams.UVSeamWeight = 100.0f;
+    params.DecimationParams.MinTriangleArea = 0.001f;
+    params.DecimationParams.bValidateResult = true;
+
+    // Skinning parameters
+    params.SkinningParams.MaxInfluences = 4;
+    params.SkinningParams.MaxDistance = 1000.0f;
+    params.SkinningParams.bNormalizeWeights = true;
+    params.SkinningParams.bUseInverseDistanceWeighting = true;
+    params.SkinningParams.WeightPower = 2.0f;
+
+    // Constraint generation flags
+    params.bGenerateDistanceConstraints = bGenerateDistanceConstraints;
+    params.bGenerateBendConstraints = bGenerateBendConstraints;
+    params.bGenerateAreaConstraints = bGenerateAreaConstraints;
+    params.bGenerateEdgeCollisions = bGenerateEdgeCollisions;
+
+    // Mass parameters
+    params.UniformMass = TotalMass;
+    params.bUseUniformMass = true;
+
+    return params;
 }

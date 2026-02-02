@@ -7,7 +7,16 @@
 
 #include "ClothComponent.h"
 #include "Material/Material.h"
+#include "GameFramework/Actor.h"
+#include "Cloth/ClothSimulationData.h"
+#include "Cloth/ClothBatchTypes.h"
+#include "Cloth/ClothAssetGenerator.h"
+#include "UObject/ObjectMacros.h"
 
+class UClothMeshComponent;
+class UClothAsset;
+class UStaticMesh;
+class FClothInstanceHandle;
 class UStaticMesh;
 
 /**
@@ -78,6 +87,18 @@ public:
     UMaterial *GetMaterial(uint32 Index) const;
     void SetMaterial(uint32 Index, UMaterial *InMaterial);
 
+    void GenerateClothAsset();
+
+    void ClearClothAsset();
+
+    bool ValidateSetup(FString& OutErrorMessage);
+
+    void RegisterWithClothWorld();
+
+    void UnregisterFromClothWorld();
+
+    FClothAssetGenerationParams BuildGenerationParams() const;
+
     // Transform
     void SetWorldTransform(const FMatrix &Transform) { WorldTransform = Transform; }
     const FMatrix &GetWorldTransform() const { return WorldTransform; }
@@ -90,14 +111,60 @@ public:
     void SetVisible(bool bVisible) { bIsVisible = bVisible; }
     bool IsVisible() const { return bIsVisible; }
 
-    // Source static mesh
+public:
+    // Activeness
+    bool bSimulate;
+
+public:
+    // ===== EDITOR PROPERTIES (exposed in Detail Panel) =====
+
+    // Source mesh (assigned by artist)
+    //UPROPERTY(EditAnywhere, UStaticMesh*, SourceStaticMesh, = nullptr)
     UStaticMesh* GetStaticMesh() const { return SourceStaticMesh; }
     void SetStaticMesh(UStaticMesh* Value) { SourceStaticMesh = Value; }
 
     UStaticMesh* SourceStaticMesh = nullptr;
-public:
-    // Activeness
-    bool bSimulate;
+
+    // Generated cloth asset (visible but not editable)
+    UPROPERTY(VisibleAnywhere, UClothAsset*, GeneratedClothAsset, = nullptr)
+
+    // === Generation Parameters ===
+
+    UPROPERTY(EditAnywhere, float, SimulationMeshReductionRatio, = 0.1f)  // 0.1 = 10% of original vertices
+
+    UPROPERTY(EditAnywhere, bool, bPreserveBoundaryEdges, = true)
+
+    UPROPERTY(EditAnywhere, bool, bPreserveUVSeams, = true)
+
+    UPROPERTY(EditAnywhere, bool, bGenerateDistanceConstraints, = true)
+
+    UPROPERTY(EditAnywhere, bool, bGenerateBendConstraints, = true)
+
+    UPROPERTY(EditAnywhere, bool, bGenerateAreaConstraints, = true)
+
+    UPROPERTY(EditAnywhere, bool, bGenerateEdgeCollisions, = true)
+
+    // === Simulation Parameters ===
+
+    UPROPERTY(EditAnywhere, float, StretchStiffness, = 0.9f)
+
+    UPROPERTY(EditAnywhere, float, BendStiffness, = 0.1f)
+
+    UPROPERTY(EditAnywhere, float, AreaStiffness, = 0.001f)
+
+    UPROPERTY(EditAnywhere, float, Damping, = 0.01f)
+
+    UPROPERTY(EditAnywhere, FVector, Gravity, = FVector(0, 0, -980.0f))
+
+    UPROPERTY(EditAnywhere, float, TotalMass, = 1.0f)
+
+    UPROPERTY(EditAnywhere, EClothLODLevel, LODLevel, = EClothLODLevel::LOD_0)
+
+    // === Status Display (read-only) ===
+
+    UPROPERTY(VisibleAnywhere, bool, bAssetGenerated, = false)
+
+    UPROPERTY(VisibleAnywhere, FString, LastErrorMessage, = "")
 
 protected:
     // Materials
@@ -111,4 +178,6 @@ protected:
 
     // Visibility
     bool bIsVisible;
+    bool bClothInitialized;
+    bool bRegisteredWithWorld;
 };
