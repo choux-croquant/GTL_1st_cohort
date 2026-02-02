@@ -53,10 +53,6 @@ public:
     void AttachToComponent(USceneComponent *Parent, FName SocketName);
     void AttachToSkeletalMesh(USkeletalMeshComponent *SkelMesh, const TArray<FName> &BoneNames);
 
-    // Configuration
-    void SetClothConfig(const FClothConfig &InConfig);
-    const FClothConfig &GetClothConfig() const;
-
     // Debug
     void SetDebugDrawEnabled(bool bEnabled) { bDebugDrawEnabled = bEnabled; }
     bool GetDebugDrawEnabled() const { return bDebugDrawEnabled; }

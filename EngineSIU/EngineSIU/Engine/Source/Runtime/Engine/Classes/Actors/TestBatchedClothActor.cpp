@@ -501,20 +501,6 @@ void ATestBatchedClothActor::CreateTestCloth(int32 Index, int32 GridSize, int32 
     }
 
     // Configure simulation parameters with variations per instance
-    FClothConfig config;
-    config.Mass = 1.0f;
-    config.Damping = 0.6f + (Index * 0.05f); // Vary damping slightly
-    config.StretchStiffness = 0.9f + (Index * 0.01f);
-    config.BendStiffness = 0.5f; // INCREASED: Global bend stiffness multiplier
-    config.NumIterations = 5;
-    config.TimeStep = 0.016f;
-    config.bUseXPBD = true;                 // CHANGED: Enable XPBD for proper bend constraint handling
-    config.AirDrag = 0.5f + (Index * 0.1f); // Vary air drag
-    config.NumSubsteps = 3;                 // Multiple substeps for stability
-    config.RelaxationFactor = 1.0f;         // Full relaxation (Gauss-Seidel)
-
-    ClothAssets[Index]->SetConfig(config);
-
     UE_LOG(ELogLevel::Display, TEXT("TestBatchedClothActor: Created cloth %d - Grid: %dx%d, LOD: %d, Particles: %d"),
            Index, GridSize, GridSize, static_cast<int32>(LOD), positions.Num());
 }

@@ -123,7 +123,7 @@ void UClothComponent::StartSimulation()
     {
         // Batched mode registration
         ClothInstanceHandle = ClothWorld->RegisterClothInstanceBatched(
-            this, ClothAsset, ClothAsset->GetConfig(), EClothLODLevel::LOD_0);
+            this, ClothAsset, EClothLODLevel::LOD_0);
 
         if (!ClothInstanceHandle)
         {
@@ -208,23 +208,4 @@ void UClothComponent::AttachToComponent(USceneComponent *Parent, FName SocketNam
 void UClothComponent::AttachToSkeletalMesh(USkeletalMeshComponent *SkelMesh, const TArray<FName> &BoneNames)
 {
     // TODO: Implement skeletal mesh attachment
-}
-
-void UClothComponent::SetClothConfig(const FClothConfig &InConfig)
-{
-    // TODO: Update instance config through ClothWorld
-}
-
-const FClothConfig &UClothComponent::GetClothConfig() const
-{
-    // TODO: Get config for batched mode
-    if (bUseBatchedMode && ClothInstanceHandle)
-    {
-        // Batched mode - would need to store config or retrieve from batch manager
-        static FClothConfig DefaultConfig;
-        return DefaultConfig;
-    }
-
-    static FClothConfig DefaultConfig;
-    return DefaultConfig;
 }

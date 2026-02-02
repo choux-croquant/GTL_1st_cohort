@@ -39,21 +39,6 @@ void UClothAsset::SerializeAsset(FArchive &Ar)
     Ar << BendConstraints;
     Ar << AttachmentIndices;
     Ar << VertexPaintData;
-
-    // Serialize config
-    Ar << ClothConfig.Mass;
-    Ar << ClothConfig.Damping;
-    Ar << ClothConfig.CollisionFriction;
-    Ar << ClothConfig.StretchStiffness;
-    Ar << ClothConfig.BendStiffness;
-    Ar << ClothConfig.AttachStiffness;
-    Ar << ClothConfig.NumIterations;
-    Ar << ClothConfig.TimeStep;
-    Ar << ClothConfig.bUseXPBD;
-    Ar << ClothConfig.AirDrag;
-    Ar << ClothConfig.WindStrength;
-    Ar << ClothConfig.CollisionThickness;
-    Ar << ClothConfig.bEnableSelfCollision;
 }
 
 bool UClothAsset::IsValid() const

@@ -1,6 +1,7 @@
 /**
  * Cloth Asset
  * Stores cloth mesh data, simulation parameters, and constraints
+ * Extended to support render/simulation mesh separation with skinning
  */
 
 #pragma once
@@ -8,6 +9,7 @@
 #include "UObject/Object.h"
 #include "UObject/ObjectMacros.h"
 #include "Cloth/ClothSimulationData.h"
+#include "Cloth/ClothSkinningWeightGenerator.h"
 
 class UStaticMesh;
 
@@ -25,10 +27,6 @@ public:
 
     // Asset initialization
     void InitializeFromMesh(UStaticMesh *InSourceMesh);
-
-    // Configuration
-    void SetConfig(const FClothConfig &InConfig) { ClothConfig = InConfig; }
-    const FClothConfig &GetConfig() const { return ClothConfig; }
 
     // Data access
     const TArray<FClothLODData> &GetLODData() const { return LODData; }
@@ -64,17 +62,26 @@ public:
     // Asset data
     TArray<FClothLODData> LODData;
 
-    FClothConfig ClothConfig;
-
     // Source mesh reference (optional)
     UStaticMesh *SourceMesh;
 
-    // Physics simulation data
-    TArray<FVector> RestPositions;
-
-    TArray<uint32> Indices;
-
+    // Simulation mesh data (low-res, used for physics)
+    TArray<FVector> RestPositions;  // Simulation mesh positions
+    TArray<uint32> Indices;         // Simulation mesh indices
     TArray<float> InvMasses;
+
+    // NEW: Render mesh data (high-res, used for rendering)
+    bool bUseRenderMesh = false;                        // Flag: use render/sim separation
+    TArray<FVector> RenderRestPositions;                // High-detail render positions
+    TArray<FVector> RenderNormals;                      // Render mesh normals
+    TArray<FVector2D> RenderUVs;                        // Render mesh UVs
+    TArray<uint32> RenderIndices;                       // Render mesh indices
+    TArray<FClothSkinningWeight> SkinningWeights;       // Render → Sim mapping
+    
+    // Generation metadata
+    float QEMReductionRatio = 0.1f;                     // How much was the sim mesh reduced
+    uint32 OriginalVertexCount = 0;                     // Original render mesh vertex count
+    uint32 DecimatedVertexCount = 0;                    // Decimated sim mesh vertex count
 
     // Constraints
     TArray<FClothDistanceConstraint> DistanceConstraints;

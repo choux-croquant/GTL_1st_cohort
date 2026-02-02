@@ -8,6 +8,8 @@
 #include "ClothComponent.h"
 #include "Material/Material.h"
 
+class UStaticMesh;
+
 /**
  * Cloth render data structure for passing to render pass
  * Now supports both legacy (per-instance buffers) and batched (unified buffers) rendering
@@ -62,6 +64,7 @@ class UClothMeshComponent : public UClothComponent
     DECLARE_CLASS(UClothMeshComponent, UClothComponent)
 
 public:
+
     UClothMeshComponent();
     virtual ~UClothMeshComponent() override;
 
@@ -87,6 +90,11 @@ public:
     void SetVisible(bool bVisible) { bIsVisible = bVisible; }
     bool IsVisible() const { return bIsVisible; }
 
+    // Source static mesh
+    UStaticMesh* GetStaticMesh() const { return SourceStaticMesh; }
+    void SetStaticMesh(UStaticMesh* Value) { SourceStaticMesh = Value; }
+
+    UStaticMesh* SourceStaticMesh = nullptr;
 public:
     // Activeness
     bool bSimulate;

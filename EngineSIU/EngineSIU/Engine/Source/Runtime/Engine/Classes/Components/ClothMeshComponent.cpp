@@ -3,6 +3,7 @@
 #include "Cloth/ClothBatchManager.h"
 #include "Cloth/ClothBatchedSolver.h"
 #include "Cloth/ClothWorld.h"
+#include "Classes/Engine/StaticMesh.h"
 
 UClothMeshComponent::UClothMeshComponent()
     : WorldTransform(FMatrix::Identity), DebugDrawMode(EClothDebugDrawMode::None), bIsVisible(true), bSimulate(true)
