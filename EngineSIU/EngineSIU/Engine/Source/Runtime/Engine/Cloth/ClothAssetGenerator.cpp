@@ -453,6 +453,27 @@ UClothAsset* FClothAssetGenerator::PackageIntoAsset(
         asset->AddEdgeCollision(constraint);
     }
     
+    // TEST
+    FClothAttachmentData attachment;
+
+    attachment.ClothVertexIndex = 0;
+    attachment.Type = EClothAttachmentType::WorldPosition;
+    attachment.LocalOffset = FTransform(FVector(0.0f, 0.0f, 0.0f));
+    attachment.Stiffness = 1.0f;
+    attachment.bIsKinematic = true;
+    attachment.AttachDistance = 0.0f;
+    asset->AddAttachmentData(attachment);
+
+    FClothAttachmentData attachment2;
+
+    attachment2.ClothVertexIndex = 30;
+    attachment2.Type = EClothAttachmentType::WorldPosition;
+    attachment2.LocalOffset = FTransform(FVector(15.0f, 0.0f, 0.0f));
+    attachment2.Stiffness = 1.0f;
+    attachment2.bIsKinematic = true;
+    attachment2.AttachDistance = 0.0f;
+    asset->AddAttachmentData(attachment2);
+
     // Set source mesh reference
     asset->SourceMesh = SourceMesh;
     
