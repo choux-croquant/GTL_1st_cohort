@@ -1,7 +1,6 @@
 /**
  * Cloth Component Implementation (Refactored)
  * Uses centralized ClothWorld manager instead of per-component solver
- * Now supports both Legacy and Batched modes
  */
 
 #include "ClothComponent.h"

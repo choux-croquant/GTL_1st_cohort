@@ -21,7 +21,6 @@ class UStaticMesh;
 
 /**
  * Cloth render data structure for passing to render pass
- * Now supports both legacy (per-instance buffers) and batched (unified buffers) rendering
  */
 struct FClothRenderData
 {

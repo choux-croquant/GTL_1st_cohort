@@ -246,7 +246,6 @@ void FClothDebugRenderPass::RenderClothComponent(UClothMeshComponent *ClothCompo
                                   renderData.ParticleOffset, renderData.IndexOffset);
     Graphics->DeviceContext->VSSetConstantBuffers(10, 1, &ClothMeshConstantBuffer);
 
-    // Handle index buffer based on mode
     if (renderData.bIsBatchedMode)
     {
         // Batched mode: Use unified index buffer with DrawIndexed at offset
@@ -286,29 +285,6 @@ void FClothDebugRenderPass::RenderClothComponent(UClothMeshComponent *ClothCompo
         // StartIndexLocation is in indices (not bytes)
         // BaseVertexLocation is 0 because we handle vertex offset in shader via ClothParticleOffset
         Graphics->DeviceContext->DrawIndexed(indexCount, startIndexLocation, baseVertexLocation);
-    }
-    else
-    {
-        // Legacy mode: Create temp index buffer from per-instance indices
-        if (!renderData.Indices || renderData.Indices->Num() == 0)
-            return;
-
-        SAFE_RELEASE(TempIndexBuffer);
-        TempIndexBuffer = CreateIndexBufferFromIndices(*renderData.Indices);
-        if (TempIndexBuffer)
-        {
-            Graphics->DeviceContext->IASetIndexBuffer(TempIndexBuffer, DXGI_FORMAT_R32_UINT, 0);
-        }
-        else
-        {
-            return;
-        }
-
-        // Set material (if available)
-        // TODO: Bind material textures and constants
-
-        // Draw cloth mesh using indexed rendering
-        Graphics->DeviceContext->DrawIndexed(renderData.NumTriangles * 3, 0, 0);
     }
 }
 

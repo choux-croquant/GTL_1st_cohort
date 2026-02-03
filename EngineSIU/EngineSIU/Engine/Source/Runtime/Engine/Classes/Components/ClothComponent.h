@@ -1,7 +1,6 @@
 /**
  * Cloth Component - Base component for cloth simulation
  * Handles simulation updates and external forces
- * Now supports both Legacy and Batched cloth systems
  */
 
 #pragma once

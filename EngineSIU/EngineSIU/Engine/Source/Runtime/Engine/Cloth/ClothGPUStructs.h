@@ -46,10 +46,6 @@ struct FClothVelocityGPU
  *
  * Supports both PBD and XPBD formulations:
  *
- * PBD (legacy):
- *   - Uses Stiffness directly to scale constraint violation
- *   - Simple but time-step and iteration-count dependent
- *
  * XPBD (recommended):
  *   - Uses Compliance for time-step independent stiffness
  *   - Uses Lambda to accumulate constraint force (warm starting)

@@ -174,6 +174,5 @@ struct FClothFixedTimestepState
  */
 enum class EClothSystemMode : uint8
 {
-    Legacy, // Old 1:1:1 system
     Batched // New batched system
 };
