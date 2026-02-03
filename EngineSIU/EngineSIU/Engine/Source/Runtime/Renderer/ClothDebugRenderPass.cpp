@@ -2,7 +2,7 @@
  * Cloth Render Pass Implementation
  */
 
-#include "ClothRenderPass.h"
+#include "ClothDebugRenderPass.h"
 
 #include "RendererHelpers.h"
 #include "D3D11RHI/DXDBufferManager.h"
@@ -24,13 +24,13 @@
         (p) = nullptr;  \
     }
 
-void FClothRenderPass::Initialize(FDXDBufferManager *InBufferManager, FGraphicsDevice *InGraphics, FDXDShaderManager *InShaderManager)
+void FClothDebugRenderPass::Initialize(FDXDBufferManager *InBufferManager, FGraphicsDevice *InGraphics, FDXDShaderManager *InShaderManager)
 {
     FRenderPassBase::Initialize(InBufferManager, InGraphics, InShaderManager);
     TempIndexBuffer = nullptr;
 }
 
-void FClothRenderPass::PrepareRenderArr()
+void FClothDebugRenderPass::PrepareRenderArr()
 {
     ClothComponents.Empty();
 
@@ -44,12 +44,12 @@ void FClothRenderPass::PrepareRenderArr()
     }
 }
 
-void FClothRenderPass::ClearRenderArr()
+void FClothDebugRenderPass::ClearRenderArr()
 {
     ClothComponents.Empty();
 }
 
-void FClothRenderPass::Render(const std::shared_ptr<FEditorViewportClient> &Viewport)
+void FClothDebugRenderPass::Render(const std::shared_ptr<FEditorViewportClient> &Viewport)
 {
     // if (ClothComponents.Num() == 0 || !ClothVertexShader || !ClothPixelShader) return;
     if (ClothComponents.Num() == 0)
@@ -69,7 +69,7 @@ void FClothRenderPass::Render(const std::shared_ptr<FEditorViewportClient> &View
     CleanUpRender(Viewport);
 }
 
-void FClothRenderPass::Release()
+void FClothDebugRenderPass::Release()
 {
     FRenderPassBase::Release();
 
@@ -82,7 +82,7 @@ void FClothRenderPass::Release()
     SAFE_RELEASE(TempIndexBuffer);
 }
 
-void FClothRenderPass::PrepareRender(const std::shared_ptr<FEditorViewportClient> &Viewport)
+void FClothDebugRenderPass::PrepareRender(const std::shared_ptr<FEditorViewportClient> &Viewport)
 {
     const EResourceType ResourceType = EResourceType::ERT_Scene;
     FViewportResource *ViewportResource = Viewport->GetViewportResource();
@@ -135,7 +135,7 @@ void FClothRenderPass::PrepareRender(const std::shared_ptr<FEditorViewportClient
     }
 }
 
-void FClothRenderPass::CleanUpRender(const std::shared_ptr<FEditorViewportClient> &Viewport)
+void FClothDebugRenderPass::CleanUpRender(const std::shared_ptr<FEditorViewportClient> &Viewport)
 {
     // Unbind cloth-specific resources
     ID3D11ShaderResourceView *nullSRVs[2] = {nullptr, nullptr};
@@ -145,7 +145,7 @@ void FClothRenderPass::CleanUpRender(const std::shared_ptr<FEditorViewportClient
     // Graphics->DeviceContext->RSSetState(nullptr);
 }
 
-void FClothRenderPass::CreateResource()
+void FClothDebugRenderPass::CreateResource()
 {
     const int32 MaxClothVerts = 65536;
     TArray<FVector2D> DummyUVs;
@@ -212,7 +212,7 @@ void FClothRenderPass::CreateResource()
     }
 }
 
-void FClothRenderPass::RenderClothComponent(UClothMeshComponent *ClothComponent, const std::shared_ptr<FEditorViewportClient> &Viewport)
+void FClothDebugRenderPass::RenderClothComponent(UClothMeshComponent *ClothComponent, const std::shared_ptr<FEditorViewportClient> &Viewport)
 {
     if (!ClothComponent)
         return;
@@ -312,7 +312,7 @@ void FClothRenderPass::RenderClothComponent(UClothMeshComponent *ClothComponent,
     }
 }
 
-void FClothRenderPass::UpdateClothMeshConstantBuffer(const FMatrix &WorldTransform, uint32 NumVertices,
+void FClothDebugRenderPass::UpdateClothMeshConstantBuffer(const FMatrix &WorldTransform, uint32 NumVertices,
                                                      uint32 ParticleOffset, uint32 IndexOffset)
 {
     if (!ClothMeshConstantBuffer)
@@ -334,7 +334,7 @@ void FClothRenderPass::UpdateClothMeshConstantBuffer(const FMatrix &WorldTransfo
     }
 }
 
-ID3D11Buffer *FClothRenderPass::CreateIndexBufferFromIndices(const TArray<uint32> &Indices)
+ID3D11Buffer *FClothDebugRenderPass::CreateIndexBufferFromIndices(const TArray<uint32> &Indices)
 {
     if (Indices.Num() == 0 || !Graphics || !Graphics->Device)
         return nullptr;

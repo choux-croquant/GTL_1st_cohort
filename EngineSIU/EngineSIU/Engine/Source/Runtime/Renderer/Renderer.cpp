@@ -16,7 +16,7 @@
 #include "EditorRenderPass.h"
 #include "DepthPrePass.h"
 #include "TileLightCullingPass.h"
-#include "ClothRenderPass.h"
+#include "ClothDebugRenderPass.h"
 #include "TranslucentRenderPass.h"
 
 #include "CompositingPass.h"
@@ -63,7 +63,7 @@ void FRenderer::Initialize(FGraphicsDevice *InGraphics, FDXDBufferManager *InBuf
 
     DepthPrePass = AddRenderPass<FDepthPrePass>();
     TileLightCullingPass = AddRenderPass<FTileLightCullingPass>();
-    ClothRenderPass = AddRenderPass<FClothRenderPass>();
+    ClothDebugRenderPass = AddRenderPass<FClothDebugRenderPass>();
 
     PostProcessRenderPass = AddRenderPass<FPostProcessRenderPass>();
 
@@ -384,11 +384,11 @@ void FRenderer::RenderOpaque(const std::shared_ptr<FEditorViewportClient> &Viewp
         }
 
         // Render cloth simulation meshes
-        if (ClothRenderPass)
+        if (ClothDebugRenderPass)
         {
             QUICK_SCOPE_CYCLE_COUNTER(ClothPass_CPU)
             QUICK_GPU_SCOPE_CYCLE_COUNTER(ClothPass_GPU, *GPUTimingManager)
-            ClothRenderPass->Render(Viewport);
+            ClothDebugRenderPass->Render(Viewport);
         }
     }
 

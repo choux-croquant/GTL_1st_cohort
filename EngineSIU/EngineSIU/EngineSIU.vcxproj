@@ -454,7 +454,7 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClCompile Include="Engine\Source\Runtime\Renderer\SlateRenderPass.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Renderer\OpaqueRenderPass.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Renderer\TileLightCullingPass.cpp" />
-    <ClCompile Include="Engine\Source\Runtime\Renderer\ClothRenderPass.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Renderer\ClothDebugRenderPass.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Renderer\TranslucentRenderPass.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Renderer\UpdateLightBufferPass.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Renderer\WorldBillboardRenderPass.cpp" />
@@ -886,7 +886,7 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClInclude Include="Engine\Source\Runtime\Renderer\SlateRenderPass.h" />
     <ClInclude Include="Engine\Source\Runtime\Renderer\OpaqueRenderPass.h" />
     <ClInclude Include="Engine\Source\Runtime\Renderer\TileLightCullingPass.h" />
-    <ClInclude Include="Engine\Source\Runtime\Renderer\ClothRenderPass.h" />
+    <ClInclude Include="Engine\Source\Runtime\Renderer\ClothDebugRenderPass.h" />
     <ClInclude Include="Engine\Source\Runtime\Renderer\TranslucentRenderPass.h" />
     <ClInclude Include="Engine\Source\Runtime\Renderer\UpdateLightBufferPass.h" />
     <ClInclude Include="Engine\Source\Runtime\Renderer\WorldBillboardRenderPass.h" />

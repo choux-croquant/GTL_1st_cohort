@@ -1668,7 +1668,7 @@
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Engine\ClothAsset.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Components\ClothComponent.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Components\ClothMeshComponent.cpp" />
-    <ClCompile Include="Engine\Source\Runtime\Renderer\ClothRenderPass.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Renderer\ClothDebugRenderPass.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothPhysicsManager.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIEFreeFlyPawn.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIEPlayerController.cpp" />
@@ -1855,7 +1855,7 @@
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Engine\ClothAsset.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Components\ClothComponent.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Components\ClothMeshComponent.h" />
-    <ClInclude Include="Engine\Source\Runtime\Renderer\ClothRenderPass.h" />
+    <ClInclude Include="Engine\Source\Runtime\Renderer\ClothDebugRenderPass.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothPhysicsManager.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothGPUStructs.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\GameFramework\PIEFreeFlyPawn.h" />

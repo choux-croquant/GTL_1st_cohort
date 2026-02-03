@@ -34,11 +34,11 @@ struct FClothMeshConstants
 /**
  * Render pass for cloth simulation visualization
  */
-class FClothRenderPass : public FRenderPassBase
+class FClothDebugRenderPass : public FRenderPassBase
 {
 public:
-    FClothRenderPass() = default;
-    virtual ~FClothRenderPass() override = default;
+    FClothDebugRenderPass() = default;
+    virtual ~FClothDebugRenderPass() override = default;
 
     virtual void Initialize(FDXDBufferManager *InBufferManager,
                             FGraphicsDevice *InGraphics,
