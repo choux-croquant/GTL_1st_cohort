@@ -45,8 +45,9 @@ struct FClothDecimationParams
     float MaxEdgeLength = FLT_MAX;  // Limit collapse length (prevents long thin triangles)
 
     // Voronoi/Lloyd parameters
-    int32 LloydIterations = 30;     // Number of Lloyd relaxation iterations (20-30 recommended)
+    int32 LloydIterations = 10;     // Number of Lloyd relaxation iterations (10 recommended, was 30)
     bool bUseFarthestPointSampling = true; // Use FPS for seed initialization (vs random)
+    float ConvergenceThreshold = 0.001f; // Early termination threshold (relative to mesh size)
 
     // Validation
     float MinTriangleArea = 0.001f; // Discard degenerate triangles
@@ -126,7 +127,7 @@ public:
         const FClothDecimationParams &Params,
         FClothDecimationResult &OutResult);
 
-private:
+public:
     // QEM quadric error matrix (4x4 symmetric, stored as 10 coefficients)
     struct FQuadric
     {
