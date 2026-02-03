@@ -13,15 +13,28 @@
 #include <float.h>
 
 /**
+ * Cloth decimation method
+ */
+enum class EClothDecimationMethod : uint8
+{
+    QEM,        // Quadric Error Metrics (edge collapse)
+    Voronoi,    // Voronoi clustering with Lloyd's algorithm
+    Auto        // Automatically choose based on mesh characteristics
+};
+
+/**
  * Decimation parameters
  */
 struct FClothDecimationParams
 {
+    // Method selection
+    EClothDecimationMethod Method = EClothDecimationMethod::Voronoi; // Default to Voronoi for uniform distribution
+
     // Target reduction (choose one)
     float ReductionRatio = 0.1f;  // 0.0-1.0 (0.1 = 10% of original verts)
     uint32 TargetVertexCount = 0; // Alternative: specific vertex count (overrides ratio)
 
-    // Quality preservation
+    // Quality preservation (QEM method)
     bool bPreserveBoundaryEdges = true; // Keep mesh boundaries intact (critical for cloth)
     bool bPreserveUVSeams = true;       // Maintain UV seam topology (for textures)
     bool bPreserveTopology = true;      // Prevent non-manifold results
@@ -30,6 +43,10 @@ struct FClothDecimationParams
     float BoundaryWeight = 1000.0f; // High penalty for boundary edge collapse
     float UVSeamWeight = 100.0f;    // Penalty for UV seam collapse
     float MaxEdgeLength = FLT_MAX;  // Limit collapse length (prevents long thin triangles)
+
+    // Voronoi/Lloyd parameters
+    int32 LloydIterations = 30;     // Number of Lloyd relaxation iterations (20-30 recommended)
+    bool bUseFarthestPointSampling = true; // Use FPS for seed initialization (vs random)
 
     // Validation
     float MinTriangleArea = 0.001f; // Discard degenerate triangles
@@ -62,6 +79,22 @@ class FClothMeshDecimator
 {
 public:
     /**
+     * Decimate mesh using selected method (router function)
+     * @param SourcePositions - Input high-detail vertices
+     * @param SourceIndices - Input high-detail triangles
+     * @param SourceUVs - Input UV coordinates (for seam detection)
+     * @param Params - Decimation parameters
+     * @param OutResult - Output decimation result
+     * @return Success/failure
+     */
+    static bool DecimateMesh(
+        const TArray<FVector> &SourcePositions,
+        const TArray<uint32> &SourceIndices,
+        const TArray<FVector2D> &SourceUVs,
+        const FClothDecimationParams &Params,
+        FClothDecimationResult &OutResult);
+
+    /**
      * Decimate mesh using Quadric Error Metrics
      * @param SourcePositions - Input high-detail vertices
      * @param SourceIndices - Input high-detail triangles
@@ -71,6 +104,22 @@ public:
      * @return Success/failure
      */
     static bool DecimateMeshQEM(
+        const TArray<FVector> &SourcePositions,
+        const TArray<uint32> &SourceIndices,
+        const TArray<FVector2D> &SourceUVs,
+        const FClothDecimationParams &Params,
+        FClothDecimationResult &OutResult);
+
+    /**
+     * Decimate mesh using Voronoi Clustering with Lloyd's algorithm
+     * @param SourcePositions - Input high-detail vertices
+     * @param SourceIndices - Input high-detail triangles
+     * @param SourceUVs - Input UV coordinates (unused for Voronoi)
+     * @param Params - Decimation parameters
+     * @param OutResult - Output decimation result
+     * @return Success/failure
+     */
+    static bool DecimateMeshVoronoi(
         const TArray<FVector> &SourcePositions,
         const TArray<uint32> &SourceIndices,
         const TArray<FVector2D> &SourceUVs,
@@ -190,6 +239,45 @@ private:
         const TArray<FVector> &Positions,
         const TArray<uint32> &Indices,
         float MinArea);
+
+    // Voronoi/Lloyd helpers
+    static void InitializeSeedsWithFPS(
+        const TArray<FVector> &Positions,
+        int32 NumSeeds,
+        TArray<FVector> &OutSeeds);
+
+    static void InitializeSeedsRandom(
+        const TArray<FVector> &Positions,
+        int32 NumSeeds,
+        TArray<FVector> &OutSeeds);
+
+    static void PerformLloydIteration(
+        const TArray<FVector> &Positions,
+        const TArray<uint32> &Indices,
+        TArray<FVector> &InOutSeeds);
+
+    static void ProjectPointToMesh(
+        const FVector &Point,
+        const TArray<FVector> &Positions,
+        const TArray<uint32> &Indices,
+        FVector &OutProjectedPoint);
+
+    static FVector ClosestPointOnTriangle(
+        const FVector &P,
+        const FVector &A,
+        const FVector &B,
+        const FVector &C);
+
+    static void TriangulateSeeds(
+        const TArray<FVector> &Seeds,
+        const TArray<FVector> &OriginalPositions,
+        const TArray<uint32> &OriginalIndices,
+        TArray<uint32> &OutIndices,
+        TArray<int32> &OutVertexMapping);
+
+    static int32 FindNearestSeed(
+        const FVector &Position,
+        const TArray<FVector> &Seeds);
 
     // Utility
     static FVector ComputeTriangleNormal(

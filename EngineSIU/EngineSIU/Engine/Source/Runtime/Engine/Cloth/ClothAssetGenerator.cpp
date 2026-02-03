@@ -8,6 +8,7 @@
 #include "Engine/ClothAsset.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Asset/StaticMeshAsset.h"
+#include "UObject/ObjectFactory.h"
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -42,7 +43,7 @@ bool FClothAssetGenerator::GenerateClothAssetFromStaticMesh(
     
     // Step 2: Generate simulation mesh via QEM decimation
     FClothSimulationMeshData simMesh;
-    if (!GenerateSimulationMeshQEM(renderMesh, Params.DecimationParams, simMesh, error))
+    if (!GenerateSimulationMesh(renderMesh, Params.DecimationParams, simMesh, error))
     {
         OutResult.ErrorMessage = error;
         return false;
@@ -168,7 +169,7 @@ bool FClothAssetGenerator::ExtractRenderMeshData(
     return true;
 }
 
-bool FClothAssetGenerator::GenerateSimulationMeshQEM(
+bool FClothAssetGenerator::GenerateSimulationMesh(
     const FClothRenderMeshData& RenderMesh,
     const FClothDecimationParams& Params,
     FClothSimulationMeshData& OutSimMesh,
@@ -176,7 +177,7 @@ bool FClothAssetGenerator::GenerateSimulationMeshQEM(
 {
     // Run QEM decimation
     FClothDecimationResult decimationResult;
-    if (!FClothMeshDecimator::DecimateMeshQEM(
+    if (!FClothMeshDecimator::DecimateMesh(
         RenderMesh.Positions,
         RenderMesh.Indices,
         RenderMesh.UVs,
@@ -424,7 +425,7 @@ UClothAsset* FClothAssetGenerator::PackageIntoAsset(
     const TArray<FClothEdgeCollisionConstraint>& EdgeCollisions,
     UStaticMesh* SourceMesh)
 {
-    UClothAsset* asset = new UClothAsset();
+    UClothAsset* asset = FObjectFactory::ConstructObject<UClothAsset>(nullptr);
     
     // Set simulation mesh data
     asset->SetRestPositions(SimMesh.Positions);

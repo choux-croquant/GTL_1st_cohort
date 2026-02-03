@@ -1682,6 +1682,7 @@
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothAssetGenerator.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshDecimator.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothSkinningWeightGenerator.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshDecimator_Voronoi.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="EngineSIU.natvis" />

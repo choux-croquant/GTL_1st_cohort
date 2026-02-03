@@ -142,6 +142,10 @@ void UClothMeshComponent::GenerateClothAsset()
 
         // Update status display
         LastErrorMessage = "";
+
+        // TEST
+        this->UnregisterFromClothWorld();
+        this->RegisterWithClothWorld();
     }
     else
     {
@@ -204,7 +208,7 @@ bool UClothMeshComponent::ValidateSetup(FString& OutErrorMessage)
 
 void UClothMeshComponent::RegisterWithClothWorld()
 {
-    if (bRegisteredWithWorld || !GeneratedClothAsset)
+    if (!GeneratedClothAsset)
     {
         return;
     }

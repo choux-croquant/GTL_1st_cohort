@@ -131,7 +131,7 @@ private:
     /**
      * Generate simulation mesh from render mesh using QEM decimation
      */
-    static bool GenerateSimulationMeshQEM(
+    static bool GenerateSimulationMesh(
         const FClothRenderMeshData& RenderMesh,
         const FClothDecimationParams& Params,
         FClothSimulationMeshData& OutSimMesh,
