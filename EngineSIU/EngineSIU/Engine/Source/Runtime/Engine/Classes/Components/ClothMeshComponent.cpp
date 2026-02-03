@@ -258,6 +258,9 @@ FClothAssetGenerationParams UClothMeshComponent::BuildGenerationParams() const
 {
     FClothAssetGenerationParams params;
 
+    // Decimation Method
+    params.DecimationParams.Method = DecimationMethod;
+
     // Decimation parameters
     params.DecimationParams.ReductionRatio = SimulationMeshReductionRatio;
     params.DecimationParams.bPreserveBoundaryEdges = bPreserveBoundaryEdges;

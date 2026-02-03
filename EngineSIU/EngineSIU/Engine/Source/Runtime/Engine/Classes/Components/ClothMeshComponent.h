@@ -144,6 +144,8 @@ public:
 
     UPROPERTY(EditAnywhere, bool, bGenerateEdgeCollisions, = true)
 
+    UPROPERTY(EditAnywhere, EClothDecimationMethod, DecimationMethod, = EClothDecimationMethod::Voronoi)
+        
     // === Simulation Parameters ===
 
     UPROPERTY(EditAnywhere, float, StretchStiffness, = 0.9f)

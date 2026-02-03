@@ -143,6 +143,22 @@ void UClothComponent::StopSimulation()
     if (bUseBatchedMode && ClothInstanceHandle)
     {
         ClothInstanceHandle->SetActive(false);
+
+        FClothWorld* ClothWorld = GEngine->ClothPhysicsManager->CreateClothWorld(GetWorld());
+        if (!ClothWorld || !ClothWorld->IsInitialized())
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothComponent: ClothWorld not available"));
+            return;
+        }
+
+        // Detect mode and register appropriately
+        if (ClothWorld->GetSystemMode() == EClothSystemMode::Batched)
+        {
+            // Batched mode registration
+            ClothWorld->UnregisterClothInstanceBatched(ClothInstanceHandle);
+
+            UE_LOG(ELogLevel::Display, TEXT("ClothComponent: Instance unregistered"));
+        }
     }
 
     bIsSimulating = false;
