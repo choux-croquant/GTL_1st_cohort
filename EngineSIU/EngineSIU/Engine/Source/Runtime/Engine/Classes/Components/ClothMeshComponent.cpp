@@ -37,6 +37,28 @@ void UClothMeshComponent::TickComponent(float DeltaTime)
     ClothInstance->SetGravity(gravity);*/
 }
 
+void UClothMeshComponent::BeginPlay()
+{
+    Super::BeginPlay();
+
+    // Auto-start simulation
+    if (GeneratedClothAsset)
+    {
+        // TODO? : Register in begin play now
+        RegisterWithClothWorld();
+    }
+}
+
+UObject* UClothMeshComponent::Duplicate(UObject* InOuter)
+{
+    ThisClass* NewComponent = Cast<ThisClass>(Super::Duplicate(InOuter));
+    NewComponent->GeneratedClothAsset = GeneratedClothAsset;
+    NewComponent->bIsSimulating = false;
+
+    /*NewComponent->RegisterWithClothWorld();*/
+    return NewComponent;
+}
+
 void UClothMeshComponent::GetRenderData(FClothRenderData &OutData) const
 {
     // Initialize to safe defaults

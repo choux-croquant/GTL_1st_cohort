@@ -769,7 +769,7 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
 
         if (UsedBendConstraintCount > 0)
         {
-            DispatchBendConstraintSolver(UsedBendConstraintCount);
+            //DispatchBendConstraintSolver(UsedBendConstraintCount);
         }
 
         if (UsedAreaConstraintCount > 0)

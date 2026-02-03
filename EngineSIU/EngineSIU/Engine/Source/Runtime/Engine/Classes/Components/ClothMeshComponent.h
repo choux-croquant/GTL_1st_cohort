@@ -79,7 +79,11 @@ public:
 
     // Component lifecycle
     virtual void InitializeComponent() override;
+    virtual void BeginPlay() override;
     virtual void TickComponent(float DeltaTime) override;
+
+
+    UObject* Duplicate(UObject* InOuter);
 
     // Rendering interface
     void GetRenderData(FClothRenderData &OutData) const;

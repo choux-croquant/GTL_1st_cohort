@@ -33,6 +33,8 @@ public:
     virtual void BeginPlay() override;
     // virtual void EndPlay() override;
 
+    virtual UObject* Duplicate(UObject* InOuter) override;
+
     // Cloth asset management
     void SetClothAsset(UClothAsset *InAsset);
     UClothAsset *GetClothAsset() const { return ClothAsset; }

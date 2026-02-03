@@ -72,10 +72,17 @@ void UClothComponent::BeginPlay()
     Super::BeginPlay();
 
     // Auto-start simulation
-    if (ClothAsset)
+   /* if (ClothAsset)
     {
         StartSimulation();
-    }
+    }*/
+}
+
+UObject* UClothComponent::Duplicate(UObject* InOuter)
+{
+    ThisClass* NewComponent = Cast<ThisClass>(Super::Duplicate(InOuter));
+
+    return NewComponent;
 }
 
 void UClothComponent::SetClothAsset(UClothAsset *InAsset)
