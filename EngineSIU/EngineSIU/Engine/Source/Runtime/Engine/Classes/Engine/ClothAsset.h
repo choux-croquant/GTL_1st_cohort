@@ -10,6 +10,7 @@
 #include "UObject/ObjectMacros.h"
 #include "Cloth/ClothSimulationData.h"
 #include "Cloth/ClothSkinningWeightGenerator.h"
+#include "Cloth/ClothAssetGenerator.h"
 
 class UStaticMesh;
 
@@ -71,7 +72,7 @@ public:
     TArray<float> InvMasses;
 
     // NEW: Render mesh data (high-res, used for rendering)
-    bool bUseRenderMesh = false;                        // Flag: use render/sim separation
+    bool bUseRenderMesh = true;                        // Flag: use render/sim separation
     TArray<FVector> RenderRestPositions;                // High-detail render positions
     TArray<FVector> RenderNormals;                      // Render mesh normals
     TArray<FVector2D> RenderUVs;                        // Render mesh UVs

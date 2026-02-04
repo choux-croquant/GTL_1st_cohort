@@ -1683,6 +1683,8 @@
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshDecimator.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothSkinningWeightGenerator.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshDecimator_Voronoi.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothGPURenderStructs.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Renderer\ClothRenderPass.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="EngineSIU.natvis" />
@@ -1871,6 +1873,8 @@
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothAssetGenerator.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshDecimator.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothSkinningWeightGenerator.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothGPURenderStructs.h" />
+    <ClInclude Include="Engine\Source\Runtime\Renderer\ClothRenderPass.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\CompositingShader.hlsl" />

@@ -190,15 +190,29 @@ FClothInstanceHandle *FClothWorld::RegisterClothInstanceBatched(UClothComponent 
     Params.OwnerComponent = Component;
     Params.InitialLOD = InitialLOD;
 
-    // Get rest positions and other data from asset (in LOCAL space)
+    // Get simulation mesh data from asset (in LOCAL space)
     Params.RestPositions = Asset->GetRestPositions();
     Params.InvMasses = Asset->GetInvMasses();
     Params.Indices = Asset->GetIndices();
     Params.Constraints = Asset->GetDistanceConstraints();
     Params.BendConstraints = Asset->GetBendConstraints();
-    Params.AreaConstraints = Asset->GetAreaConstraints();  // NEW: Area constraints
-    Params.EdgeCollisions = Asset->GetEdgeCollisions();    // NEW: Edge collision constraints
+    Params.AreaConstraints = Asset->GetAreaConstraints();  // Area constraints
+    Params.EdgeCollisions = Asset->GetEdgeCollisions();    // Edge collision constraints
     Params.Attachments = Asset->GetAttachmentData();
+
+    // NEW: Get render mesh data from asset if available (for production rendering)
+    if (Asset->bUseRenderMesh)
+    {
+        Params.bUseRenderMesh = true;
+        Params.RenderRestPositions = Asset->RenderRestPositions;
+        Params.RenderNormals = Asset->RenderNormals;
+        Params.RenderUVs = Asset->RenderUVs;
+        Params.RenderIndices = Asset->RenderIndices;
+        Params.SkinningWeights = Asset->SkinningWeights;
+        
+        UE_LOG(ELogLevel::Display, TEXT("ClothWorld: Registering cloth with production rendering - RenderVerts: %d, SimVerts: %d"),
+               Params.RenderRestPositions.Num(), Params.RestPositions.Num());
+    }
 
     // CRITICAL FIX: Get component's world transform for converting local positions to world space
     // This ensures each instance simulates at its correct location in the world

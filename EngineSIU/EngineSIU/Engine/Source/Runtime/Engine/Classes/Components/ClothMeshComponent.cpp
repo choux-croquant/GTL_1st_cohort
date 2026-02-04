@@ -53,6 +53,7 @@ UObject* UClothMeshComponent::Duplicate(UObject* InOuter)
 {
     ThisClass* NewComponent = Cast<ThisClass>(Super::Duplicate(InOuter));
     NewComponent->GeneratedClothAsset = GeneratedClothAsset;
+    NewComponent->Materials = Materials;
     NewComponent->bIsSimulating = false;
 
     /*NewComponent->RegisterWithClothWorld();*/
@@ -76,14 +77,14 @@ void UClothMeshComponent::GetRenderData(FClothRenderData &OutData) const
         FClothBatchedSolver *batchedSolver = batchMgr->GetSolver();
         const FClothInstanceMetadata &metadata = ClothInstanceHandle->GetMetadata();
 
-        // Set unified buffer SRVs (shared by all instances in batch)
+        // Set unified simulation buffer SRVs (shared by all instances in batch)
         OutData.PositionBufferSRV = batchedSolver->GetPositionBufferSRV();
         OutData.NormalBufferSRV = batchedSolver->GetNormalBufferSRV();
 
         // Set unified index buffer (shared by all instances)
         OutData.UnifiedIndexBuffer = batchedSolver->GetUnifiedIndexBuffer();
 
-        // Set instance-specific offsets and counts
+        // Set instance-specific offsets and counts (simulation mesh)
         // CRITICAL FIX: ParticleOffset = 0 because indices in unified buffer are ALREADY global
         // They were converted to global during upload (localIdx + ParticleOffset)
         // Adding offset again in shader would cause double offset bug
@@ -103,6 +104,23 @@ void UClothMeshComponent::GetRenderData(FClothRenderData &OutData) const
         // No per-instance index buffer in batched mode (indices are in unified buffer)
         OutData.Indices = nullptr;
         OutData.IndexBufferSRV = nullptr;
+        
+        // NEW: Production rendering - populate render mesh data if available
+        if (GeneratedClothAsset && GeneratedClothAsset->bUseRenderMesh)
+        {
+            OutData.bUseProductionRendering = true;
+            OutData.UnifiedRenderVertexBuffer = batchedSolver->GetUnifiedRenderVertexBuffer();  // NEW: Actual vertex buffer
+            OutData.UnifiedRenderIndexBuffer = batchedSolver->GetUnifiedRenderIndexBuffer();
+            OutData.SkinningWeightBufferSRV = batchedSolver->GetSkinningWeightBufferSRV();
+            OutData.RenderVertexOffset = metadata.RenderVertexOffset;
+            OutData.RenderVertexCount = metadata.RenderVertexCount;
+            OutData.RenderIndexOffset = metadata.RenderIndexOffset;
+            OutData.RenderIndexCount = metadata.RenderIndexCount;
+        }
+        else
+        {
+            OutData.bUseProductionRendering = false;
+        }
     }
 }
 
@@ -161,6 +179,30 @@ void UClothMeshComponent::GenerateClothAsset()
 
         GeneratedClothAsset = result.Asset;
         bAssetGenerated = true;
+
+        // CRITICAL FIX: Extract materials from SourceStaticMesh
+        // This ensures cloth rendering uses the same materials as the source mesh
+        Materials.Empty();
+        if (SourceStaticMesh)
+        {
+            const TArray<FStaticMaterial*>& sourceMaterials = SourceStaticMesh->GetMaterials();
+            Materials.Reserve(sourceMaterials.Num());
+            
+            for (FStaticMaterial* staticMat : sourceMaterials)
+            {
+                if (staticMat && staticMat->Material)
+                {
+                    Materials.Add(staticMat->Material);
+                }
+                else
+                {
+                    Materials.Add(nullptr); // Maintain array indexing
+                }
+            }
+            
+            UE_LOG(ELogLevel::Display, TEXT("ClothMeshComponent: Extracted %d materials from SourceStaticMesh"),
+                   Materials.Num());
+        }
 
         // Update status display
         LastErrorMessage = "";

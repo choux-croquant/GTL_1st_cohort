@@ -30,10 +30,20 @@ struct FClothRenderData
     ID3D11ShaderResourceView *IndexBufferSRV;
     const TArray<uint32> *Indices;
 
-    // Batched mode: Unified index buffer + rendering metadata
-    ID3D11Buffer *UnifiedIndexBuffer; // NEW: Direct access to unified D3D11 buffer
+    // Batched mode: Unified index buffer + rendering metadata (simulation mesh)
+    ID3D11Buffer *UnifiedIndexBuffer; // Direct access to unified D3D11 buffer
     uint32 ParticleOffset;            // Offset into unified position/normal buffer
     uint32 IndexOffset;               // Offset into unified index buffer (in indices, not bytes)
+
+    // NEW: Production rendering - render mesh data
+    ID3D11Buffer *UnifiedRenderVertexBuffer;        // Unified render vertex buffer (position, normal, UV)
+    ID3D11Buffer *UnifiedRenderIndexBuffer;         // Unified render index buffer
+    ID3D11ShaderResourceView *SkinningWeightBufferSRV;  // Skinning weight buffer SRV
+    uint32 RenderVertexOffset;                      // Offset into unified render vertex buffers
+    uint32 RenderVertexCount;                       // Number of render vertices
+    uint32 RenderIndexOffset;                       // Offset into unified render index buffer
+    uint32 RenderIndexCount;                        // Number of render indices
+    bool bUseProductionRendering;                   // Toggle production vs debug rendering
 
     // Common
     uint32 NumVertices;
@@ -45,7 +55,7 @@ struct FClothRenderData
     bool bIsBatchedMode;
 
     FClothRenderData()
-        : PositionBufferSRV(nullptr), NormalBufferSRV(nullptr), IndexBufferSRV(nullptr), Indices(nullptr), UnifiedIndexBuffer(nullptr), ParticleOffset(0), IndexOffset(0), NumVertices(0), NumTriangles(0), WorldTransform(FMatrix::Identity), Material(nullptr), bIsBatchedMode(false)
+        : PositionBufferSRV(nullptr), NormalBufferSRV(nullptr), IndexBufferSRV(nullptr), Indices(nullptr), UnifiedIndexBuffer(nullptr), ParticleOffset(0), IndexOffset(0), UnifiedRenderVertexBuffer(nullptr), UnifiedRenderIndexBuffer(nullptr), SkinningWeightBufferSRV(nullptr), RenderVertexOffset(0), RenderVertexCount(0), RenderIndexOffset(0), RenderIndexCount(0), bUseProductionRendering(false), NumVertices(0), NumTriangles(0), WorldTransform(FMatrix::Identity), Material(nullptr), bIsBatchedMode(false)
     {
     }
 };
