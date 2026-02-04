@@ -96,7 +96,7 @@ private:
     uint32 TotalParticleCount;
     uint32 TotalConstraintCount;
     uint32 TotalBendConstraintCount;
-    uint32 TotalKinematicTargetCount;
+    uint32 TotalAttachmentCount;
     uint32 TotalTriangleCount;
     uint32 TotalAreaConstraintCount;      // Total area constraints
     uint32 TotalEdgeCollisionCount;       // Total edge collision constraints
@@ -129,7 +129,6 @@ private:
     // NEW: Component deduplication for GPU-based kinematic targets (P1 optimization)
     TMap<USceneComponent *, uint32> ComponentIndexMap;        // Component -> Index mapping
     TArray<TWeakObjectPtr<USceneComponent>> UniqueComponents; // Deduplicated component list
-    uint32 TotalAttachmentCount;                              // Total number of attachments built for GPU
     bool bAttachmentDataDirty;                                // Needs rebuild when attachments change
 
     bool bIsInitialized;

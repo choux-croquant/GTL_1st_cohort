@@ -19,7 +19,7 @@
 #include "ClothGPUStructs.h"
 
 FClothBatchManager::FClothBatchManager(EClothLODLevel InLODLevel)
-    : LODLevel(InLODLevel), BatchedSolver(nullptr), TotalParticleCount(0), TotalConstraintCount(0), TotalBendConstraintCount(0), TotalKinematicTargetCount(0), TotalTriangleCount(0), TotalAreaConstraintCount(0), TotalEdgeCollisionCount(0), TotalRenderVertexCount(0), TotalRenderIndexCount(0), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), AllocatedAreaConstraintCapacity(0), AllocatedEdgeCollisionCapacity(0), AllocatedRenderVertexCapacity(0), AllocatedRenderIndexCapacity(0), bNeedsReallocation(false), bNeedsCompaction(false), GrowthFactor(1.5f), TotalAttachmentCount(0), bAttachmentDataDirty(true), Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), bIsInitialized(false)
+    : LODLevel(InLODLevel), BatchedSolver(nullptr), TotalParticleCount(0), TotalConstraintCount(0), TotalBendConstraintCount(0), TotalAttachmentCount(0), TotalTriangleCount(0), TotalAreaConstraintCount(0), TotalEdgeCollisionCount(0), TotalRenderVertexCount(0), TotalRenderIndexCount(0), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), AllocatedAreaConstraintCapacity(0), AllocatedEdgeCollisionCapacity(0), AllocatedRenderVertexCapacity(0), AllocatedRenderIndexCapacity(0), bNeedsReallocation(false), bNeedsCompaction(false), GrowthFactor(1.5f), bAttachmentDataDirty(true), Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), bIsInitialized(false)
 {
 }
 
@@ -139,7 +139,7 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
     uint32 particleCount = Params.RestPositions.Num();
     uint32 constraintCount = Params.Constraints.Num();
     uint32 bendConstraintCount = Params.BendConstraints.Num();
-    uint32 kinematicTargetCount = Params.Attachments.Num();
+    uint32 attachmentCount = Params.Attachments.Num();
     uint32 triangleCount = Params.Indices.Num() / 3;
     uint32 areaConstraintCount = Params.AreaConstraints.Num();
     uint32 edgeCollisionCount = Params.EdgeCollisions.Num();
@@ -161,8 +161,8 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
     metadata.ConstraintCount = constraintCount;
     metadata.BendConstraintOffset = TotalBendConstraintCount;
     metadata.BendConstraintCount = bendConstraintCount;
-    metadata.KinematicTargetOffset = TotalKinematicTargetCount;
-    metadata.KinematicTargetCount = kinematicTargetCount;
+    metadata.KinematicTargetOffset = TotalAttachmentCount;
+    metadata.KinematicTargetCount = attachmentCount;
     metadata.TriangleOffset = TotalTriangleCount;
     metadata.TriangleCount = triangleCount;
     metadata.AreaConstraintOffset = TotalAreaConstraintCount;     // NEW
@@ -199,15 +199,14 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
     TotalParticleCount += particleCount;
     TotalConstraintCount += constraintCount;
     TotalBendConstraintCount += bendConstraintCount;
-    TotalKinematicTargetCount += kinematicTargetCount;
+    TotalAttachmentCount += attachmentCount;
     TotalTriangleCount += triangleCount;
     TotalAreaConstraintCount += areaConstraintCount;       // NEW
     TotalEdgeCollisionCount += edgeCollisionCount;         // NEW
 
     // Update solver counts
-    BatchedSolver->SetUsedCounts(TotalParticleCount, TotalConstraintCount, TotalBendConstraintCount,
-                                 TotalKinematicTargetCount, TotalTriangleCount, Instances.Num(),
-                                 TotalAreaConstraintCount, TotalEdgeCollisionCount); // NEW
+    BatchedSolver->SetUsedCounts(TotalParticleCount, TotalConstraintCount, TotalBendConstraintCount, TotalAttachmentCount,
+                                 TotalTriangleCount, Instances.Num(), TotalAreaConstraintCount, TotalEdgeCollisionCount); // NEW
 
     // ===== UPLOAD INSTANCE DATA TO GPU BUFFERS =====
 
@@ -550,7 +549,7 @@ void FClothBatchManager::RemoveInstance(FClothInstanceHandle *Instance)
     TotalParticleCount -= metadata.ParticleCount;
     TotalConstraintCount -= metadata.ConstraintCount;
     TotalBendConstraintCount -= metadata.BendConstraintCount;
-    TotalKinematicTargetCount -= metadata.KinematicTargetCount;
+    TotalAttachmentCount -= metadata.KinematicTargetCount;
     TotalTriangleCount -= metadata.TriangleCount;
     TotalAreaConstraintCount -= metadata.AreaConstraintCount;     // NEW
     TotalEdgeCollisionCount -= metadata.EdgeCollisionCount;       // NEW
@@ -563,9 +562,8 @@ void FClothBatchManager::RemoveInstance(FClothInstanceHandle *Instance)
     bNeedsCompaction = true;
 
     // Update solver counts
-    BatchedSolver->SetUsedCounts(TotalParticleCount, TotalConstraintCount, TotalBendConstraintCount,
-                                 TotalKinematicTargetCount, TotalTriangleCount, Instances.Num(),
-                                 TotalAreaConstraintCount, TotalEdgeCollisionCount); // NEW
+    BatchedSolver->SetUsedCounts(TotalParticleCount, TotalConstraintCount, TotalBendConstraintCount, TotalAttachmentCount,
+                                 TotalTriangleCount, Instances.Num(), TotalAreaConstraintCount, TotalEdgeCollisionCount);
 
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Removed instance - Remaining: %d instances, %d particles"),
            static_cast<int32>(LODLevel), Instances.Num(), TotalParticleCount);
@@ -827,7 +825,7 @@ void FClothBatchManager::UpdateKinematicTargetsGPU(float DeltaTime)
 {
     QUICK_SCOPE_CYCLE_COUNTER(UpdateKinematicTargets_GPU);
 
-    if (!BatchedSolver || TotalKinematicTargetCount == 0)
+    if (!BatchedSolver || TotalAttachmentCount == 0)
         return;
 
     // Rebuild attachment data if needed (rare - only when attachments change)

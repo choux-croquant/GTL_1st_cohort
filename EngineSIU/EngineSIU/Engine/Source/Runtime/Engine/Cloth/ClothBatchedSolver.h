@@ -124,10 +124,8 @@ public:
 
     // Update tracking counts
     void SetUsedCounts(uint32 Particles, uint32 Constraints, uint32 BendConstraints,
-                       uint32 KinematicTargets, uint32 Triangles, uint32 Instances,
-                       uint32 AreaConstraints = 0, uint32 EdgeCollisions = 0);
+        uint32 Attachments, uint32 Triangles, uint32 Instances, uint32 AreaConstraints = 0, uint32 EdgeCollisions = 0);
 
-    // NEW: Set attachment count for GPU-based kinematic targets (P1)
     void SetAttachmentCount(uint32 AttachmentCount) { UsedAttachmentCount = AttachmentCount; }
 
     FClothCollisionManager *GetCollisionManager() { return CollisionManager; }
@@ -142,20 +140,17 @@ private:
     void DispatchBendConstraintSolver(uint32 BendConstraintCount);
     void DispatchAreaConstraintSolver(uint32 AreaConstraintCount);
     void DispatchApplyDeltas(uint32 ParticleCount);
-    void DispatchApplyKinematicTargets(uint32 TargetCount);
-    void DispatchComputeKinematicTargets(uint32 AttachmentCount); // NEW: GPU-based kinematic (P1)
-    void DispatchFinalize(uint32 ParticleCount);                  // NEW: Velocity finalization
+    void DispatchComputeKinematicTargets(uint32 AttachmentCount);
+    void DispatchFinalize(uint32 ParticleCount);
     void DispatchClearNormals(uint32 ParticleCount);
     void DispatchUpdateNormals(uint32 TriangleCount);
     void DispatchNormalizeNormals(uint32 ParticleCount);
-    void DispatchCollisionSDF(uint32 ParticleCount);         // NEW: SDF collision solver
-    void DispatchEdgeCollisionSDF(uint32 EdgeCollisionCount); // NEW: Edge-based SDF collision
+    void DispatchCollisionSDF(uint32 ParticleCount);
+    void DispatchEdgeCollisionSDF(uint32 EdgeCollisionCount);
     void DispatchNormalInterpolation(uint32 RenderVertexCount);  // NEW: Normal interpolation for render mesh
 
-    void ClearAccumulationBuffers(uint32 ParticleCount);
-    // void UpdateConstantBuffers(float DeltaTime);
-    void UpdateFrameConstants(float DeltaTime);            // NEW: P2 optimization
-    void UpdateIterationConstants(int32 CurrentIteration); // NEW: P2 optimization
+    void UpdateFrameConstants(float DeltaTime);
+    void UpdateIterationConstants(int32 CurrentIteration);
 
     bool CreateGPUResources();
     bool LoadComputeShaders();
@@ -174,7 +169,6 @@ private:
     ID3D11ComputeShader *BendConstraintSolverCS;
     ID3D11ComputeShader *AreaConstraintSolverCS; // NEW: Area constraint solver
     ID3D11ComputeShader *ApplyDeltasCS;
-    ID3D11ComputeShader *ApplyKinematicTargetsCS;
     ID3D11ComputeShader *ComputeKinematicTargetsCS; // NEW: GPU-based kinematic (P1)
     ID3D11ComputeShader *FinalizeCS;                // NEW: Velocity finalization shader
     ID3D11ComputeShader *ClearNormalsCS;
@@ -271,7 +265,6 @@ private:
     uint32 UsedParticleCount;
     uint32 UsedConstraintCount;
     uint32 UsedBendConstraintCount;
-    uint32 UsedKinematicTargetCount;
     uint32 UsedTriangleCount;
     uint32 UsedInstanceCount;
     uint32 UsedAttachmentCount;                  // NEW: For GPU-based kinematic targets (P1)
