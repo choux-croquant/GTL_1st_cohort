@@ -926,7 +926,7 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
 
     // Apply kinematic constraints (NEW: GPU-based computation - P1 optimization)
     // Use GPU-based kinematic target computation if available
-    if (ComputeKinematicTargetsCS && AttachmentDataSRV && ComponentTransformSRV && UsedAttachmentCount > 0)
+    if (ComputeKinematicTargetsCS && AttachmentDataSRV && UsedAttachmentCount > 0)
     {
         // GPU-based method - use attachment count from BuildKinematicAttachmentData
         DispatchComputeKinematicTargets(UsedAttachmentCount);
@@ -1736,7 +1736,7 @@ void FClothBatchedSolver::DispatchComputeKinematicTargets(uint32 AttachmentCount
     if (!Graphics || !Graphics->DeviceContext || !ComputeKinematicTargetsCS || AttachmentCount == 0)
         return;
 
-    if (!AttachmentDataSRV || !ComponentTransformSRV)
+    if (!AttachmentDataSRV)
         return;
 
     // Set shader

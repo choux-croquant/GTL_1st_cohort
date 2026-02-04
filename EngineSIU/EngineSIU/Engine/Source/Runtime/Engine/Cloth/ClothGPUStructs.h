@@ -146,9 +146,12 @@ struct FClothKinematicTargetGPU
  */
 struct FKinematicAttachmentGPU
 {
+    uint32 Type;
     uint32 ComponentIndex; // 4 bytes - Index into ComponentTransforms buffer
     uint32 ParticleIndex;  // 4 bytes - Target particle index in batch
     float Stiffness;       // 4 bytes - Attachment strength (0-1)
+
+    FVector TargetPosition;
     float AttachDistance;  // 4 bytes - Max distance for LRA (0 = hard kinematic)
 
     FVector LocalOffset; // 12 bytes - Local space offset from component
@@ -223,7 +226,7 @@ static_assert(sizeof(FClothDistanceConstraintGPU) == 32, "FClothConstraintGPU mu
 static_assert(sizeof(FClothBendConstraintGPU) == 32, "FClothBendConstraintGPU must be 32 bytes");
 static_assert(sizeof(FClothAreaConstraintGPU) == 48, "FClothAreaConstraintGPU must be 48 bytes");
 static_assert(sizeof(FClothKinematicTargetGPU) == 32, "FClothKinematicTargetGPU must be 32 bytes");
-static_assert(sizeof(FKinematicAttachmentGPU) == 32, "FKinematicAttachmentGPU must be 32 bytes");
+static_assert(sizeof(FKinematicAttachmentGPU) == 48, "FKinematicAttachmentGPU must be 32 bytes");
 static_assert(sizeof(FClothCollisionSphereGPU) == 16, "FClothCollisionSphereGPU must be 16 bytes");
 static_assert(sizeof(FClothCollisionCapsuleGPU) == 32, "FClothCollisionCapsuleGPU must be 32 bytes");
 static_assert(sizeof(FClothColliderGPU) == 64, "FClothColliderGPU must be 64 bytes");

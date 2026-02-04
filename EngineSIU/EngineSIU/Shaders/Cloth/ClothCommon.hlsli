@@ -147,9 +147,12 @@ struct FKinematicTarget
  */
 struct FKinematicAttachment
 {
+    uint Type;
     uint ComponentIndex;   // Index into ComponentTransforms buffer (deduplication!)
     uint ParticleIndex;    // Target particle index in batch
     float Stiffness;       // Attachment strength (0-1)
+
+    float3 TargetPosition;
     float AttachDistance;  // Max distance for LRA (0 = hard kinematic)
     
     float3 LocalOffset;    // Local space offset from component

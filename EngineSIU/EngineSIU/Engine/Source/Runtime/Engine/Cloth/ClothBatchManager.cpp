@@ -769,34 +769,48 @@ void FClothBatchManager::BuildKinematicAttachmentData()
 
         for (const FClothAttachmentData &attachment : attachments)
         {
-            if (!attachment.DriverComponent)
-                continue;
+            if (attachment.Type == EClothAttachmentType::ActorTransform) {
+                if (!attachment.DriverComponent)
+                    continue;
+                // Get or create component index (deduplication!)
+                uint32 *ComponentIndexPtr = ComponentIndexMap.Find(attachment.DriverComponent);
+                uint32 ComponentIndex;
 
-            // Get or create component index (deduplication!)
-            uint32 *ComponentIndexPtr = ComponentIndexMap.Find(attachment.DriverComponent);
-            uint32 ComponentIndex;
+                if (!ComponentIndexPtr)
+                {
+                    ComponentIndex = UniqueComponents.Num();
+                    ComponentIndexMap.Add(attachment.DriverComponent, ComponentIndex);
+                    UniqueComponents.Add(attachment.DriverComponent);
+                }
+                else
+                {
+                    ComponentIndex = *ComponentIndexPtr;
+                }
 
-            if (!ComponentIndexPtr)
-            {
-                ComponentIndex = UniqueComponents.Num();
-                ComponentIndexMap.Add(attachment.DriverComponent, ComponentIndex);
-                UniqueComponents.Add(attachment.DriverComponent);
+                // Build GPU attachment data
+                FKinematicAttachmentGPU gpuAttachment;
+                gpuAttachment.Type = 1;
+                gpuAttachment.ComponentIndex = ComponentIndex;
+                gpuAttachment.ParticleIndex = attachment.ClothVertexIndex + metadata.ParticleOffset;
+                gpuAttachment.Stiffness = attachment.Stiffness;
+                gpuAttachment.AttachDistance = attachment.AttachDistance;
+                gpuAttachment.LocalOffset = attachment.LocalOffset.GetTranslation();
+                gpuAttachment.Padding = 0.0f;
+
+                attachmentData.Add(gpuAttachment);
             }
-            else
-            {
-                ComponentIndex = *ComponentIndexPtr;
+            else if (attachment.Type == EClothAttachmentType::WorldPosition) {
+                // Build GPU attachment data
+                FKinematicAttachmentGPU gpuAttachment;
+                gpuAttachment.Type = 0;
+                gpuAttachment.ParticleIndex = attachment.ClothVertexIndex + metadata.ParticleOffset;
+                gpuAttachment.Stiffness = attachment.Stiffness;
+                gpuAttachment.AttachDistance = attachment.AttachDistance;
+                gpuAttachment.TargetPosition = attachment.WorldPosition;
+                gpuAttachment.Padding = 0.0f;
+
+                attachmentData.Add(gpuAttachment);
             }
-
-            // Build GPU attachment data
-            FKinematicAttachmentGPU gpuAttachment;
-            gpuAttachment.ComponentIndex = ComponentIndex;
-            gpuAttachment.ParticleIndex = attachment.ClothVertexIndex + metadata.ParticleOffset;
-            gpuAttachment.Stiffness = attachment.Stiffness;
-            gpuAttachment.AttachDistance = attachment.AttachDistance;
-            gpuAttachment.LocalOffset = attachment.LocalOffset.GetTranslation();
-            gpuAttachment.Padding = 0.0f;
-
-            attachmentData.Add(gpuAttachment);
         }
     }
 
