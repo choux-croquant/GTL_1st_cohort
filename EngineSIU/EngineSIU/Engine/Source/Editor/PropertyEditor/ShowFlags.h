@@ -21,6 +21,7 @@ namespace EEngineShowFlags
         SF_SkeletalMesh = 1ULL << 10,
         SF_Particles = 1ULL << 11,
         SF_DOF = 1ULL << 12,
+        SF_ClothDebug = 1ULL << 13,
     };
 }
 
