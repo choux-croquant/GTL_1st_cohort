@@ -9,6 +9,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/Asset/StaticMeshAsset.h"
 #include "UObject/ObjectFactory.h"
+#include "Engine/UserInterface/Console.h"
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -454,31 +455,47 @@ UClothAsset* FClothAssetGenerator::PackageIntoAsset(
     }
     
     // TEST
-    FClothAttachmentData attachment;
+    
+    FClothAttachmentData attachment1;
+    attachment1.ClothVertexIndex = 0;
+    attachment1.Type = EClothAttachmentType::WorldPosition;
+    attachment1.Stiffness = 1.0f;
+    attachment1.bIsKinematic = true;
+    attachment1.AttachDistance = 0.0f;
+    attachment1.WorldPosition = FVector(-10.f, 0.0f, 0.0f);
+    asset->AddAttachmentData(attachment1);
 
-    attachment.ClothVertexIndex = 0;
-    attachment.Type = EClothAttachmentType::WorldPosition;
-    attachment.LocalOffset = FTransform(FVector(0.0f, 0.0f, 0.0f));
-    attachment.Stiffness = 1.0f;
-    attachment.bIsKinematic = true;
-    attachment.AttachDistance = 0.0f;
-    asset->AddAttachmentData(attachment);
-
+    // Attach second endpoint
     FClothAttachmentData attachment2;
-
-    attachment2.ClothVertexIndex = 30;
+    attachment2.ClothVertexIndex = 100;
     attachment2.Type = EClothAttachmentType::WorldPosition;
-    attachment2.LocalOffset = FTransform(FVector(15.0f, 0.0f, 0.0f));
     attachment2.Stiffness = 1.0f;
     attachment2.bIsKinematic = true;
     attachment2.AttachDistance = 0.0f;
+    attachment2.WorldPosition = FVector(10.f, 0.0f, 0.0f);
     asset->AddAttachmentData(attachment2);
+    ///
+    ///
+    /// 
 
     // Set source mesh reference
     asset->SourceMesh = SourceMesh;
     
-    // TODO: Store render mesh data and skinning weights
-    // This requires extending UClothAsset with new fields
+    // CRITICAL FIX: Store render mesh data and skinning weights
+    // This populates the render mesh arrays that are checked in ClothBatchManager::AddInstance()
+    asset->bUseRenderMesh = true;
+    asset->RenderRestPositions = RenderMesh.Positions;
+    asset->RenderNormals = RenderMesh.Normals;
+    asset->RenderUVs = RenderMesh.UVs;
+    asset->RenderIndices = RenderMesh.Indices;
+    asset->SkinningWeights = SkinningData.Weights;
+    
+    // Store generation metadata
+    asset->OriginalVertexCount = RenderMesh.GetVertexCount();
+    asset->DecimatedVertexCount = SimMesh.GetVertexCount();
+    
+    UE_LOG(ELogLevel::Display, TEXT("ClothAssetGenerator: Packaged asset with render mesh - RenderVerts: %d, SimVerts: %d, SkinningWeights: %d"),
+           asset->RenderRestPositions.Num(), asset->RestPositions.Num(), asset->SkinningWeights.Num());
     
     return asset;
 }

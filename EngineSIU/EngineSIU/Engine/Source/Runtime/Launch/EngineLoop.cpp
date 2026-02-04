@@ -157,10 +157,10 @@ void FEngineLoop::Tick()
     while (bIsExit == false)
     {
         FProfilerStatsManager::BeginFrame();    // Clear previous frame stats
-        if (GPUTimingManager.IsInitialized())
-        {
-            GPUTimingManager.BeginFrame();      // Start GPU frame timing
-        }
+        //if (GPUTimingManager.IsInitialized())
+        //{
+        //    GPUTimingManager.BeginFrame();      // Start GPU frame timing
+        //}
 
         QueryPerformanceCounter(&StartTime);
 
@@ -194,10 +194,10 @@ void FEngineLoop::Tick()
         // Pending 처리된 오브젝트 제거
         GUObjectArray.ProcessPendingDestroyObjects();
 
-        if (GPUTimingManager.IsInitialized())
-        {
-            GPUTimingManager.EndFrame();        // End GPU frame timing
-        }
+        //if (GPUTimingManager.IsInitialized())
+        //{
+        //    GPUTimingManager.EndFrame();        // End GPU frame timing
+        //}
 
         FLuaScriptManager::Get().HotReloadLuaScript();
         FSoundManager::GetInstance().Update();
