@@ -147,7 +147,7 @@ void FClothDebugRenderPass::CleanUpRender(const std::shared_ptr<FEditorViewportC
 
 void FClothDebugRenderPass::CreateResource()
 {
-    const int32 MaxClothVerts = 65536;
+    const int32 MaxClothVerts = 655360;
     TArray<FVector2D> DummyUVs;
     DummyUVs.SetNum(MaxClothVerts);
     for (int32 i = 0; i < MaxClothVerts; ++i)

@@ -46,6 +46,7 @@ class FEditorRenderPass;
 class FDepthPrePass;
 class FTileLightCullingPass;
 class FClothDebugRenderPass;
+class FClothRenderPass;
 class FGPUTimingManager;
 
 class FRenderer
@@ -114,6 +115,7 @@ public:
     FDepthPrePass *DepthPrePass = nullptr;
     FTileLightCullingPass *TileLightCullingPass = nullptr;
     FClothDebugRenderPass *ClothDebugRenderPass = nullptr;
+    FClothRenderPass *ClothRenderPass = nullptr;  // NEW: Production cloth rendering
 
     FPostProcessRenderPass *PostProcessRenderPass = nullptr;
 

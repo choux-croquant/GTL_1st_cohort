@@ -17,6 +17,7 @@
 #include "DepthPrePass.h"
 #include "TileLightCullingPass.h"
 #include "ClothDebugRenderPass.h"
+#include "ClothRenderPass.h"
 #include "TranslucentRenderPass.h"
 
 #include "CompositingPass.h"
@@ -64,6 +65,7 @@ void FRenderer::Initialize(FGraphicsDevice *InGraphics, FDXDBufferManager *InBuf
     DepthPrePass = AddRenderPass<FDepthPrePass>();
     TileLightCullingPass = AddRenderPass<FTileLightCullingPass>();
     ClothDebugRenderPass = AddRenderPass<FClothDebugRenderPass>();
+    ClothRenderPass = AddRenderPass<FClothRenderPass>();  // NEW: Production cloth rendering
 
     PostProcessRenderPass = AddRenderPass<FPostProcessRenderPass>();
 
@@ -383,11 +385,19 @@ void FRenderer::RenderOpaque(const std::shared_ptr<FEditorViewportClient> &Viewp
             OpaqueRenderPass->Render(Viewport);
         }
 
-        // Render cloth simulation meshes
-        if (ClothDebugRenderPass)
+        // NEW: Render cloth with production rendering (if available)
+        if (ClothRenderPass)
         {
-            QUICK_SCOPE_CYCLE_COUNTER(ClothPass_CPU)
-            QUICK_GPU_SCOPE_CYCLE_COUNTER(ClothPass_GPU, *GPUTimingManager)
+            QUICK_SCOPE_CYCLE_COUNTER(ClothProductionPass_CPU)
+            QUICK_GPU_SCOPE_CYCLE_COUNTER(ClothProductionPass_GPU, *GPUTimingManager)
+            ClothRenderPass->Render(Viewport);
+        }
+        
+        // Render cloth debug visualization (wireframe overlay)
+        if (ShowFlag & EEngineShowFlags::SF_ClothDebug && ClothDebugRenderPass)
+        {
+            QUICK_SCOPE_CYCLE_COUNTER(ClothDebugPass_CPU)
+            QUICK_GPU_SCOPE_CYCLE_COUNTER(ClothDebugPass_GPU, *GPUTimingManager)
             ClothDebugRenderPass->Render(Viewport);
         }
     }
