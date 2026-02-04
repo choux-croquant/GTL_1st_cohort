@@ -285,11 +285,6 @@ struct FClothAttachmentData
         : ClothVertexIndex(0), Type(EClothAttachmentType::WorldPosition), DriverComponent(nullptr), DriverActor(nullptr), BoneName(FName()), BoneIndex(-1), LocalOffset(FTransform::Identity), WorldPosition(FVector::ZeroVector), Stiffness(1.0f), bIsKinematic(true), AttachDistance(0.0f)
     {
     }
-
-    // NOTE: World position calculation is performed by the simulation system
-    // in ClothBatchManager::UpdateKinematicTargets() where all types are fully defined.
-    // The simulation system reads DriverComponent/DriverActor/LocalOffset and resolves
-    // the world position automatically each frame.
 };
 
 /**

@@ -585,20 +585,14 @@ void FClothBatchManager::UpdateInstanceParameters(FClothInstanceHandle *Instance
 
 void FClothBatchManager::Update(float DeltaTime)
 {
-    QUICK_SCOPE_CYCLE_COUNTER(ClothBatch_Update);
-
     if (!bIsInitialized || Instances.Num() == 0)
         return;
 
-    // Update kinematic targets (NEW: GPU-based - P1 optimization)
     {
-        QUICK_SCOPE_CYCLE_COUNTER(ClothBatch_UpdateKinematicTargets_GPU);
         UpdateKinematicTargetsGPU(DeltaTime);
     }
 
-    // Simulate using fixed or variable timestep
     {
-        QUICK_SCOPE_CYCLE_COUNTER(ClothBatch_Simulate);
         if (FixedTimestepState.bUseFixedTimestep)
         {
             SimulateFixedTimestep(DeltaTime);
@@ -755,81 +749,6 @@ void FClothBatchManager::UpdateInstanceParameterBuffer()
     if (params.Num() > 0)
     {
         BatchedSolver->UploadInstanceParameters(params);
-    }
-}
-
-void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
-{
-    if (!BatchedSolver || TotalKinematicTargetCount == 0)
-        return;
-
-    // SOLVER-DRIVEN ATTACHMENT UPDATE FLOW
-    // This method is called by the simulation system each frame.
-    // It reads attachment definitions from cloth assets, resolves world positions,
-    // and uploads kinematic targets to the GPU.
-    // Actors no longer need to manually update attachments.
-
-    TArray<FClothKinematicTargetGPU> allTargets;
-    allTargets.Reserve(TotalKinematicTargetCount);
-
-    for (FClothInstanceHandle *Handle : Instances)
-    {
-        if (!Handle || !Handle->IsActive())
-            continue;
-
-        const FClothInstanceMetadata &metadata = Handle->GetMetadata();
-        UClothComponent *owner = Handle->GetOwnerComponent();
-
-        if (!owner || !owner->GetClothAsset())
-            continue;
-
-        // Read attachment data directly from the cloth asset
-        // This is the single source of truth for attachment configuration
-        const TArray<FClothAttachmentData> &attachments = owner->GetClothAsset()->AttachmentsData;
-
-        if (attachments.Num() == 0)
-            continue;
-
-        // For each attachment, resolve world position and create GPU target
-        for (const FClothAttachmentData &attachment : attachments)
-        {
-            FClothKinematicTargetGPU target;
-
-            // Convert local particle index to global batch index
-            target.ParticleIndex = attachment.ClothVertexIndex + metadata.ParticleOffset;
-
-            // AUTOMATIC WORLD POSITION RESOLUTION
-            // Resolve world position based on driver component reference
-            FVector worldPosition = FVector::ZeroVector;
-
-            // Component-based attachment (preferred and most reliable)
-            if (attachment.DriverComponent != nullptr)
-            {
-                FTransform driverTransform = attachment.DriverComponent->GetComponentTransform();
-                FTransform attachmentWorldTransform = driverTransform * attachment.LocalOffset;
-                worldPosition = attachmentWorldTransform.GetTranslation();
-            }
-            else
-            {
-                // Fallback to manually-set WorldPosition (for static attachments or backward compatibility)
-                // Actor-based attachments should set DriverComponent instead
-                worldPosition = attachment.WorldPosition;
-            }
-
-            target.TargetPosition = worldPosition;
-            target.Stiffness = attachment.Stiffness;
-            target.AttachDistance = attachment.AttachDistance; // CRITICAL FIX: Initialize AttachDistance field
-            target.Padding0 = 0.0f;
-            target.Padding1 = 0.0f;
-
-            allTargets.Add(target);
-        }
-    }
-
-    // Upload all kinematic targets to GPU in one batch
-    if (allTargets.Num() > 0)
-    {
-        BatchedSolver->UploadKinematicTargets(allTargets, 0);
     }
 }
 

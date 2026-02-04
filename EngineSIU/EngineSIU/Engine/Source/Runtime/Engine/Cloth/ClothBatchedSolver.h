@@ -74,9 +74,6 @@ public:
     void UploadEdgeCollisionData(const TArray<FClothEdgeCollisionConstraintGPU> &EdgeCollisions,
                                  uint32 DestOffset);
 
-    void UploadKinematicTargets(const TArray<FClothKinematicTargetGPU> &Targets,
-                                uint32 DestOffset);
-
     void UploadInstanceParameters(const TArray<FClothInstanceParameters> &Parameters);
 
     void UploadIndexData(const TArray<uint32> &Indices, uint32 DestOffset);

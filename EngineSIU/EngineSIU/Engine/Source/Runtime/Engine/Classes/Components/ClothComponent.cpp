@@ -42,9 +42,6 @@ void UClothComponent::TickComponent(float DeltaTime)
 {
     Super::TickComponent(DeltaTime);
 
-    // Note: We NO LONGER call solver here!
-    // ClothWorld::Update() handles all simulation
-
     if (!bIsSimulating)
         return;
 
@@ -58,23 +55,12 @@ void UClothComponent::TickComponent(float DeltaTime)
             // TODO: Add force support to batched system
             AccumulatedForce = FVector::ZeroVector;
         }
-
-        // NEW ATTACHMENT PATTERN: No manual updates needed!
-        // Attachments are automatically resolved by ClothBatchManager::UpdateKinematicTargets()
-        // which reads attachment data directly from the ClothAsset each frame.
-        // The simulation system owns the attachment update flow.
     }
 }
 
 void UClothComponent::BeginPlay()
 {
     Super::BeginPlay();
-
-    // Auto-start simulation
-   /* if (ClothAsset)
-    {
-        StartSimulation();
-    }*/
 }
 
 UObject* UClothComponent::Duplicate(UObject* InOuter)
@@ -101,8 +87,6 @@ void UClothComponent::SetClothAsset(UClothAsset *InAsset)
             ClothInstanceHandle = nullptr;
         }
     }
-
-    // Registration will happen in StartSimulation() based on detected mode
 }
 
 void UClothComponent::StartSimulation()

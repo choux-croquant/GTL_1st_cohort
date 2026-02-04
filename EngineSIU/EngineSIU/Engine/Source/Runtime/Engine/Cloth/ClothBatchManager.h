@@ -76,9 +76,7 @@ private:
     void CompactBuffers(); // Remove gaps from deleted instances
     void UpdateGPUBuffers();
     void UpdateInstanceParameterBuffer();
-    void UpdateKinematicTargets(float DeltaTime);
 
-    // NEW: GPU-based kinematic target methods
     void BuildKinematicAttachmentData();
     void UpdateKinematicTargetsGPU(float DeltaTime);
 
