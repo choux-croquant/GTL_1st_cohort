@@ -15,6 +15,7 @@
 #include "ClothGPUStructs.h"
 #include "ClothBatchTypes.h"
 #include "ShaderConstants.h"
+#include "Cloth/ClothAssetGenerator.h"
 
 // Forward declarations
 class FGraphicsDevice;
@@ -48,6 +49,9 @@ public:
                          uint32 MaxInstances,
                          uint32 MaxAreaConstraints = 0,
                          uint32 MaxEdgeCollisions = 0);
+    
+    // NEW: Production rendering buffer allocation (called on-demand)
+    bool AllocateRenderBuffers(uint32 MaxRenderVertices, uint32 MaxRenderIndices);
 
     // Simulation
     void Simulate(float DeltaTime);
@@ -81,8 +85,26 @@ public:
     void UploadAttachmentData(const TArray<FKinematicAttachmentGPU> &Attachments);
     void UploadComponentTransforms(const TArray<FMatrix> &Transforms);
 
+    // NEW: Production rendering - render mesh data upload
+    void UploadRenderMeshData(
+        const TArray<FVector>& RenderPositions,
+        const TArray<FVector>& RenderNormals,
+        const TArray<FVector2D>& RenderUVs,
+        const TArray<uint32>& RenderIndices,
+        uint32 RenderVertexOffset,
+        uint32 RenderIndexOffset);
+    
+    void UploadSkinningWeights(
+        const TArray<struct FClothSkinningWeight>& Weights,
+        uint32 RenderVertexOffset);
+
     // Index buffer access
     ID3D11Buffer *GetUnifiedIndexBuffer() const { return UnifiedIndexBuffer; }
+    ID3D11Buffer *GetUnifiedRenderIndexBuffer() const { return UnifiedRenderIndexBuffer; }
+    
+    // NEW: Production rendering - buffer access for rendering
+    ID3D11ShaderResourceView* GetSkinningWeightBufferSRV() const { return SkinningWeightsSRV; }
+    ID3D11Buffer* GetUnifiedRenderVertexBuffer() const { return UnifiedRenderVertexBuffer; }
 
     // Configuration
     void SetConfig(const FClothConfig &InConfig);
@@ -187,10 +209,12 @@ private:
     ID3D11Buffer *AttachmentDataBuffer;     // Static attachment data
     ID3D11Buffer *ComponentTransformBuffer; // Dynamic component transforms
     
-    // NEW: Render mesh buffers (for render/sim mesh separation)
-    ID3D11Buffer *RenderNormalsBuffer;              // Interpolated render mesh normals
-    ID3D11Buffer *SkinningWeightsBuffer;            // Render → Sim vertex mapping weights
-    ID3D11Buffer *RenderPositionsBuffer;            // Skinned render mesh positions (optional)
+    // NEW: Production rendering buffers (for high-res render mesh with GPU skinning)
+    ID3D11Buffer *UnifiedRenderVertexBuffer;        // Unified render vertex buffer (position, normal, UV)
+    ID3D11Buffer *UnifiedRenderIndexBuffer;         // Unified render index buffer
+    ID3D11Buffer *UnifiedSkinningWeightBuffer;      // Unified skinning weight buffer (render → sim mapping)
+    ID3D11Buffer *RenderNormalsBuffer;              // Interpolated render mesh normals (optional, for compute-based skinning)
+    ID3D11Buffer *RenderPositionsBuffer;            // Skinned render mesh positions (optional, for compute-based skinning)
 
     // UAVs and SRVs
     ID3D11UnorderedAccessView *UnifiedPositionUAV;
@@ -219,11 +243,13 @@ private:
     ID3D11ShaderResourceView *AttachmentDataSRV;
     ID3D11ShaderResourceView *ComponentTransformSRV;
     
-    // NEW: Render mesh UAVs/SRVs (for render/sim mesh separation)
-    ID3D11UnorderedAccessView *RenderNormalsUAV;
-    ID3D11ShaderResourceView *RenderNormalsSRV;
+    // NEW: Production rendering UAVs/SRVs
+    ID3D11ShaderResourceView *UnifiedRenderVertexSRV;
+    ID3D11ShaderResourceView *UnifiedRenderIndexSRV;
     ID3D11ShaderResourceView *SkinningWeightsSRV;
-    ID3D11ShaderResourceView *RenderPositionsSRV;
+    ID3D11UnorderedAccessView *RenderNormalsUAV;     // For compute-based skinning (optional)
+    ID3D11ShaderResourceView *RenderNormalsSRV;      // For compute-based skinning (optional)
+    ID3D11ShaderResourceView *RenderPositionsSRV;    // For compute-based skinning (optional)
 
     // Per-instance parameter buffer
     ID3D11Buffer *InstanceParameterBuffer;
@@ -242,7 +268,8 @@ private:
     uint32 AllocatedInstanceCapacity;
     uint32 AllocatedAreaConstraintCapacity;      // NEW: Area constraint capacity
     uint32 AllocatedEdgeCollisionCapacity;       // NEW: Edge collision capacity
-    uint32 AllocatedRenderVertexCapacity;        // NEW: Render vertex capacity (for render mesh)
+    uint32 AllocatedRenderVertexCapacity;        // NEW: Render vertex capacity (for production rendering)
+    uint32 AllocatedRenderIndexCapacity;         // NEW: Render index capacity (for production rendering)
 
     uint32 UsedParticleCount;
     uint32 UsedConstraintCount;
@@ -253,7 +280,8 @@ private:
     uint32 UsedAttachmentCount;                  // NEW: For GPU-based kinematic targets (P1)
     uint32 UsedAreaConstraintCount;              // NEW: Area constraint count
     uint32 UsedEdgeCollisionCount;               // NEW: Edge collision count
-    uint32 UsedRenderVertexCount;                // NEW: Render vertex count (for render mesh)
+    uint32 UsedRenderVertexCount;                // NEW: Render vertex count (for production rendering)
+    uint32 UsedRenderIndexCount;                 // NEW: Render index count (for production rendering)
 
     bool bInitialized;
 

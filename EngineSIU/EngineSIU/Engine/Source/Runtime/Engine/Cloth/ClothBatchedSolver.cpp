@@ -5,6 +5,8 @@
 
 #include "ClothBatchedSolver.h"
 #include "ClothCollisionManager.h"
+#include "ClothGPURenderStructs.h"
+#include "ClothSkinningWeightGenerator.h"
 #include "Windows/D3D11RHI/GraphicDevice.h"
 #include "Windows/D3D11RHI/DXDBufferManager.h"
 #include "Windows/D3D11RHI/DXDShaderManager.h"
@@ -20,7 +22,7 @@
     }
 
 FClothBatchedSolver::FClothBatchedSolver()
-    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), IntegrateCS(nullptr), ConstraintSolverCS(nullptr), BendConstraintSolverCS(nullptr), AreaConstraintSolverCS(nullptr), ApplyDeltasCS(nullptr), ApplyKinematicTargetsCS(nullptr), ComputeKinematicTargetsCS(nullptr), FinalizeCS(nullptr), ClearNormalsCS(nullptr), UpdateNormalsCS(nullptr), NormalizeNormalsCS(nullptr), CollisionSolverCS(nullptr), EdgeCollisionSolverCS(nullptr), CollisionManager(nullptr), BatchSimConstantBuffer(nullptr), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), AllocatedAreaConstraintCapacity(0), AllocatedEdgeCollisionCapacity(0), UsedParticleCount(0), UsedConstraintCount(0), UsedBendConstraintCount(0), UsedKinematicTargetCount(0), UsedTriangleCount(0), UsedInstanceCount(0), UsedAttachmentCount(0), UsedAreaConstraintCount(0), UsedEdgeCollisionCount(0), bInitialized(false), AccumulatedTime(0.0f)
+    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), IntegrateCS(nullptr), ConstraintSolverCS(nullptr), BendConstraintSolverCS(nullptr), AreaConstraintSolverCS(nullptr), ApplyDeltasCS(nullptr), ApplyKinematicTargetsCS(nullptr), ComputeKinematicTargetsCS(nullptr), FinalizeCS(nullptr), ClearNormalsCS(nullptr), UpdateNormalsCS(nullptr), NormalizeNormalsCS(nullptr), CollisionSolverCS(nullptr), EdgeCollisionSolverCS(nullptr), CollisionManager(nullptr), BatchSimConstantBuffer(nullptr), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), AllocatedAreaConstraintCapacity(0), AllocatedEdgeCollisionCapacity(0), AllocatedRenderVertexCapacity(0), AllocatedRenderIndexCapacity(0), UsedParticleCount(0), UsedConstraintCount(0), UsedBendConstraintCount(0), UsedKinematicTargetCount(0), UsedTriangleCount(0), UsedInstanceCount(0), UsedAttachmentCount(0), UsedAreaConstraintCount(0), UsedEdgeCollisionCount(0), UsedRenderVertexCount(0), UsedRenderIndexCount(0), bInitialized(false), AccumulatedTime(0.0f)
 {
     // Initialize all buffer pointers to nullptr (Velvet pattern - single working buffer)
     UnifiedPositionBuffer = nullptr;
@@ -69,6 +71,20 @@ FClothBatchedSolver::FClothBatchedSolver()
     AttachmentDataSRV = nullptr;
     ComponentTransformBuffer = nullptr;
     ComponentTransformSRV = nullptr;
+    
+    // NEW: Production rendering buffers
+    UnifiedRenderVertexBuffer = nullptr;
+    UnifiedRenderIndexBuffer = nullptr;
+    UnifiedSkinningWeightBuffer = nullptr;
+    RenderNormalsBuffer = nullptr;
+    RenderPositionsBuffer = nullptr;
+    
+    UnifiedRenderVertexSRV = nullptr;
+    UnifiedRenderIndexSRV = nullptr;
+    SkinningWeightsSRV = nullptr;
+    RenderNormalsUAV = nullptr;
+    RenderNormalsSRV = nullptr;
+    RenderPositionsSRV = nullptr;
 }
 
 FClothBatchedSolver::~FClothBatchedSolver()
@@ -185,6 +201,20 @@ void FClothBatchedSolver::Release()
     SAFE_RELEASE(InstanceParameterSRV);
 
     SAFE_RELEASE(BatchSimConstantBuffer);
+    
+    // NEW: Release production rendering buffers
+    SAFE_RELEASE(UnifiedRenderVertexBuffer);
+    SAFE_RELEASE(UnifiedRenderIndexBuffer);
+    SAFE_RELEASE(UnifiedSkinningWeightBuffer);
+    SAFE_RELEASE(RenderNormalsBuffer);
+    SAFE_RELEASE(RenderPositionsBuffer);
+    
+    SAFE_RELEASE(UnifiedRenderVertexSRV);
+    SAFE_RELEASE(UnifiedRenderIndexSRV);
+    SAFE_RELEASE(SkinningWeightsSRV);
+    SAFE_RELEASE(RenderNormalsUAV);
+    SAFE_RELEASE(RenderNormalsSRV);
+    SAFE_RELEASE(RenderPositionsSRV);
 
     bInitialized = false;
 
@@ -678,11 +708,126 @@ bool FClothBatchedSolver::AllocateBuffers(uint32 MaxParticles, uint32 MaxConstra
         return false;
     }
 
+    // NEW: Allocate production rendering buffers (optional - only if render mesh capacity specified)
+    // These will be allocated on-demand when first render mesh is added
+    AllocatedRenderVertexCapacity = 0;
+    AllocatedRenderIndexCapacity = 0;
+    UsedRenderVertexCount = 0;
+    UsedRenderIndexCount = 0;
+
     // Mark as fully initialized now that both shaders and buffers are ready
     bInitialized = true;
 
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Allocated buffers - Particles: %d, Constraints: %d, Instances: %d"),
            MaxParticles, MaxConstraints, MaxInstances);
+
+    return true;
+}
+
+// NEW: Allocate render mesh buffers on-demand
+bool FClothBatchedSolver::AllocateRenderBuffers(uint32 MaxRenderVertices, uint32 MaxRenderIndices)
+{
+    if (!Graphics || !Graphics->Device)
+        return false;
+
+    // Store capacities
+    AllocatedRenderVertexCapacity = MaxRenderVertices;
+    AllocatedRenderIndexCapacity = MaxRenderIndices;
+
+    HRESULT hr;
+    D3D11_BUFFER_DESC bufferDesc = {};
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+
+    // Create unified render vertex buffer (position, normal, UV)
+    // CRITICAL FIX: Cannot use D3D11_RESOURCE_MISC_BUFFER_STRUCTURED with D3D11_BIND_VERTEX_BUFFER
+    // Use regular vertex buffer instead
+    if (MaxRenderVertices > 0)
+    {
+        bufferDesc = {};
+        bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+        bufferDesc.ByteWidth = sizeof(FClothRenderVertex) * MaxRenderVertices;
+        bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;  // Only vertex buffer, no SRV needed for now
+        bufferDesc.StructureByteStride = 0;  // Not a structured buffer
+        bufferDesc.MiscFlags = 0;  // No structured buffer flag
+
+        hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &UnifiedRenderVertexBuffer);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create render vertex buffer (HRESULT: 0x%08X)"), hr);
+            return false;
+        }
+
+        // Note: No SRV created for vertex buffer - accessed via Input Assembler stage
+        UnifiedRenderVertexSRV = nullptr;
+        
+        UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Created render vertex buffer - Vertices: %u, Size: %u bytes"),
+               MaxRenderVertices, bufferDesc.ByteWidth);
+    }
+
+    // Create unified render index buffer
+    if (MaxRenderIndices > 0)
+    {
+        bufferDesc = {};
+        bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+        bufferDesc.ByteWidth = sizeof(uint32) * MaxRenderIndices;
+        bufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER | D3D11_BIND_SHADER_RESOURCE;
+        bufferDesc.StructureByteStride = 0; // Not a structured buffer
+        bufferDesc.MiscFlags = 0;
+
+        hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &UnifiedRenderIndexBuffer);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create render index buffer"));
+            return false;
+        }
+
+        // Create SRV as typed buffer
+        D3D11_SHADER_RESOURCE_VIEW_DESC indexSrvDesc = {};
+        indexSrvDesc.Format = DXGI_FORMAT_R32_UINT;
+        indexSrvDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+        indexSrvDesc.Buffer.FirstElement = 0;
+        indexSrvDesc.Buffer.NumElements = MaxRenderIndices;
+
+        hr = Graphics->Device->CreateShaderResourceView(UnifiedRenderIndexBuffer, &indexSrvDesc, &UnifiedRenderIndexSRV);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create render index SRV"));
+            return false;
+        }
+    }
+
+    // Create unified skinning weight buffer
+    if (MaxRenderVertices > 0)
+    {
+        bufferDesc = {};
+        bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+        bufferDesc.ByteWidth = sizeof(FClothSkinningWeightGPU) * MaxRenderVertices;
+        bufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        bufferDesc.StructureByteStride = sizeof(FClothSkinningWeightGPU);
+        bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+
+        hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &UnifiedSkinningWeightBuffer);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create skinning weight buffer"));
+            return false;
+        }
+
+        srvDesc = {};
+        srvDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+        srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+        srvDesc.Buffer.NumElements = MaxRenderVertices;
+
+        hr = Graphics->Device->CreateShaderResourceView(UnifiedSkinningWeightBuffer, &srvDesc, &SkinningWeightsSRV);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create skinning weight SRV"));
+            return false;
+        }
+    }
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Allocated render buffers - Vertices: %u, Indices: %u"),
+           MaxRenderVertices, MaxRenderIndices);
 
     return true;
 }
@@ -1304,6 +1449,146 @@ void FClothBatchedSolver::UploadComponentTransforms(const TArray<FMatrix> &Trans
         memcpy(msr.pData, Transforms.GetData(), bytesToCopy);
         Graphics->DeviceContext->Unmap(ComponentTransformBuffer, 0);
     }
+}
+
+// NEW: Production rendering - Upload render mesh data
+void FClothBatchedSolver::UploadRenderMeshData(
+    const TArray<FVector>& RenderPositions,
+    const TArray<FVector>& RenderNormals,
+    const TArray<FVector2D>& RenderUVs,
+    const TArray<uint32>& RenderIndices,
+    uint32 RenderVertexOffset,
+    uint32 RenderIndexOffset)
+{
+    if (!Graphics || !Graphics->DeviceContext)
+        return;
+
+    if (RenderPositions.Num() == 0 || RenderIndices.Num() == 0)
+        return;
+
+    uint32 numRenderVertices = RenderPositions.Num();
+    uint32 numRenderIndices = RenderIndices.Num();
+
+    // CRITICAL FIX: Check if buffers need allocation or reallocation
+    uint32 requiredVertexCapacity = RenderVertexOffset + numRenderVertices;
+    uint32 requiredIndexCapacity = RenderIndexOffset + numRenderIndices;
+    
+    bool needsAllocation = !UnifiedRenderVertexBuffer || !UnifiedRenderIndexBuffer;
+    bool needsReallocation = requiredVertexCapacity > AllocatedRenderVertexCapacity ||
+                             requiredIndexCapacity > AllocatedRenderIndexCapacity;
+    
+    if (needsAllocation || needsReallocation)
+    {
+        // Release old buffers if reallocating
+        if (needsReallocation)
+        {
+            SAFE_RELEASE(UnifiedRenderVertexBuffer);
+            SAFE_RELEASE(UnifiedRenderIndexBuffer);
+            SAFE_RELEASE(UnifiedSkinningWeightBuffer);
+            SAFE_RELEASE(UnifiedRenderVertexSRV);
+            SAFE_RELEASE(UnifiedRenderIndexSRV);
+            SAFE_RELEASE(SkinningWeightsSRV);
+            
+            UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Reallocating render buffers - Old: V=%u I=%u, Required: V=%u I=%u"),
+                   AllocatedRenderVertexCapacity, AllocatedRenderIndexCapacity,
+                   requiredVertexCapacity, requiredIndexCapacity);
+        }
+        
+        // Allocate with growth factor for future instances
+        uint32 newVertexCapacity = FMath::Max(requiredVertexCapacity, AllocatedRenderVertexCapacity) * 2;
+        uint32 newIndexCapacity = FMath::Max(requiredIndexCapacity, AllocatedRenderIndexCapacity) * 2;
+        
+        if (!AllocateRenderBuffers(newVertexCapacity, newIndexCapacity))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to allocate render buffers"));
+            return;
+        }
+    }
+
+    // Pack render vertex data
+    TArray<FClothRenderVertex> renderVertices;
+    renderVertices.SetNum(numRenderVertices);
+
+    for (uint32 i = 0; i < numRenderVertices; ++i)
+    {
+        renderVertices[i].Position = (i < static_cast<uint32>(RenderPositions.Num())) ? RenderPositions[i] : FVector::ZeroVector;
+        renderVertices[i].Normal = (i < static_cast<uint32>(RenderNormals.Num())) ? RenderNormals[i] : FVector(0, 0, 1);
+        renderVertices[i].UV = (i < static_cast<uint32>(RenderUVs.Num())) ? RenderUVs[i] : FVector2D::ZeroVector;
+    }
+
+    // Upload render vertices
+    D3D11_BOX destBox;
+    destBox.left = RenderVertexOffset * sizeof(FClothRenderVertex);
+    destBox.right = destBox.left + numRenderVertices * sizeof(FClothRenderVertex);
+    destBox.top = 0;
+    destBox.bottom = 1;
+    destBox.front = 0;
+    destBox.back = 1;
+
+    Graphics->DeviceContext->UpdateSubresource(UnifiedRenderVertexBuffer, 0, &destBox,
+                                               renderVertices.GetData(), 0, 0);
+
+    // Upload render indices
+    destBox.left = RenderIndexOffset * sizeof(uint32);
+    destBox.right = destBox.left + numRenderIndices * sizeof(uint32);
+
+    Graphics->DeviceContext->UpdateSubresource(UnifiedRenderIndexBuffer, 0, &destBox,
+                                               RenderIndices.GetData(), 0, 0);
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Uploaded render mesh - Vertices: %u (offset %u), Indices: %u (offset %u)"),
+           numRenderVertices, RenderVertexOffset, numRenderIndices, RenderIndexOffset);
+}
+
+// NEW: Production rendering - Upload skinning weights
+void FClothBatchedSolver::UploadSkinningWeights(
+    const TArray<FClothSkinningWeight>& Weights,
+    uint32 RenderVertexOffset)
+{
+    if (!Graphics || !Graphics->DeviceContext)
+        return;
+
+    if (Weights.Num() == 0)
+        return;
+
+    if (!UnifiedSkinningWeightBuffer)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Skinning weight buffer not allocated"));
+        return;
+    }
+
+    uint32 numWeights = Weights.Num();
+
+    // Convert CPU skinning weights to GPU format
+    TArray<FClothSkinningWeightGPU> gpuWeights;
+    gpuWeights.SetNum(numWeights);
+
+    for (uint32 i = 0; i < numWeights; ++i)
+    {
+        const FClothSkinningWeight& cpuWeight = Weights[i];
+        FClothSkinningWeightGPU& gpuWeight = gpuWeights[i];
+
+        // Copy indices and weights directly (indices are already global in batched mode)
+        for (int j = 0; j < 4; ++j)
+        {
+            gpuWeight.SimVertexIndices[j] = cpuWeight.SimVertexIndices[j];
+            gpuWeight.Weights[j] = cpuWeight.Weights[j];
+        }
+    }
+
+    // Upload to GPU
+    D3D11_BOX destBox;
+    destBox.left = RenderVertexOffset * sizeof(FClothSkinningWeightGPU);
+    destBox.right = destBox.left + numWeights * sizeof(FClothSkinningWeightGPU);
+    destBox.top = 0;
+    destBox.bottom = 1;
+    destBox.front = 0;
+    destBox.back = 1;
+
+    Graphics->DeviceContext->UpdateSubresource(UnifiedSkinningWeightBuffer, 0, &destBox,
+                                               gpuWeights.GetData(), 0, 0);
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Uploaded skinning weights - Count: %u (offset %u)"),
+           numWeights, RenderVertexOffset);
 }
 
 // Dispatch method implementations

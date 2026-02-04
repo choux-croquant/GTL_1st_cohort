@@ -9,6 +9,7 @@
 #include "Container/Array.h"
 #include "Math/Vector.h"
 #include "ClothSimulationData.h"
+#include "Cloth/ClothAssetGenerator.h"
 
 // Forward declarations
 class FClothBatchManager;
@@ -22,7 +23,6 @@ enum class EClothLODLevel : uint8
     LOD_0 = 0, // High detail   - Close to camera
     LOD_1 = 1, // Medium detail - Medium distance
     LOD_2 = 2, // Low detail    - Far from camera
-    // LOD_3 = 3, // Ultra low     - Very far (optional)
 
     Max
 };
@@ -94,7 +94,7 @@ static_assert(sizeof(FClothInstanceParameters) == 112, "FClothInstanceParameters
  */
 struct FClothInstanceMetadata
 {
-    // Buffer ranges
+    // Simulation mesh buffer ranges
     uint32 ParticleOffset;
     uint32 ParticleCount;
     uint32 ConstraintOffset;
@@ -105,10 +105,16 @@ struct FClothInstanceMetadata
     uint32 KinematicTargetCount;
     uint32 TriangleOffset;
     uint32 TriangleCount;
-    uint32 AreaConstraintOffset;   // NEW: Area constraint offset
-    uint32 AreaConstraintCount;    // NEW: Area constraint count
-    uint32 EdgeCollisionOffset;    // NEW: Edge collision offset
-    uint32 EdgeCollisionCount;     // NEW: Edge collision count
+    uint32 AreaConstraintOffset;   // Area constraint offset
+    uint32 AreaConstraintCount;    // Area constraint count
+    uint32 EdgeCollisionOffset;    // Edge collision offset
+    uint32 EdgeCollisionCount;     // Edge collision count
+
+    // Render mesh buffer ranges (for production rendering)
+    uint32 RenderVertexOffset;     // Offset into unified render vertex buffers
+    uint32 RenderVertexCount;      // Number of render vertices
+    uint32 RenderIndexOffset;      // Offset into unified render index buffer
+    uint32 RenderIndexCount;       // Number of render indices (triangles * 3)
 
     // Instance ID in parameter buffer
     uint32 InstanceParameterIndex;
@@ -118,7 +124,7 @@ struct FClothInstanceMetadata
     EClothLODLevel CurrentLOD;
 
     FClothInstanceMetadata()
-        : ParticleOffset(0), ParticleCount(0), ConstraintOffset(0), ConstraintCount(0), BendConstraintOffset(0), BendConstraintCount(0), KinematicTargetOffset(0), KinematicTargetCount(0), TriangleOffset(0), TriangleCount(0), AreaConstraintOffset(0), AreaConstraintCount(0), EdgeCollisionOffset(0), EdgeCollisionCount(0), InstanceParameterIndex(0), bIsActive(true), CurrentLOD(EClothLODLevel::LOD_0)
+        : ParticleOffset(0), ParticleCount(0), ConstraintOffset(0), ConstraintCount(0), BendConstraintOffset(0), BendConstraintCount(0), KinematicTargetOffset(0), KinematicTargetCount(0), TriangleOffset(0), TriangleCount(0), AreaConstraintOffset(0), AreaConstraintCount(0), EdgeCollisionOffset(0), EdgeCollisionCount(0), RenderVertexOffset(0), RenderVertexCount(0), RenderIndexOffset(0), RenderIndexCount(0), InstanceParameterIndex(0), bIsActive(true), CurrentLOD(EClothLODLevel::LOD_0)
     {
     }
 };
@@ -128,21 +134,29 @@ struct FClothInstanceMetadata
  */
 struct FClothInstanceCreationParams
 {
-    // Asset data (in LOCAL space - will be transformed to world space during upload)
+    // Simulation mesh data (in LOCAL space - will be transformed to world space during upload)
     TArray<FVector> RestPositions;
     TArray<float> InvMasses;
     TArray<uint32> Indices;
     TArray<FClothDistanceConstraint> Constraints;
     TArray<FClothBendConstraint> BendConstraints;
-    TArray<FClothAreaConstraint> AreaConstraints;           // NEW: Area constraints
-    TArray<FClothEdgeCollisionConstraint> EdgeCollisions;   // NEW: Edge collision constraints
+    TArray<FClothAreaConstraint> AreaConstraints;           // Area constraints
+    TArray<FClothEdgeCollisionConstraint> EdgeCollisions;   // Edge collision constraints
     TArray<FClothAttachmentData> Attachments;
+
+    // NEW: Production rendering - render mesh data (in LOCAL space)
+    bool bUseRenderMesh = false;                            // Flag to enable production rendering
+    TArray<FVector> RenderRestPositions;                    // High-res render mesh positions
+    TArray<FVector> RenderNormals;                          // Render mesh normals
+    TArray<FVector2D> RenderUVs;                            // Render mesh UVs
+    TArray<uint32> RenderIndices;                           // Render mesh indices
+    TArray<struct FClothSkinningWeight> SkinningWeights;    // Render → Sim vertex mapping
 
     // Configuration
     FClothConfig Config;
     FClothInstanceParameters InstanceParams;
 
-    // Transform (NEW: For converting local-space positions to world space)
+    // Transform (For converting local-space positions to world space)
     FTransform WorldTransform;
 
     // Owner
@@ -153,7 +167,7 @@ struct FClothInstanceCreationParams
     bool bStartActive = true;
 
     FClothInstanceCreationParams()
-        : WorldTransform(FTransform::Identity), OwnerComponent(nullptr), InitialLOD(EClothLODLevel::LOD_0), bStartActive(true)
+        : bUseRenderMesh(false), WorldTransform(FTransform::Identity), OwnerComponent(nullptr), InitialLOD(EClothLODLevel::LOD_0), bStartActive(true)
     {
     }
 };

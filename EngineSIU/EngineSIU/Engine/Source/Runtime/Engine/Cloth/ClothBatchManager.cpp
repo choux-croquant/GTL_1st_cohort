@@ -6,6 +6,7 @@
 #include "ClothBatchManager.h"
 #include "ClothBatchedSolver.h"
 #include "ClothInstanceHandle.h"
+#include "ClothSkinningWeightGenerator.h"
 #include "Classes/Engine/ClothAsset.h"
 #include "Classes/Components/ClothComponent.h"
 #include "Classes/Components/SceneComponent.h"
@@ -18,7 +19,7 @@
 #include "ClothGPUStructs.h"
 
 FClothBatchManager::FClothBatchManager(EClothLODLevel InLODLevel)
-    : LODLevel(InLODLevel), BatchedSolver(nullptr), TotalParticleCount(0), TotalConstraintCount(0), TotalBendConstraintCount(0), TotalKinematicTargetCount(0), TotalTriangleCount(0), TotalAreaConstraintCount(0), TotalEdgeCollisionCount(0), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), AllocatedAreaConstraintCapacity(0), AllocatedEdgeCollisionCapacity(0), bNeedsReallocation(false), bNeedsCompaction(false), GrowthFactor(1.5f), TotalAttachmentCount(0), bAttachmentDataDirty(true), Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), bIsInitialized(false)
+    : LODLevel(InLODLevel), BatchedSolver(nullptr), TotalParticleCount(0), TotalConstraintCount(0), TotalBendConstraintCount(0), TotalKinematicTargetCount(0), TotalTriangleCount(0), TotalAreaConstraintCount(0), TotalEdgeCollisionCount(0), TotalRenderVertexCount(0), TotalRenderIndexCount(0), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), AllocatedAreaConstraintCapacity(0), AllocatedEdgeCollisionCapacity(0), AllocatedRenderVertexCapacity(0), AllocatedRenderIndexCapacity(0), bNeedsReallocation(false), bNeedsCompaction(false), GrowthFactor(1.5f), TotalAttachmentCount(0), bAttachmentDataDirty(true), Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), bIsInitialized(false)
 {
 }
 
@@ -438,13 +439,86 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         BatchedSolver->UploadIndexData(globalIndices, indexOffset);
     }
 
-    // 6. DON'T upload kinematic targets during AddInstance
-    // Kinematic targets are uploaded each frame in UpdateKinematicTargets()
-    // because they need to be updated with current driver positions.
-    // Initial upload with WRITE_DISCARD would overwrite previous instances' targets.
-    // The targets will be properly uploaded on the first Update() call.
+    // NEW: 7. Upload render mesh data if production rendering is enabled
+    if (Params.bUseRenderMesh && Params.RenderRestPositions.Num() > 0)
+    {
+        uint32 renderVertexCount = Params.RenderRestPositions.Num();
+        uint32 renderIndexCount = Params.RenderIndices.Num();
+        
+        // Update metadata with render mesh offsets
+        metadata.RenderVertexOffset = TotalRenderVertexCount;
+        metadata.RenderVertexCount = renderVertexCount;
+        metadata.RenderIndexOffset = TotalRenderIndexCount;
+        metadata.RenderIndexCount = renderIndexCount;
+        
+        // Update instance metadata in array (it was already added earlier)
+        InstanceMetadata[metadataIndex] = metadata;
+        
+        // Transform render mesh positions to world space
+        TArray<FVector> worldSpaceRenderPositions;
+        worldSpaceRenderPositions.Reserve(renderVertexCount);
+        
+        for (uint32 i = 0; i < renderVertexCount; ++i)
+        {
+            FVector localPos = Params.RenderRestPositions[i];
+            FVector worldPos = Params.WorldTransform.TransformPosition(localPos);
+            worldSpaceRenderPositions.Add(worldPos);
+        }
+        
+        // Transform render mesh normals to world space
+        TArray<FVector> worldSpaceRenderNormals;
+        worldSpaceRenderNormals.Reserve(renderVertexCount);
+        
+        for (uint32 i = 0; i < static_cast<uint32>(Params.RenderNormals.Num()); ++i)
+        {
+            FVector localNormal = Params.RenderNormals[i];
+            FVector worldNormal = Params.WorldTransform.TransformVector(localNormal);
+            worldNormal.Normalize();
+            worldSpaceRenderNormals.Add(worldNormal);
+        }
+        
+        // Upload render mesh data
+        BatchedSolver->UploadRenderMeshData(
+            worldSpaceRenderPositions,
+            worldSpaceRenderNormals,
+            Params.RenderUVs,
+            Params.RenderIndices,
+            metadata.RenderVertexOffset,
+            metadata.RenderIndexOffset
+        );
+        
+        // Convert skinning weights to use global simulation vertex indices
+        TArray<FClothSkinningWeight> globalSkinningWeights;
+        globalSkinningWeights.Reserve(Params.SkinningWeights.Num());
+        
+        for (const FClothSkinningWeight& localWeight : Params.SkinningWeights)
+        {
+            FClothSkinningWeight globalWeight = localWeight;
+            
+            // Convert local sim vertex indices to global indices
+            for (int i = 0; i < 4; ++i)
+            {
+                if (globalWeight.Weights[i] > 0.0f)
+                {
+                    globalWeight.SimVertexIndices[i] += metadata.ParticleOffset;
+                }
+            }
+            
+            globalSkinningWeights.Add(globalWeight);
+        }
+        
+        // Upload skinning weights
+        BatchedSolver->UploadSkinningWeights(globalSkinningWeights, metadata.RenderVertexOffset);
+        
+        // Update totals
+        TotalRenderVertexCount += renderVertexCount;
+        TotalRenderIndexCount += renderIndexCount;
+        
+        UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Uploaded render mesh - Vertices: %u, Indices: %u"),
+               static_cast<int32>(LODLevel), renderVertexCount, renderIndexCount);
+    }
 
-    // 7. Update instance parameters
+    // 8. Update instance parameters
     UpdateInstanceParameterBuffer();
 
     // NEW: Mark attachment data dirty so GPU-based kinematic targets are rebuilt
@@ -863,14 +937,11 @@ void FClothBatchManager::UpdateKinematicTargetsGPU(float DeltaTime)
         }
     }
 
-    // Upload component transforms (SMALL: 50 × 64 bytes = 3.2KB vs 80KB before!)
     if (componentTransforms.Num() > 0)
     {
         QUICK_SCOPE_CYCLE_COUNTER(UpdateKinematicTargets_UploadTransforms);
         BatchedSolver->UploadComponentTransforms(componentTransforms);
     }
-
-    // GPU will compute final positions in compute shader
 }
 
 bool FClothBatchManager::NeedsReallocation(uint32 RequiredParticles, uint32 RequiredConstraints) const

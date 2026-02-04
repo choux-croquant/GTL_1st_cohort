@@ -100,8 +100,10 @@ private:
     uint32 TotalBendConstraintCount;
     uint32 TotalKinematicTargetCount;
     uint32 TotalTriangleCount;
-    uint32 TotalAreaConstraintCount;      // NEW: Total area constraints
-    uint32 TotalEdgeCollisionCount;       // NEW: Total edge collision constraints
+    uint32 TotalAreaConstraintCount;      // Total area constraints
+    uint32 TotalEdgeCollisionCount;       // Total edge collision constraints
+    uint32 TotalRenderVertexCount;        // NEW: Total render vertices (production rendering)
+    uint32 TotalRenderIndexCount;         // NEW: Total render indices (production rendering)
 
     // Buffer management
     uint32 AllocatedParticleCapacity;
@@ -110,8 +112,10 @@ private:
     uint32 AllocatedKinematicTargetCapacity;
     uint32 AllocatedTriangleCapacity;
     uint32 AllocatedInstanceCapacity;
-    uint32 AllocatedAreaConstraintCapacity;      // NEW: Allocated area constraints
-    uint32 AllocatedEdgeCollisionCapacity;       // NEW: Allocated edge collisions
+    uint32 AllocatedAreaConstraintCapacity;      // Allocated area constraints
+    uint32 AllocatedEdgeCollisionCapacity;       // Allocated edge collisions
+    uint32 AllocatedRenderVertexCapacity;        // NEW: Allocated render vertices (production rendering)
+    uint32 AllocatedRenderIndexCapacity;         // NEW: Allocated render indices (production rendering)
     bool bNeedsReallocation;
     bool bNeedsCompaction;
     float GrowthFactor;
