@@ -36,7 +36,7 @@ float3 ApplyNormalMap(float3 sampledNormal, float3 worldNormal, float4 worldTang
  * Main pixel shader entry point
  * Evaluates material and lighting for cloth surface
  */
-float4 main(PS_INPUT_CommonMesh Input) : SV_TARGET
+float4 main(PS_INPUT_ClothMesh Input) : SV_TARGET
 {
     // 1. Sample base color (albedo)
     float3 baseColor = Material.DiffuseColor;
@@ -50,6 +50,11 @@ float4 main(PS_INPUT_CommonMesh Input) : SV_TARGET
     //return float4(1.0f, 0.0f, 0.0f, 1.0f);
     // 2. Sample and apply normal map (with robust fallbacks for zero normals/tangents)
     float3 worldNormal = Input.WorldNormal;
+    if (!Input.IsFrontFace)
+    {
+        worldNormal = -worldNormal;
+    }
+    
     // Guard against zero/NaN normals reaching PS
     if (dot(worldNormal, worldNormal) < 1e-6)
     {

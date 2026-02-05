@@ -42,11 +42,13 @@ FClothBatchedSolver::FClothBatchedSolver()
     UnifiedKinematicTargetBuffer = nullptr;
     UnifiedIndexBuffer = nullptr;
     UnifiedNormalBuffer = nullptr;
+    UnifiedNormalAccumulationBuffer = nullptr; // NEW: Integer accumulation buffer
     UnifiedPositionDeltaBuffer = nullptr;
     UnifiedPositionWeightBuffer = nullptr;
 
     UnifiedVelocityUAV = nullptr;
     UnifiedNormalUAV = nullptr;
+    UnifiedNormalAccumulationUAV = nullptr; // NEW: Integer accumulation UAV
     UnifiedPositionDeltaUAV = nullptr;
     UnifiedPositionWeightUAV = nullptr;
     UnifiedConstraintUAV = nullptr;     // NEW: XPBD lambda write-back (distance constraints)
@@ -189,6 +191,9 @@ void FClothBatchedSolver::Release()
     SAFE_RELEASE(UnifiedNormalBuffer);
     SAFE_RELEASE(UnifiedNormalUAV);
     SAFE_RELEASE(UnifiedNormalSRV);
+
+    SAFE_RELEASE(UnifiedNormalAccumulationBuffer);  // NEW: Integer accumulation buffer
+    SAFE_RELEASE(UnifiedNormalAccumulationUAV);     // NEW: Integer accumulation UAV
 
     SAFE_RELEASE(UnifiedPositionDeltaBuffer);
     SAFE_RELEASE(UnifiedPositionDeltaUAV);
@@ -601,11 +606,11 @@ bool FClothBatchedSolver::AllocateBuffers(uint32 MaxParticles, uint32 MaxConstra
         }
     }
 
-    // Create normal buffer
+    // Create normal buffer (final float3 normals)
     bufferDesc.Usage = D3D11_USAGE_DEFAULT;
-    bufferDesc.ByteWidth = sizeof(FVector) * MaxParticles;
+    bufferDesc.ByteWidth = sizeof(float) * MaxParticles * 3;
     bufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
-    bufferDesc.StructureByteStride = sizeof(FVector);
+    bufferDesc.StructureByteStride = sizeof(float) * 3;
     bufferDesc.CPUAccessFlags = 0;
     bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
 
@@ -631,6 +636,31 @@ bool FClothBatchedSolver::AllocateBuffers(uint32 MaxParticles, uint32 MaxConstra
         UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create normal SRV"));
         return false;
     }
+
+    // Create integer accumulation buffer for atomic normal updates (int3 format)
+    bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+    bufferDesc.ByteWidth = sizeof(int32) * MaxParticles * 3;
+    bufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
+    bufferDesc.StructureByteStride = sizeof(int32) * 3;
+    bufferDesc.CPUAccessFlags = 0;
+    bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+
+    hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &UnifiedNormalAccumulationBuffer);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create normal accumulation buffer"));
+        return false;
+    }
+
+    uavDesc.Buffer.NumElements = MaxParticles;
+    hr = Graphics->Device->CreateUnorderedAccessView(UnifiedNormalAccumulationBuffer, &uavDesc, &UnifiedNormalAccumulationUAV);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create normal accumulation UAV"));
+        return false;
+    }
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Created normal buffers (float3 + int3 accumulation) for %u particles"), MaxParticles);
 
     // Create position delta buffer (for constraint solving)
     bufferDesc.ByteWidth = sizeof(int32) * 3 * MaxParticles;
@@ -1809,17 +1839,16 @@ void FClothBatchedSolver::DispatchUpdateNormals(uint32 TriangleCount)
     if (!Graphics || !Graphics->DeviceContext || TriangleCount == 0)
         return;
     
-    // Use two-pass approach if shaders are available, otherwise fall back to legacy
+    // Use two-pass approach with integer accumulation if shaders are available
     if (ComputeTriangleNormalsCS && NormalizeVertexNormalsCS)
     {
-        // === TWO-PASS APPROACH (matches CUDA reference) ===
+        // === TWO-PASS APPROACH WITH INTEGER ACCUMULATION (race-condition free) ===
         
-        // STEP 1: Clear normal buffer to zero
-        // CRITICAL FIX: Use ClearUnorderedAccessViewFloat for float3 buffer, not ClearUnorderedAccessViewUint
+        // STEP 1: Clear integer accumulation buffer to zero
         UINT clearValue[4] = { 0, 0, 0, 0 };
-        Graphics->DeviceContext->ClearUnorderedAccessViewUint(UnifiedNormalUAV, clearValue);
+        Graphics->DeviceContext->ClearUnorderedAccessViewUint(UnifiedNormalAccumulationUAV, clearValue);
         
-        // STEP 2: PASS 1 - Compute triangle normals and accumulate to vertices
+        // STEP 2: PASS 1 - Compute triangle normals and accumulate to vertices (atomic integer ops)
         {
             // Bind constant buffer (contains NumParticles, NumConstraints stores triangle count)
             Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
@@ -1831,8 +1860,12 @@ void FClothBatchedSolver::DispatchUpdateNormals(uint32 TriangleCount)
             };
             Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
             
-            // Bind normal buffer UAV (write accumulated normals)
-            Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &UnifiedNormalUAV, nullptr);
+            // Bind UAVs: u0 = integer accumulation buffer, u1 = final normal buffer (not used in pass 1)
+            ID3D11UnorderedAccessView *uavs[] = {
+                UnifiedNormalAccumulationUAV,  // u0: Integer accumulation (write with InterlockedAdd)
+                UnifiedNormalUAV               // u1: Final normals (not used in pass 1, but bound for consistency)
+            };
+            Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, nullptr);
             
             // Set Pass 1 shader
             Graphics->DeviceContext->CSSetShader(ComputeTriangleNormalsCS, nullptr, 0);
@@ -1841,20 +1874,24 @@ void FClothBatchedSolver::DispatchUpdateNormals(uint32 TriangleCount)
             uint32 dispatchCount = GetDispatchCount(TriangleCount, 256);
             Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
             
-            // Unbind UAV before next pass (required for proper synchronization)
-            ID3D11UnorderedAccessView *nullUAV = nullptr;
-            Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+            // Unbind UAVs before next pass (required for proper synchronization)
+            ID3D11UnorderedAccessView *nullUAVs[2] = {nullptr, nullptr};
+            Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
             ID3D11ShaderResourceView *nullSRVs[2] = {nullptr, nullptr};
             Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
         }
         
-        // STEP 3: PASS 2 - Normalize vertex normals
+        // STEP 3: PASS 2 - Convert integer accumulation to float and normalize
         {
             // Bind constant buffer (contains NumParticles)
             Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
             
-            // Bind normal buffer UAV (read-modify-write)
-            Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &UnifiedNormalUAV, nullptr);
+            // Bind UAVs: u0 = integer accumulation (read), u1 = final normals (write)
+            ID3D11UnorderedAccessView *uavs[] = {
+                UnifiedNormalAccumulationUAV,  // u0: Read accumulated integers
+                UnifiedNormalUAV               // u1: Write final normalized float3 normals
+            };
+            Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, nullptr);
             
             // Set Pass 2 shader
             Graphics->DeviceContext->CSSetShader(NormalizeVertexNormalsCS, nullptr, 0);
@@ -1864,13 +1901,13 @@ void FClothBatchedSolver::DispatchUpdateNormals(uint32 TriangleCount)
             Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
             
             // Unbind
-            ID3D11UnorderedAccessView *nullUAV = nullptr;
-            Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+            ID3D11UnorderedAccessView *nullUAVs[2] = {nullptr, nullptr};
+            Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
         }
     }
     else if (UpdateNormalsCS)
     {
-        // === LEGACY SINGLE-PASS APPROACH (fallback) ===
+        // === LEGACY SINGLE-PASS APPROACH (fallback - has race conditions) ===
         
         // Bind constant buffer
         Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);

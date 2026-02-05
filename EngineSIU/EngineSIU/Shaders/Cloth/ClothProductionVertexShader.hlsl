@@ -46,9 +46,9 @@ struct VS_INPUT_ClothProduction
  * Main vertex shader entry point
  * Performs GPU skinning to deform render mesh based on simulation mesh
  */
-PS_INPUT_CommonMesh main(VS_INPUT_ClothProduction Input)
+VS_OUTPUT_ClothMesh main(VS_INPUT_ClothProduction Input)
 {
-    PS_INPUT_CommonMesh Output;
+    VS_OUTPUT_ClothMesh Output;
     
     // 1. Fetch skinning weights for this render vertex
     uint renderVertexIndex = Input.VertexID + ClothRenderVertexOffset;

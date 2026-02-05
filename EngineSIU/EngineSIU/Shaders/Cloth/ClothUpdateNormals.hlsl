@@ -1,8 +1,8 @@
 /**
  * Cloth Normal Update Compute Shader
- * Two-pass approach matching CUDA reference implementation:
- * Pass 1: Accumulate triangle normals to vertices (area-weighted)
- * Pass 2: Normalize accumulated normals
+ * Two-pass approach with integer accumulation to eliminate race conditions:
+ * Pass 1: Accumulate triangle normals to vertices using atomic integer operations
+ * Pass 2: Convert integers to floats, normalize, and store in final normal buffer
  */
 
 #include "ClothCommon.hlsli"
@@ -11,21 +11,23 @@
 StructuredBuffer<FClothParticle> PositionBuffer : register(t0);
 Buffer<uint> IndexBuffer : register(t1);  // Typed buffer for index data
 
-// Output buffer (read-write for accumulation)
-RWStructuredBuffer<float3> NormalBuffer : register(u0);
+// Integer accumulation buffer (for atomic operations)
+RWStructuredBuffer<int3> NormalAccumulationBuffer : register(u0);
+
+// Final output buffer (float normals)
+RWStructuredBuffer<float3> NormalBuffer : register(u1);
+
+// Scale factor for float-to-int conversion (higher = more precision, but risk of overflow)
+static const float NORMAL_SCALE = 10000.0f;
 
 /**
- * PASS 1: Compute Triangle Normals and Accumulate to Vertices
+ * PASS 1: Compute Triangle Normals and Accumulate to Vertices (Integer Atomic)
  *
- * Matches CUDA ComputeTriangleNormals kernel:
+ * Uses integer accumulation with InterlockedAdd to eliminate race conditions:
  * - One thread per triangle
  * - Compute face normal using cross product
- * - Accumulate to all 3 vertices (area-weighted smooth normals)
- * - Uses atomic operations for thread-safe accumulation
- *
- * Note: HLSL doesn't have native atomic float add. We use direct accumulation
- * which has minor race conditions, but these average out over many triangles
- * producing visually correct results (same approach as CUDA reference comment).
+ * - Scale to integer and accumulate atomically to all 3 vertices
+ * - Thread-safe with no flickering/vibration
  */
 [numthreads(256, 1, 1)]
 void ComputeTriangleNormalsCS(uint3 DTid : SV_DispatchThreadID)
@@ -55,7 +57,6 @@ void ComputeTriangleNormalsCS(uint3 DTid : SV_DispatchThreadID)
     float3 edge2 = p2 - p0;
     
     // Calculate face normal (cross product gives area-weighted normal)
-    // This matches CUDA: glm::cross(p2 - p1, p3 - p1)
     float3 faceNormal = cross(edge1, edge2);
     
     // Check for degenerate triangles
@@ -66,21 +67,29 @@ void ComputeTriangleNormalsCS(uint3 DTid : SV_DispatchThreadID)
         return;
     }
     
-    // Accumulate face normal to all 3 vertices
-    // Note: Area-weighted (unnormalized cross product) for proper smooth normals
-    // Direct accumulation without atomics - race conditions are acceptable here
-    // as they average out over many triangles (matches CUDA implementation approach)
-    NormalBuffer[idx0] += faceNormal;
-    NormalBuffer[idx1] += faceNormal;
-    NormalBuffer[idx2] += faceNormal;
+    // Convert float normal to scaled integer for atomic accumulation
+    int3 intNormal = int3(faceNormal * NORMAL_SCALE);
+    
+    // Atomic accumulation (thread-safe, no race conditions)
+    InterlockedAdd(NormalAccumulationBuffer[idx0].x, intNormal.x);
+    InterlockedAdd(NormalAccumulationBuffer[idx0].y, intNormal.y);
+    InterlockedAdd(NormalAccumulationBuffer[idx0].z, intNormal.z);
+    
+    InterlockedAdd(NormalAccumulationBuffer[idx1].x, intNormal.x);
+    InterlockedAdd(NormalAccumulationBuffer[idx1].y, intNormal.y);
+    InterlockedAdd(NormalAccumulationBuffer[idx1].z, intNormal.z);
+    
+    InterlockedAdd(NormalAccumulationBuffer[idx2].x, intNormal.x);
+    InterlockedAdd(NormalAccumulationBuffer[idx2].y, intNormal.y);
+    InterlockedAdd(NormalAccumulationBuffer[idx2].z, intNormal.z);
 }
 
 /**
- * PASS 2: Normalize Vertex Normals
+ * PASS 2: Convert Integer Accumulation to Float and Normalize
  *
- * Matches CUDA ComputeVertexNormals kernel:
  * - One thread per vertex
- * - Normalize accumulated normal vector
+ * - Convert accumulated integer normal back to float
+ * - Normalize and store in final normal buffer
  * - Handle zero-length normals with fallback
  */
 [numthreads(256, 1, 1)]
@@ -92,8 +101,9 @@ void NormalizeVertexNormalsCS(uint3 DTid : SV_DispatchThreadID)
     if (vertIdx >= NumParticles)
         return;
     
-    // Read accumulated normal
-    float3 normal = NormalBuffer[vertIdx];
+    // Read accumulated integer normal and convert back to float
+    int3 intNormal = NormalAccumulationBuffer[vertIdx];
+    float3 normal = float3(intNormal) / NORMAL_SCALE;
     
     // Normalize
     float len = length(normal);
@@ -106,7 +116,6 @@ void NormalizeVertexNormalsCS(uint3 DTid : SV_DispatchThreadID)
     else
     {
         // Zero or near-zero normal - use default up vector
-        // Matches CUDA fallback: glm::vec3(0, 1, 0)
         NormalBuffer[vertIdx] = float3(0, 1, 0);
     }
 }

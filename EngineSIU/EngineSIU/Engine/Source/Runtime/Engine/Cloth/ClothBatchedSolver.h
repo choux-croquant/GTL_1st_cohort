@@ -189,6 +189,7 @@ private:
     ID3D11Buffer *UnifiedKinematicTargetBuffer;
     ID3D11Buffer *UnifiedIndexBuffer;
     ID3D11Buffer *UnifiedNormalBuffer;
+    ID3D11Buffer *UnifiedNormalAccumulationBuffer;  // NEW: Integer accumulation buffer for atomic normal updates
     ID3D11Buffer *UnifiedPositionDeltaBuffer;
     ID3D11Buffer *UnifiedPositionWeightBuffer;
 
@@ -208,6 +209,7 @@ private:
     ID3D11UnorderedAccessView *UnifiedPredictedUAV;
     ID3D11UnorderedAccessView *UnifiedVelocityUAV;
     ID3D11UnorderedAccessView *UnifiedNormalUAV;
+    ID3D11UnorderedAccessView *UnifiedNormalAccumulationUAV;  // NEW: UAV for integer accumulation buffer
     ID3D11UnorderedAccessView *UnifiedPositionDeltaUAV;
     ID3D11UnorderedAccessView *UnifiedPositionWeightUAV;
     ID3D11UnorderedAccessView *UnifiedConstraintUAV;     // NEW: For XPBD lambda write-back (distance constraints)
