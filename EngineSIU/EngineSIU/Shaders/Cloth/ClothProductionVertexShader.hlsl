@@ -57,6 +57,7 @@ PS_INPUT_CommonMesh main(VS_INPUT_ClothProduction Input)
     // 2. Perform Linear Blend Skinning (up to 4 influences)
     float3 skinnedPosition = float3(0, 0, 0);
     float3 skinnedNormal = float3(0, 0, 0);
+    float  normalWeightSum = 0.0;
     
     [unroll]
     for (int i = 0; i < 4; ++i)
@@ -73,10 +74,17 @@ PS_INPUT_CommonMesh main(VS_INPUT_ClothProduction Input)
             // Accumulate weighted contribution
             skinnedPosition += weight * simPos;
             skinnedNormal += weight * simNormal;
+            normalWeightSum += weight;
         }
     }
-    
-    // 3. Normalize blended normal
+
+    // 3. Normalize blended normal and provide a robust fallback when simulation normals are missing/zero
+    float normalLenSq = dot(skinnedNormal, skinnedNormal);
+    if (normalLenSq < 1e-6 || normalWeightSum < 1e-4)
+    {
+        // Fallback to rest normal transformed to world space (handles missing/zero sim normals or unbound SRV)
+        skinnedNormal = mul(Input.Normal, (float3x3)ClothWorldMatrix);
+    }
     skinnedNormal = normalize(skinnedNormal);
     
     // 4. Transform to clip space
@@ -98,7 +106,14 @@ PS_INPUT_CommonMesh main(VS_INPUT_ClothProduction Input)
     //
     // If future non-batched mode uses non-identity transforms with non-uniform scaling,
     // inverse-transpose would be required: normalize(mul(skinnedNormal, (float3x3)InverseTransposeMatrix))
-    Output.WorldNormal = normalize(mul(skinnedNormal, (float3x3)ClothWorldMatrix));
+    float3 worldNormal = mul(skinnedNormal, (float3x3)ClothWorldMatrix);
+    float worldNormalLenSq = dot(worldNormal, worldNormal);
+    if (worldNormalLenSq < 1e-6)
+    {
+        // Final safety net to avoid zero/NaN normals in PS
+        worldNormal = float3(0, 0, 1);
+    }
+    Output.WorldNormal = normalize(worldNormal);
     Output.UV = Input.UV;
     
     // 6. Calculate tangent for normal mapping (simplified approach)

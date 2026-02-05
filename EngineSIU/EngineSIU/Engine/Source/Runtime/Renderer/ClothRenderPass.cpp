@@ -169,6 +169,7 @@ void FClothRenderPass::PrepareRender(const std::shared_ptr<FEditorViewportClient
     
     if (LightConstantBuffer)
     {
+        Graphics->DeviceContext->VSSetConstantBuffers(0, 1, &LightConstantBuffer);
         Graphics->DeviceContext->PSSetConstantBuffers(0, 1, &LightConstantBuffer);
     }
 

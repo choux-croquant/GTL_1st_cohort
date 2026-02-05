@@ -48,16 +48,32 @@ float4 main(PS_INPUT_CommonMesh Input) : SV_TARGET
         //return albedoSample;
     }
     //return float4(1.0f, 0.0f, 0.0f, 1.0f);
-    // 2. Sample and apply normal map
-    float3 worldNormal = normalize(Input.WorldNormal);
-    //if (Material.TextureFlag & TEXTURE_FLAG_NORMAL)
-    //{
-    //    float3 normalSample = MaterialTextures[TEXTURE_SLOT_NORMAL].Sample(SamplerLinearWrap, Input.UV).xyz;
-    //    // Convert from [0,1] to [-1,1]
-    //    normalSample = normalSample * 2.0 - 1.0;
-    //    worldNormal = ApplyNormalMap(normalSample, Input.WorldNormal, Input.WorldTangent);
-    //}
-    
+    // 2. Sample and apply normal map (with robust fallbacks for zero normals/tangents)
+    float3 worldNormal = Input.WorldNormal;
+    // Guard against zero/NaN normals reaching PS
+    if (dot(worldNormal, worldNormal) < 1e-6)
+    {
+        worldNormal = float3(0, 0, 1);
+    }
+    worldNormal = normalize(worldNormal);
+    // Normal map path remains optional; enable when material flag is set.
+    if (Material.TextureFlag & TEXTURE_FLAG_NORMAL)
+    {
+        float3 normalSample = MaterialTextures[TEXTURE_SLOT_NORMAL].Sample(SamplerLinearWrap, Input.UV).xyz;
+        normalSample = normalSample * 2.0 - 1.0; // [0,1] -> [-1,1]
+
+        float4 safeTangent = Input.WorldTangent;
+        // If tangent is degenerate, rebuild a basis from the normal to keep TBN valid.
+        if (dot(safeTangent.xyz, safeTangent.xyz) < 1e-6)
+        {
+            float3 axis = (abs(worldNormal.y) < 0.999) ? float3(0, 1, 0) : float3(1, 0, 0);
+            float3 rebuiltTangent = normalize(cross(axis, worldNormal));
+            safeTangent = float4(rebuiltTangent, 1.0);
+        }
+
+        //worldNormal = ApplyNormalMap(normalSample, worldNormal, safeTangent);
+    }
+
     // 3. Sample metallic
     float metallic = Material.Metallic;
     if (Material.TextureFlag & TEXTURE_FLAG_METALLIC)
@@ -83,17 +99,71 @@ float4 main(PS_INPUT_CommonMesh Input) : SV_TARGET
     // 6. Calculate lighting using PBR model
     float baseAlpha = 1.0; // Cloth is typically opaque
     
-    // Use tiled lighting if available, otherwise use simple lighting
-    // For now, use simple lighting (tile index would require screen-space calculation)
-    float4 litColor = Lighting(
-        Input.WorldPosition,
-        worldNormal,
-        ViewWorldLocation,
-        baseColor,
-        metallic,
-        roughness,
-        baseAlpha
-    );
+       // Simplified directional lighting for cloth (no shadows, no tile culling)
+    float3 accumulatedDiffuse = float3(0.0, 0.0, 0.0);
+    float3 accumulatedSpecular = float3(0.0, 0.0, 0.0);
+
+    // Apply directional light (index 0)
+    if (DirectionalLightsCount > 0)
+    {
+        FDirectionalLightInfo lightInfo = Directional[0];
+
+        // Light direction (negate because Direction points FROM light)
+        float3 L = normalize(-lightInfo.Direction);
+
+        // View direction
+        float3 V = normalize(ViewWorldLocation - Input.WorldPosition);
+
+        // Lambert diffuse
+        float NdotL = saturate(dot(worldNormal, L));
+
+        // PBR calculations
+        float3 F0 = lerp(float3(0.04, 0.04, 0.04), baseColor, metallic);
+        float3 H = normalize(V + L);
+        float NdotH = saturate(dot(worldNormal, H));
+        float NdotV = saturate(dot(worldNormal, V));
+        float LdotH = saturate(dot(L, H));
+
+        // Disney Diffuse
+        float roughness2 = roughness * roughness;
+        float Fd90 = 0.5 + 2.0 * roughness2 * LdotH * LdotH;
+        float FdL = 1.0 + (Fd90 - 1.0) * pow(1.0 - NdotL, 5.0);
+        float FdV = 1.0 + (Fd90 - 1.0) * pow(1.0 - NdotV, 5.0);
+        float3 diffuse = (baseColor * (1.0 - metallic) * FdL * FdV) / 3.14159265359;
+
+        // Cook-Torrance Specular (GGX)
+        float alpha = max(0.001, roughness2);
+        float a2 = alpha * alpha;
+        float denom = (NdotH * NdotH) * (a2 - 1.0) + 1.0;
+        float D = a2 / (3.14159265359 * denom * denom);
+
+        float k = alpha * 0.5 + 0.0001;
+        float gV = NdotV / (NdotV * (1.0 - k) + k);
+        float gL = NdotL / (NdotL * (1.0 - k) + k);
+        float G = gV * gL;
+
+        float3 F = F0 + (1.0 - F0) * pow(1.0 - LdotH, 5.0);
+
+        float3 specular = (D * G * F) / (4.0 * NdotV * NdotL + 1e-5);
+
+        // Light energy
+        float3 lightEnergy = lightInfo.LightColor.rgb * lightInfo.Intensity;
+
+        // Accumulate
+        accumulatedDiffuse += diffuse * lightEnergy * NdotL;
+        accumulatedSpecular += specular * lightEnergy * NdotL;
+    }
+
+    // Add ambient/IBL contribution
+    float3 ambient = float3(0.03, 0.03, 0.03);
+    if (AmbientLightsCount > 0)
+    {
+        ambient = Ambient[0].AmbientColor.rgb;
+    }
+    accumulatedDiffuse += baseColor * (1.0 - metallic) * ambient;
+
+    // Combine diffuse and specular
+    float4 litColor = float4(accumulatedDiffuse + accumulatedSpecular, baseAlpha);
     
     // 7. Add emissive contribution
     litColor.rgb += emissive;
