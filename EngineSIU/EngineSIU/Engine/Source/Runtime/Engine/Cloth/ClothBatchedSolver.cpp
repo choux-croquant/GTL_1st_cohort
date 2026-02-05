@@ -1816,8 +1816,8 @@ void FClothBatchedSolver::DispatchUpdateNormals(uint32 TriangleCount)
         
         // STEP 1: Clear normal buffer to zero
         // CRITICAL FIX: Use ClearUnorderedAccessViewFloat for float3 buffer, not ClearUnorderedAccessViewUint
-        FLOAT clearValue[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-        Graphics->DeviceContext->ClearUnorderedAccessViewFloat(UnifiedNormalUAV, clearValue);
+        UINT clearValue[4] = { 0, 0, 0, 0 };
+        Graphics->DeviceContext->ClearUnorderedAccessViewUint(UnifiedNormalUAV, clearValue);
         
         // STEP 2: PASS 1 - Compute triangle normals and accumulate to vertices
         {
