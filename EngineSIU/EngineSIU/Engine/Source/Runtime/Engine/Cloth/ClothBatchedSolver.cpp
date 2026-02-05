@@ -22,7 +22,7 @@
     }
 
 FClothBatchedSolver::FClothBatchedSolver()
-    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), IntegrateCS(nullptr), ConstraintSolverCS(nullptr), BendConstraintSolverCS(nullptr), AreaConstraintSolverCS(nullptr), ApplyDeltasCS(nullptr), ComputeKinematicTargetsCS(nullptr), FinalizeCS(nullptr), ClearNormalsCS(nullptr), UpdateNormalsCS(nullptr), NormalizeNormalsCS(nullptr), CollisionSolverCS(nullptr), EdgeCollisionSolverCS(nullptr), CollisionManager(nullptr), BatchSimConstantBuffer(nullptr), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), AllocatedAreaConstraintCapacity(0), AllocatedEdgeCollisionCapacity(0), AllocatedRenderVertexCapacity(0), AllocatedRenderIndexCapacity(0), UsedParticleCount(0), UsedConstraintCount(0), UsedBendConstraintCount(0), UsedTriangleCount(0), UsedInstanceCount(0), UsedAttachmentCount(0), UsedAreaConstraintCount(0), UsedEdgeCollisionCount(0), UsedRenderVertexCount(0), UsedRenderIndexCount(0), bInitialized(false), AccumulatedTime(0.0f)
+    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), IntegrateCS(nullptr), ConstraintSolverCS(nullptr), BendConstraintSolverCS(nullptr), AreaConstraintSolverCS(nullptr), ApplyDeltasCS(nullptr), ComputeKinematicTargetsCS(nullptr), FinalizeCS(nullptr), UpdateNormalsCS(nullptr), ComputeTriangleNormalsCS(nullptr), NormalizeVertexNormalsCS(nullptr), CollisionSolverCS(nullptr), EdgeCollisionSolverCS(nullptr), CollisionManager(nullptr), BatchSimConstantBuffer(nullptr), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), AllocatedAreaConstraintCapacity(0), AllocatedEdgeCollisionCapacity(0), AllocatedRenderVertexCapacity(0), AllocatedRenderIndexCapacity(0), UsedParticleCount(0), UsedConstraintCount(0), UsedBendConstraintCount(0), UsedTriangleCount(0), UsedInstanceCount(0), UsedAttachmentCount(0), UsedAreaConstraintCount(0), UsedEdgeCollisionCount(0), UsedRenderVertexCount(0), UsedRenderIndexCount(0), bInitialized(false), AccumulatedTime(0.0f)
 {
     // Initialize all buffer pointers to nullptr (Velvet pattern - single working buffer)
     UnifiedPositionBuffer = nullptr;
@@ -134,9 +134,9 @@ void FClothBatchedSolver::Release()
     ApplyDeltasCS = nullptr;
     ComputeKinematicTargetsCS = nullptr; // NEW: P1 optimization
     FinalizeCS = nullptr;                // NEW
-    ClearNormalsCS = nullptr;
-    UpdateNormalsCS = nullptr;
-    NormalizeNormalsCS = nullptr;
+    UpdateNormalsCS = nullptr;           // Legacy
+    ComputeTriangleNormalsCS = nullptr;  // NEW: Pass 1
+    NormalizeVertexNormalsCS = nullptr;  // NEW: Pass 2
     CollisionSolverCS = nullptr;
     EdgeCollisionSolverCS = nullptr;     // NEW: Edge collision solver
 
@@ -880,9 +880,7 @@ void FClothBatchedSolver::Simulate(float DeltaTime)
     // Final normal update (once per frame, not per substep)
     if (UsedTriangleCount > 0)
     {
-        // DispatchClearNormals(UsedParticleCount);
-        // DispatchUpdateNormals(UsedTriangleCount);
-        // DispatchNormalizeNormals(UsedParticleCount);
+        DispatchUpdateNormals(UsedTriangleCount);
     }
 }
 
@@ -1007,30 +1005,31 @@ bool FClothBatchedSolver::LoadComputeShaders()
     }
     FinalizeCS = ShaderManager->GetComputeShaderByKey(L"ClothFinalizeCS");
 
-    // Load or get Normal Update shaders
-    hr = ShaderManager->AddComputeShader(L"ClothClearNormalsCS", L"Shaders/Cloth/ClothUpdateNormals.hlsl", "ClearNormalsCS");
-    if (FAILED(hr))
-    {
-        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to compile ClothClearNormals shader"));
-        bSuccess = false;
-    }
-    ClearNormalsCS = ShaderManager->GetComputeShaderByKey(L"ClothClearNormalsCS");
-
+    // Load normal update shaders (two-pass approach)
     hr = ShaderManager->AddComputeShader(L"ClothUpdateNormalsCS", L"Shaders/Cloth/ClothUpdateNormals.hlsl", "UpdateNormalsCS");
     if (FAILED(hr))
     {
-        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to compile ClothUpdateNormals shader"));
-        bSuccess = false;
+        UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to compile ClothUpdateNormals shader (legacy)"));
     }
     UpdateNormalsCS = ShaderManager->GetComputeShaderByKey(L"ClothUpdateNormalsCS");
-
-    hr = ShaderManager->AddComputeShader(L"ClothNormalizeNormalsCS", L"Shaders/Cloth/ClothUpdateNormals.hlsl", "NormalizeNormalsCS");
+    
+    // NEW: Pass 1 - Compute triangle normals and accumulate to vertices
+    hr = ShaderManager->AddComputeShader(L"ClothComputeTriangleNormalsCS", L"Shaders/Cloth/ClothUpdateNormals.hlsl", "ComputeTriangleNormalsCS");
     if (FAILED(hr))
     {
-        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to compile ClothNormalizeNormals shader"));
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to compile ClothComputeTriangleNormals shader"));
         bSuccess = false;
     }
-    NormalizeNormalsCS = ShaderManager->GetComputeShaderByKey(L"ClothNormalizeNormalsCS");
+    ComputeTriangleNormalsCS = ShaderManager->GetComputeShaderByKey(L"ClothComputeTriangleNormalsCS");
+    
+    // NEW: Pass 2 - Normalize vertex normals
+    hr = ShaderManager->AddComputeShader(L"ClothNormalizeVertexNormalsCS", L"Shaders/Cloth/ClothUpdateNormals.hlsl", "NormalizeVertexNormalsCS");
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to compile ClothNormalizeVertexNormals shader"));
+        bSuccess = false;
+    }
+    NormalizeVertexNormalsCS = ShaderManager->GetComputeShaderByKey(L"ClothNormalizeVertexNormalsCS");
 
     // Load or get Collision SDF shader (NEW)
     hr = ShaderManager->AddComputeShader(L"ClothCollisionSDFCS",
@@ -1805,82 +1804,100 @@ void FClothBatchedSolver::DispatchFinalize(uint32 ParticleCount)
     Graphics->DeviceContext->CSSetShaderResources(0, 3, nullSRVs);
 }
 
-void FClothBatchedSolver::DispatchClearNormals(uint32 ParticleCount)
-{
-    if (!Graphics || !Graphics->DeviceContext || !ClearNormalsCS)
-        return;
-
-    // Bind constant buffer
-    Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
-
-    // Bind normal buffer UAV
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &UnifiedNormalUAV, nullptr);
-
-    // Set shader
-    Graphics->DeviceContext->CSSetShader(ClearNormalsCS, nullptr, 0);
-
-    // Dispatch
-    uint32 dispatchCount = GetDispatchCount(ParticleCount);
-    Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
-
-    // Unbind
-    ID3D11UnorderedAccessView *nullUAV = nullptr;
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
-}
-
 void FClothBatchedSolver::DispatchUpdateNormals(uint32 TriangleCount)
 {
-    if (!Graphics || !Graphics->DeviceContext || !UpdateNormalsCS || TriangleCount == 0)
+    if (!Graphics || !Graphics->DeviceContext || TriangleCount == 0)
         return;
-
-    // Bind constant buffer
-    Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
-
-    // Bind SRVs - use position buffer (final positions after finalize)
-    ID3D11ShaderResourceView *srvs[] = {
-        UnifiedPositionSRV, // t0: Final positions
-        UnifiedIndexSRV     // t1: Index buffer
-    };
-    Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
-
-    // Bind normal buffer UAV
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &UnifiedNormalUAV, nullptr);
-
-    // Set shader
-    Graphics->DeviceContext->CSSetShader(UpdateNormalsCS, nullptr, 0);
-
-    // Dispatch
-    uint32 dispatchCount = GetDispatchCount(TriangleCount, 256);
-    Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
-
-    // Unbind
-    ID3D11UnorderedAccessView *nullUAV = nullptr;
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
-    ID3D11ShaderResourceView *nullSRVs[2] = {nullptr, nullptr};
-    Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
-}
-
-void FClothBatchedSolver::DispatchNormalizeNormals(uint32 ParticleCount)
-{
-    if (!Graphics || !Graphics->DeviceContext || !NormalizeNormalsCS)
-        return;
-
-    // Bind constant buffer
-    Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
-
-    // Bind normal buffer UAV
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &UnifiedNormalUAV, nullptr);
-
-    // Set shader
-    Graphics->DeviceContext->CSSetShader(NormalizeNormalsCS, nullptr, 0);
-
-    // Dispatch
-    uint32 dispatchCount = GetDispatchCount(ParticleCount);
-    Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
-
-    // Unbind
-    ID3D11UnorderedAccessView *nullUAV = nullptr;
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+    
+    // Use two-pass approach if shaders are available, otherwise fall back to legacy
+    if (ComputeTriangleNormalsCS && NormalizeVertexNormalsCS)
+    {
+        // === TWO-PASS APPROACH (matches CUDA reference) ===
+        
+        // STEP 1: Clear normal buffer to zero
+        // CRITICAL FIX: Use ClearUnorderedAccessViewFloat for float3 buffer, not ClearUnorderedAccessViewUint
+        FLOAT clearValue[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+        Graphics->DeviceContext->ClearUnorderedAccessViewFloat(UnifiedNormalUAV, clearValue);
+        
+        // STEP 2: PASS 1 - Compute triangle normals and accumulate to vertices
+        {
+            // Bind constant buffer (contains NumParticles, NumConstraints stores triangle count)
+            Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
+            
+            // Bind SRVs - use position buffer (final positions after finalize)
+            ID3D11ShaderResourceView *srvs[] = {
+                UnifiedPositionSRV, // t0: Final positions
+                UnifiedIndexSRV     // t1: Index buffer
+            };
+            Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
+            
+            // Bind normal buffer UAV (write accumulated normals)
+            Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &UnifiedNormalUAV, nullptr);
+            
+            // Set Pass 1 shader
+            Graphics->DeviceContext->CSSetShader(ComputeTriangleNormalsCS, nullptr, 0);
+            
+            // Dispatch (one thread per triangle)
+            uint32 dispatchCount = GetDispatchCount(TriangleCount, 256);
+            Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
+            
+            // Unbind UAV before next pass (required for proper synchronization)
+            ID3D11UnorderedAccessView *nullUAV = nullptr;
+            Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+            ID3D11ShaderResourceView *nullSRVs[2] = {nullptr, nullptr};
+            Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
+        }
+        
+        // STEP 3: PASS 2 - Normalize vertex normals
+        {
+            // Bind constant buffer (contains NumParticles)
+            Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
+            
+            // Bind normal buffer UAV (read-modify-write)
+            Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &UnifiedNormalUAV, nullptr);
+            
+            // Set Pass 2 shader
+            Graphics->DeviceContext->CSSetShader(NormalizeVertexNormalsCS, nullptr, 0);
+            
+            // Dispatch (one thread per vertex)
+            uint32 dispatchCount = GetDispatchCount(UsedParticleCount, 256);
+            Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
+            
+            // Unbind
+            ID3D11UnorderedAccessView *nullUAV = nullptr;
+            Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+        }
+    }
+    else if (UpdateNormalsCS)
+    {
+        // === LEGACY SINGLE-PASS APPROACH (fallback) ===
+        
+        // Bind constant buffer
+        Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
+        
+        // Bind SRVs - use position buffer (final positions after finalize)
+        ID3D11ShaderResourceView *srvs[] = {
+            UnifiedPositionSRV, // t0: Final positions
+            UnifiedIndexSRV     // t1: Index buffer
+        };
+        Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
+        
+        // Bind normal buffer UAV
+        Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &UnifiedNormalUAV, nullptr);
+        
+        // Set shader
+        Graphics->DeviceContext->CSSetShader(UpdateNormalsCS, nullptr, 0);
+        
+        // Dispatch
+        uint32 dispatchCount = GetDispatchCount(TriangleCount, 256);
+        Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
+        
+        // Unbind
+        ID3D11UnorderedAccessView *nullUAV = nullptr;
+        Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+        ID3D11ShaderResourceView *nullSRVs[2] = {nullptr, nullptr};
+        Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
+    }
 }
 
 void FClothBatchedSolver::DispatchCollisionSDF(uint32 ParticleCount)

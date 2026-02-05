@@ -45,18 +45,18 @@ float4 main(PS_INPUT_CommonMesh Input) : SV_TARGET
         float4 albedoSample = MaterialTextures[TEXTURE_SLOT_DIFFUSE].Sample(SamplerLinearWrap, Input.UV);
         baseColor = SRGBToLinear(albedoSample.rgb);
         //return float4(Input.UV.x, Input.UV.y, 0.0f, 1.0f);
-        return albedoSample;
+        //return albedoSample;
     }
     //return float4(1.0f, 0.0f, 0.0f, 1.0f);
     // 2. Sample and apply normal map
     float3 worldNormal = normalize(Input.WorldNormal);
-    if (Material.TextureFlag & TEXTURE_FLAG_NORMAL)
-    {
-        float3 normalSample = MaterialTextures[TEXTURE_SLOT_NORMAL].Sample(SamplerLinearWrap, Input.UV).xyz;
-        // Convert from [0,1] to [-1,1]
-        normalSample = normalSample * 2.0 - 1.0;
-        worldNormal = ApplyNormalMap(normalSample, Input.WorldNormal, Input.WorldTangent);
-    }
+    //if (Material.TextureFlag & TEXTURE_FLAG_NORMAL)
+    //{
+    //    float3 normalSample = MaterialTextures[TEXTURE_SLOT_NORMAL].Sample(SamplerLinearWrap, Input.UV).xyz;
+    //    // Convert from [0,1] to [-1,1]
+    //    normalSample = normalSample * 2.0 - 1.0;
+    //    worldNormal = ApplyNormalMap(normalSample, Input.WorldNormal, Input.WorldTangent);
+    //}
     
     // 3. Sample metallic
     float metallic = Material.Metallic;

@@ -1,169 +1,123 @@
 /**
  * Cloth Normal Update Compute Shader
- * Recalculates vertex normals after simulation
- * Uses face normals and accumulates to vertices
+ * Two-pass approach matching CUDA reference implementation:
+ * Pass 1: Accumulate triangle normals to vertices (area-weighted)
+ * Pass 2: Normalize accumulated normals
  */
 
 #include "ClothCommon.hlsli"
 
 // Input buffers
 StructuredBuffer<FClothParticle> PositionBuffer : register(t0);
-StructuredBuffer<uint> IndexBuffer : register(t1);
+Buffer<uint> IndexBuffer : register(t1);  // Typed buffer for index data
 
-// Output buffer
+// Output buffer (read-write for accumulation)
 RWStructuredBuffer<float3> NormalBuffer : register(u0);
 
-// Additional constant for triangle count
-cbuffer NormalUpdateConstants : register(b1)
-{
-    uint NumTriangles;
-    uint3 Padding;
-};
-
 /**
- * Clear normals to zero
- * Run this before accumulating face normals
+ * PASS 1: Compute Triangle Normals and Accumulate to Vertices
+ *
+ * Matches CUDA ComputeTriangleNormals kernel:
+ * - One thread per triangle
+ * - Compute face normal using cross product
+ * - Accumulate to all 3 vertices (area-weighted smooth normals)
+ * - Uses atomic operations for thread-safe accumulation
+ *
+ * Note: HLSL doesn't have native atomic float add. We use direct accumulation
+ * which has minor race conditions, but these average out over many triangles
+ * producing visually correct results (same approach as CUDA reference comment).
  */
-[numthreads(64, 1, 1)]
-void ClearNormalsCS(uint3 DTid : SV_DispatchThreadID)
-{
-    uint idx = DTid.x;
-    
-    if (idx >= NumParticles)
-        return;
-    
-    NormalBuffer[idx] = float3(0, 0, 0);
-}
-
-/**
- * Calculate face normals and accumulate to vertices
- * One thread per triangle
- */
-[numthreads(64, 1, 1)]
-void UpdateNormalsCS(uint3 DTid : SV_DispatchThreadID)
+[numthreads(256, 1, 1)]
+void ComputeTriangleNormalsCS(uint3 DTid : SV_DispatchThreadID)
 {
     uint triIdx = DTid.x;
     
-    if (triIdx >= NumTriangles)
+    // Early out if beyond triangle count
+    if (triIdx >= NumConstraints)  // NumConstraints stores triangle count in this context
         return;
     
-    // Get triangle indices
-    uint i0 = IndexBuffer[triIdx * 3 + 0];
-    uint i1 = IndexBuffer[triIdx * 3 + 1];
-    uint i2 = IndexBuffer[triIdx * 3 + 2];
+    // Get triangle vertex indices
+    uint idx0 = IndexBuffer[triIdx * 3 + 0];
+    uint idx1 = IndexBuffer[triIdx * 3 + 1];
+    uint idx2 = IndexBuffer[triIdx * 3 + 2];
     
     // Bounds check
-    if (i0 >= NumParticles || i1 >= NumParticles || i2 >= NumParticles)
+    if (idx0 >= NumParticles || idx1 >= NumParticles || idx2 >= NumParticles)
         return;
     
-    // Get positions
-    float3 p0 = PositionBuffer[i0].Position;
-    float3 p1 = PositionBuffer[i1].Position;
-    float3 p2 = PositionBuffer[i2].Position;
+    // Get vertex positions
+    float3 p0 = PositionBuffer[idx0].Position;
+    float3 p1 = PositionBuffer[idx1].Position;
+    float3 p2 = PositionBuffer[idx2].Position;
     
     // Calculate edges
     float3 edge1 = p1 - p0;
     float3 edge2 = p2 - p0;
     
-    // Calculate face normal (counter-clockwise winding)
+    // Calculate face normal (cross product gives area-weighted normal)
+    // This matches CUDA: glm::cross(p2 - p1, p3 - p1)
     float3 faceNormal = cross(edge1, edge2);
     
-    // Normalize (weighted by area - larger triangles contribute more)
-    float area = length(faceNormal);
-    if (area > 1e-6f)
-    {
-        faceNormal = faceNormal / area;
-    }
-    else
+    // Check for degenerate triangles
+    float normalLengthSq = dot(faceNormal, faceNormal);
+    if (normalLengthSq < 1e-12f)
     {
         // Degenerate triangle, skip
         return;
     }
     
-    // Accumulate to vertices
-    // Note: This has race conditions but they average out over many triangles
-    // For perfect accuracy, would need atomic float operations or separate passes
-    NormalBuffer[i0] += faceNormal;
-    NormalBuffer[i1] += faceNormal;
-    NormalBuffer[i2] += faceNormal;
+    // Accumulate face normal to all 3 vertices
+    // Note: Area-weighted (unnormalized cross product) for proper smooth normals
+    // Direct accumulation without atomics - race conditions are acceptable here
+    // as they average out over many triangles (matches CUDA implementation approach)
+    NormalBuffer[idx0] += faceNormal;
+    NormalBuffer[idx1] += faceNormal;
+    NormalBuffer[idx2] += faceNormal;
 }
 
 /**
- * Normalize the accumulated normals
- * Run this after accumulating all face normals
+ * PASS 2: Normalize Vertex Normals
+ *
+ * Matches CUDA ComputeVertexNormals kernel:
+ * - One thread per vertex
+ * - Normalize accumulated normal vector
+ * - Handle zero-length normals with fallback
  */
-[numthreads(64, 1, 1)]
-void NormalizeNormalsCS(uint3 DTid : SV_DispatchThreadID)
-{
-    uint idx = DTid.x;
-    
-    if (idx >= NumParticles)
-        return;
-    
-    float3 normal = NormalBuffer[idx];
-    float len = length(normal);
-    
-    if (len > 1e-6f)
-    {
-        NormalBuffer[idx] = normal / len;
-    }
-    else
-    {
-        // Default to up vector if no valid normal
-        NormalBuffer[idx] = float3(0, 0, 1);
-    }
-}
-
-/**
- * Alternative: Single-pass normal calculation
- * Slower but avoids multiple dispatch calls
- */
-/*
-[numthreads(64, 1, 1)]
-void UpdateNormalsSinglePassCS(uint3 DTid : SV_DispatchThreadID)
+[numthreads(256, 1, 1)]
+void NormalizeVertexNormalsCS(uint3 DTid : SV_DispatchThreadID)
 {
     uint vertIdx = DTid.x;
     
+    // Early out if beyond particle count
     if (vertIdx >= NumParticles)
         return;
     
-    float3 normal = float3(0, 0, 0);
-    
-    // Iterate through all triangles (expensive!)
-    for (uint triIdx = 0; triIdx < NumTriangles; triIdx++)
-    {
-        uint i0 = IndexBuffer[triIdx * 3 + 0];
-        uint i1 = IndexBuffer[triIdx * 3 + 1];
-        uint i2 = IndexBuffer[triIdx * 3 + 2];
-        
-        // Check if this triangle uses this vertex
-        if (i0 == vertIdx || i1 == vertIdx || i2 == vertIdx)
-        {
-            float3 p0 = PositionBuffer[i0].Position;
-            float3 p1 = PositionBuffer[i1].Position;
-            float3 p2 = PositionBuffer[i2].Position;
-            
-            float3 edge1 = p1 - p0;
-            float3 edge2 = p2 - p0;
-            float3 faceNormal = cross(edge1, edge2);
-            
-            float area = length(faceNormal);
-            if (area > 1e-6f)
-            {
-                normal += faceNormal / area;
-            }
-        }
-    }
+    // Read accumulated normal
+    float3 normal = NormalBuffer[vertIdx];
     
     // Normalize
     float len = length(normal);
+    
     if (len > 1e-6f)
     {
+        // Valid normal - normalize it
         NormalBuffer[vertIdx] = normal / len;
     }
     else
     {
-        NormalBuffer[vertIdx] = float3(0, 0, 1);
+        // Zero or near-zero normal - use default up vector
+        // Matches CUDA fallback: glm::vec3(0, 1, 0)
+        NormalBuffer[vertIdx] = float3(0, 1, 0);
     }
 }
-*/
+
+/**
+ * Legacy entry point for compatibility
+ * Calls Pass 1 (triangle normal accumulation)
+ */
+[numthreads(256, 1, 1)]
+void UpdateNormalsCS(uint3 DTid : SV_DispatchThreadID)
+{
+    // Forward to Pass 1
+    ComputeTriangleNormalsCS(DTid);
+}

@@ -142,12 +142,9 @@ private:
     void DispatchApplyDeltas(uint32 ParticleCount);
     void DispatchComputeKinematicTargets(uint32 AttachmentCount);
     void DispatchFinalize(uint32 ParticleCount);
-    void DispatchClearNormals(uint32 ParticleCount);
     void DispatchUpdateNormals(uint32 TriangleCount);
-    void DispatchNormalizeNormals(uint32 ParticleCount);
     void DispatchCollisionSDF(uint32 ParticleCount);
     void DispatchEdgeCollisionSDF(uint32 EdgeCollisionCount);
-    void DispatchNormalInterpolation(uint32 RenderVertexCount);  // NEW: Normal interpolation for render mesh
 
     void UpdateFrameConstants(float DeltaTime);
     void UpdateIterationConstants(int32 CurrentIteration);
@@ -171,12 +168,11 @@ private:
     ID3D11ComputeShader *ApplyDeltasCS;
     ID3D11ComputeShader *ComputeKinematicTargetsCS; // NEW: GPU-based kinematic (P1)
     ID3D11ComputeShader *FinalizeCS;                // NEW: Velocity finalization shader
-    ID3D11ComputeShader *ClearNormalsCS;
-    ID3D11ComputeShader *UpdateNormalsCS;
-    ID3D11ComputeShader *NormalizeNormalsCS;
+    ID3D11ComputeShader *UpdateNormalsCS;           // Legacy single-pass normal update
+    ID3D11ComputeShader *ComputeTriangleNormalsCS;  // NEW: Pass 1 - Triangle normal accumulation
+    ID3D11ComputeShader *NormalizeVertexNormalsCS;  // NEW: Pass 2 - Vertex normal normalization
     ID3D11ComputeShader *CollisionSolverCS;        // NEW: SDF collision shader
     ID3D11ComputeShader *EdgeCollisionSolverCS;    // NEW: Edge-based SDF collision shader
-    ID3D11ComputeShader *NormalInterpolationCS;    // NEW: Normal interpolation shader (render mesh)
 
     // Collision manager (NEW)
     FClothCollisionManager *CollisionManager;

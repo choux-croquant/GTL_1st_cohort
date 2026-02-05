@@ -87,6 +87,17 @@ PS_INPUT_CommonMesh main(VS_INPUT_ClothProduction Input)
     
     // 5. Pass through world-space data for pixel shader
     Output.WorldPosition = worldPos.xyz;
+    
+    // NORMAL TRANSFORMATION FIX:
+    // For batched cloth, ClothWorldMatrix is ALWAYS Identity (particles already in world space)
+    // When matrix is identity, normal transformation simplifies to just the normal itself
+    // No inverse-transpose needed because:
+    // - Identity matrix: inverse-transpose(I) = I
+    // - Uniform scale: inverse-transpose preserves direction
+    // - Non-uniform scale: NOT APPLICABLE (matrix is identity for batched mode)
+    //
+    // If future non-batched mode uses non-identity transforms with non-uniform scaling,
+    // inverse-transpose would be required: normalize(mul(skinnedNormal, (float3x3)InverseTransposeMatrix))
     Output.WorldNormal = normalize(mul(skinnedNormal, (float3x3)ClothWorldMatrix));
     Output.UV = Input.UV;
     
