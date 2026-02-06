@@ -72,6 +72,7 @@ public:
 
     // Source mesh reference (optional)
     UStaticMesh *SourceMesh;
+    FString SourceMeshName;
 
     // Simulation mesh data (low-res, used for physics)
     TArray<FVector> RestPositions;  // Simulation mesh positions

@@ -597,6 +597,40 @@ void PropertyEditorPanel::RenderForClothMesh(UClothMeshComponent* ClothMeshComp)
                 {
                     ClothMeshComp->GeneratedClothAsset = Asset;
                     ClothMeshComp->SetClothAsset(Asset);
+
+                    FString MeshName = Asset->SourceMeshName;
+                    UStaticMesh* StaticMesh = FObjManager::GetStaticMesh(MeshName.ToWideString());
+
+                    if (!StaticMesh)
+                    {
+                        StaticMesh = UAssetManager::Get().GetStaticMesh(MeshName);
+                    }
+
+                    if (StaticMesh)
+                    {
+                        ClothMeshComp->SetStaticMesh(StaticMesh);
+                    }
+
+                    if (StaticMesh)
+                    {
+                        const TArray<FStaticMaterial*>& sourceMaterials = StaticMesh->GetMaterials();
+                        uint32 idx = 0;
+
+                        ClothMeshComp->ClearMaterial();
+
+                        for (FStaticMaterial* staticMat : sourceMaterials)
+                        {
+                            if (staticMat && staticMat->Material)
+                            {
+                                ClothMeshComp->SetMaterial(idx, staticMat->Material);
+                            }
+                            else
+                            {
+                                ClothMeshComp->SetMaterial(idx, nullptr);
+                            }
+                            idx++;
+                        }
+                    }
                     ClothMeshComp->UnregisterFromClothWorld();
                     ClothMeshComp->RegisterWithClothWorld();
                     UE_LOG(ELogLevel::Display, TEXT("ClothAsset loaded: %s"), filePath);

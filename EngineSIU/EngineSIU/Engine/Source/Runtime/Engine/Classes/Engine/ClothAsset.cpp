@@ -27,6 +27,8 @@ void UClothAsset::InitializeFromMesh(UStaticMesh *InSourceMesh)
 void UClothAsset::SerializeAsset(FArchive &Ar)
 {
     Super::SerializeAsset(Ar);
+    // format "Contents/TestClothMesh/TestClothMesh.obj"
+    Ar << SourceMeshName;
 
     // Flags
     uint32 flags = 0;

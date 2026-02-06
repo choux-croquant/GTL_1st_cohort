@@ -135,6 +135,11 @@ UMaterial *UClothMeshComponent::GetMaterial(uint32 Index) const
     return nullptr;
 }
 
+void UClothMeshComponent::ClearMaterial()
+{
+    Materials.Empty();
+}
+
 void UClothMeshComponent::SetMaterial(uint32 Index, UMaterial *InMaterial)
 {
     if (Index >= static_cast<uint32>(Materials.Num()))
@@ -175,16 +180,16 @@ void UClothMeshComponent::GenerateClothAsset()
         // Store generated asset
         if (GeneratedClothAsset)
         {
-            // Clean up old asset
             GeneratedClothAsset = nullptr;
         }
 
         GeneratedClothAsset = result.Asset;
+        GeneratedClothAsset->SourceMeshName = SourceStaticMesh->GetRenderData()->ObjectName;
+
         bAssetGenerated = true;
 
-        // CRITICAL FIX: Extract materials from SourceStaticMesh
-        // This ensures cloth rendering uses the same materials as the source mesh
         Materials.Empty();
+        // SourceStaticMesh path를 가지고 ClothAsset를 불러오기 한 경우 아래의 로직으로 Material세팅
         if (SourceStaticMesh)
         {
             const TArray<FStaticMaterial*>& sourceMaterials = SourceStaticMesh->GetMaterials();

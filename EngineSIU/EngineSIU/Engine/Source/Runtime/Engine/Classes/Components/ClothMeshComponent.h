@@ -98,6 +98,7 @@ public:
     void GetRenderData(FClothRenderData &OutData) const;
     uint32 GetNumMaterials() const { return Materials.Num(); }
     UMaterial *GetMaterial(uint32 Index) const;
+    void ClearMaterial();
     void SetMaterial(uint32 Index, UMaterial *InMaterial);
 
     void GenerateClothAsset();
