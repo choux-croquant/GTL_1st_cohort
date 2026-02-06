@@ -24,7 +24,7 @@ class UClothAsset : public UObject
 
 public:
     UClothAsset();
-    virtual ~UClothAsset() override;
+    ~UClothAsset();
 
     // Asset initialization
     void InitializeFromMesh(UStaticMesh *InSourceMesh);
@@ -55,6 +55,13 @@ public:
 
     // Serialization
     virtual void SerializeAsset(FArchive &Ar) override;
+
+    // Save/Load to binary file
+    bool SaveToFile(const FString& FilePath);
+    bool LoadFromFile(const FString& FilePath);
+    
+    // Get file size estimate
+    uint64 GetEstimatedFileSize() const;
 
     // Validation
     bool IsValid() const;

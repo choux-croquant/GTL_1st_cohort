@@ -5,7 +5,9 @@
 #include "Cloth/ClothWorld.h"
 #include "Classes/Engine/StaticMesh.h"
 #include "Classes/Engine/ClothAsset.h"
+#include "Classes/Engine/ClothMaterial.h"
 #include "Engine/Asset/StaticMeshAsset.h"
+#include "UObject/ObjectFactory.h"
 
 UClothMeshComponent::UClothMeshComponent()
     : WorldTransform(FMatrix::Identity), DebugDrawMode(EClothDebugDrawMode::None), bIsVisible(true), bSimulate(true)
@@ -347,9 +349,80 @@ FClothAssetGenerationParams UClothMeshComponent::BuildGenerationParams() const
     params.bGenerateAreaConstraints = bGenerateAreaConstraints;
     params.bGenerateEdgeCollisions = bGenerateEdgeCollisions;
 
-    // Mass parameters
-    params.UniformMass = TotalMass;
+    // NEW: Use ClothMaterial if available
+    if (ClothMaterial)
+    {
+        params.ClothMaterial = ClothMaterial;
+        params.UniformMass = ClothMaterial->TotalMass;
+    }
+    else
+    {
+        // Use component parameters
+        params.UniformMass = TotalMass;
+    }
     params.bUseUniformMass = true;
 
     return params;
+}
+
+// ClothMaterial helper methods
+void UClothMeshComponent::ApplyClothMaterial(UClothMaterial* Material)
+{
+    if (!Material)
+        return;
+    
+    ClothMaterial = Material;
+    
+    // Apply material parameters to component
+    StretchStiffness = Material->StretchStiffness;
+    BendStiffness = Material->BendStiffness;
+    AreaStiffness = Material->AreaStiffness;
+    TotalMass = Material->TotalMass;
+    RestLengthMultiplier = Material->RestLengthMultiplier;
+    
+    UE_LOG(ELogLevel::Display, TEXT("ClothMeshComponent: Applied ClothMaterial '%s'"), *Material->MaterialName);
+}
+
+UClothMaterial* UClothMeshComponent::CreateClothMaterialFromSettings()
+{
+    UClothMaterial* material = FObjectFactory::ConstructObject<UClothMaterial>(nullptr);
+    
+    if (material)
+    {
+        material->MaterialName = TEXT("GeneratedMaterial");
+        material->StretchStiffness = StretchStiffness;
+        material->BendStiffness = BendStiffness;
+        material->AreaStiffness = AreaStiffness;
+        material->TotalMass = TotalMass;
+        material->RestLengthMultiplier = RestLengthMultiplier;
+        
+        UE_LOG(ELogLevel::Display, TEXT("ClothMeshComponent: Created ClothMaterial from settings"));
+    }
+    
+    return material;
+}
+
+float UClothMeshComponent::GetEffectiveStretchStiffness() const
+{
+    return ClothMaterial ? ClothMaterial->StretchStiffness : StretchStiffness;
+}
+
+float UClothMeshComponent::GetEffectiveBendStiffness() const
+{
+    return ClothMaterial ? ClothMaterial->BendStiffness : BendStiffness;
+}
+
+float UClothMeshComponent::GetEffectiveAreaStiffness() const
+{
+    return ClothMaterial ? ClothMaterial->AreaStiffness : AreaStiffness;
+}
+
+float UClothMeshComponent::GetEffectiveTotalMass() const
+{
+    return ClothMaterial ? ClothMaterial->TotalMass : TotalMass;
+}
+
+float UClothMeshComponent::GetEffectiveRestLengthMultiplier() const
+{
+    return ClothMaterial ? ClothMaterial->RestLengthMultiplier : RestLengthMultiplier;
 }

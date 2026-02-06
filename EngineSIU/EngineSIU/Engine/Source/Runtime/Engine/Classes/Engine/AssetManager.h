@@ -9,6 +9,8 @@ class UParticleSystem;
 class UAnimationAsset;
 class USkeleton;
 class USkeletalMesh;
+class UClothMaterial;
+class UClothAsset;
 
 enum class EAssetType : uint8
 {
@@ -20,6 +22,8 @@ enum class EAssetType : uint8
     Material,
     ParticleSystem,
     PhysicsAsset,
+    ClothMaterial,
+    ClothAsset,
     MAX
 };
 
@@ -108,6 +112,18 @@ public:
     bool SavePhysicsAsset(const FString& FilePath, UPhysicsAsset* PhysicsAsset);
 
     bool SaveParticleSystemAsset(const FString& FilePath, UParticleSystem* ParticleSystemAsset);
+
+    // ClothMaterial management
+    UClothMaterial* GetClothMaterial(const FName& Name) const;
+    void AddClothMaterial(const FName& Key, UClothMaterial* Material);
+    bool SaveClothMaterial(const FString& FilePath, UClothMaterial* Material);
+    UClothMaterial* LoadClothMaterial(const FString& FilePath);
+    
+    // ClothAsset management
+    UClothAsset* GetClothAsset(const FName& Name) const;
+    void AddClothAsset(const FName& Key, UClothAsset* Asset);
+    bool SaveClothAsset(const FString& FilePath, UClothAsset* Asset);
+    UClothAsset* LoadClothAsset(const FString& FilePath);
 
 private:
     inline static TMap<EAssetType, TMap<FName, UObject*>> AssetMap;

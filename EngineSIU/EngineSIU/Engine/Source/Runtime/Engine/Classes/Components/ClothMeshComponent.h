@@ -15,9 +15,9 @@
 
 class UClothMeshComponent;
 class UClothAsset;
+class UClothMaterial;
 class UStaticMesh;
 class FClothInstanceHandle;
-class UStaticMesh;
 
 /**
  * Cloth render data structure for passing to render pass
@@ -112,6 +112,15 @@ public:
 
     FClothAssetGenerationParams BuildGenerationParams() const;
 
+    // ClothMaterial support
+    void ApplyClothMaterial(UClothMaterial* Material);
+    UClothMaterial* CreateClothMaterialFromSettings();
+    float GetEffectiveStretchStiffness() const;
+    float GetEffectiveBendStiffness() const;
+    float GetEffectiveAreaStiffness() const;
+    float GetEffectiveTotalMass() const;
+    float GetEffectiveRestLengthMultiplier() const;
+
     // Transform
     void SetWorldTransform(const FMatrix &Transform) { WorldTransform = Transform; }
     const FMatrix &GetWorldTransform() const { return WorldTransform; }
@@ -137,6 +146,9 @@ public:
     void SetStaticMesh(UStaticMesh* Value) { SourceStaticMesh = Value; }
 
     UStaticMesh* SourceStaticMesh = nullptr;
+
+    // Cloth material (optional, overrides component parameters)
+    UPROPERTY(EditAnywhere, UClothMaterial*, ClothMaterial, = nullptr)
 
     // Generated cloth asset (visible but not editable)
     UPROPERTY(VisibleAnywhere, UClothAsset*, GeneratedClothAsset, = nullptr)
