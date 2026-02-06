@@ -155,7 +155,7 @@ public:
 
     // === Generation Parameters ===
 
-    UPROPERTY(EditAnywhere, float, SimulationMeshReductionRatio, = 0.1f)  // 0.1 = 10% of original vertices
+    UPROPERTY(EditAnywhere, float, SimulationMeshReductionRatio, = 0.1f)
 
     UPROPERTY(EditAnywhere, bool, bPreserveBoundaryEdges, = true)
 

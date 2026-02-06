@@ -70,12 +70,6 @@ void UWorld::Tick(float DeltaTime)
         }
         PendingBeginPlayActors.Empty();
     }
-
-    // Update cloth simulation (centralized, after animation/pose updates)
-    if (ClothWorld && ClothWorld->IsInitialized())
-    {
-        ClothWorld->Update(DeltaTime);
-    }
 }
 
 void UWorld::BeginPlay()
