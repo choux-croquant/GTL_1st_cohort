@@ -6,6 +6,7 @@
 #include "ClothMeshDecimator.h"
 #include "ClothSkinningWeightGenerator.h"
 #include "Engine/ClothAsset.h"
+#include "Engine/ClothMaterial.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Asset/StaticMeshAsset.h"
 #include "UObject/ObjectFactory.h"
@@ -254,6 +255,23 @@ bool FClothAssetGenerator::GeneratePhysicsConstraints(
         edgeToTriangles.FindOrAdd(e20).Add(triIdx);
     }
     
+    // Get material parameters if available
+    float stretchStiffness = 1.0f;
+    float bendStiffness = 1.0f;
+    float areaStiffness = 0.1f;
+    float restLengthMultiplier = 1.0f;
+    
+    if (Params.ClothMaterial)
+    {
+        stretchStiffness = Params.ClothMaterial->StretchStiffness;
+        bendStiffness = Params.ClothMaterial->BendStiffness;
+        areaStiffness = Params.ClothMaterial->AreaStiffness;
+        restLengthMultiplier = Params.ClothMaterial->RestLengthMultiplier;
+        
+        UE_LOG(ELogLevel::Display, TEXT("Applying ClothMaterial parameters: Stretch=%.3f, Bend=%.3f, Area=%.3f, RestMult=%.3f"),
+               stretchStiffness, bendStiffness, areaStiffness, restLengthMultiplier);
+    }
+    
     // Generate distance constraints
     if (Params.bGenerateDistanceConstraints)
     {
@@ -271,8 +289,8 @@ bool FClothAssetGenerator::GeneratePhysicsConstraints(
             FClothDistanceConstraint constraint;
             constraint.ParticleA = v0;
             constraint.ParticleB = v1;
-            constraint.RestLength = restLength;
-            constraint.Stiffness = 1.0f;
+            constraint.RestLength = restLength * restLengthMultiplier;  // Apply material multiplier
+            constraint.Stiffness = stretchStiffness;  // Apply material stiffness
             
             OutDistanceConstraints.Add(constraint);
         }
@@ -328,7 +346,7 @@ bool FClothAssetGenerator::GeneratePhysicsConstraints(
                     constraint.ParticleC = v2;
                     constraint.ParticleD = v3;
                     constraint.RestAngle = 0.0f;  // Flat cloth default
-                    constraint.Stiffness = 1.0f;
+                    constraint.Stiffness = bendStiffness;  // Apply material stiffness
                     
                     OutBendConstraints.Add(constraint);
                 }
@@ -361,7 +379,7 @@ bool FClothAssetGenerator::GeneratePhysicsConstraints(
             constraint.ParticleC = i2;
             constraint.RestArea = area;
             constraint.RestNormal = normal;
-            constraint.Stiffness = 0.1f;  // Default area stiffness
+            constraint.Stiffness = areaStiffness;  // Apply material stiffness
             
             OutAreaConstraints.Add(constraint);
         }
@@ -579,4 +597,29 @@ void FClothAssetGenerator::CalculateInverseMasses(
             }
         }
     }
+}
+
+// Helper: Build generation params from ClothMaterial
+FClothAssetGenerationParams FClothAssetGenerationParams::FromClothMaterial(
+    UClothMaterial* Material,
+    const FClothDecimationParams& DecimationParams,
+    const FClothSkinningParams& SkinningParams)
+{
+    FClothAssetGenerationParams params;
+    
+    // Copy decimation and skinning params
+    params.DecimationParams = DecimationParams;
+    params.SkinningParams = SkinningParams;
+    
+    // Set ClothMaterial reference
+    params.ClothMaterial = Material;
+    
+    // Use material's mass if available
+    if (Material)
+    {
+        params.UniformMass = Material->TotalMass;
+        params.bUseUniformMass = true;
+    }
+    
+    return params;
 }

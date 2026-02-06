@@ -34,6 +34,21 @@ struct FClothSkinningWeight
     }
 };
 
+// Serialization operator for FClothSkinningWeight
+inline FArchive& operator<<(FArchive& Ar, FClothSkinningWeight& W)
+{
+    for (int i = 0; i < CLOTH_MAX_SKINNING_INFLUENCES; ++i)
+    {
+        Ar << W.SimVertexIndices[i];
+    }
+    for (int i = 0; i < CLOTH_MAX_SKINNING_INFLUENCES; ++i)
+    {
+        Ar << W.Weights[i];
+    }
+    Ar << W.NumInfluences;
+    return Ar;
+}
+
 /**
  * Skinning weight generation parameters
  */

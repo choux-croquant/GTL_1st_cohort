@@ -15,6 +15,7 @@
 
 class UStaticMesh;
 class UClothAsset;
+class UClothMaterial;
 
 /**
  * Render mesh data for cloth asset
@@ -71,6 +72,16 @@ struct FClothAssetGenerationParams
     // Mass distribution
     float UniformMass = 1.0f;  // Total mass of cloth
     bool bUseUniformMass = true;
+    
+    // NEW: ClothMaterial reference
+    UClothMaterial* ClothMaterial = nullptr;  // Optional material override
+    
+    // Helper: Build from ClothMaterial
+    static FClothAssetGenerationParams FromClothMaterial(
+        UClothMaterial* Material,
+        const FClothDecimationParams& DecimationParams,
+        const FClothSkinningParams& SkinningParams
+    );
 };
 
 /**

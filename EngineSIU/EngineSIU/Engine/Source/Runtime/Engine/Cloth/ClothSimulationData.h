@@ -444,6 +444,15 @@ inline FArchive &operator<<(FArchive &Ar, FClothAreaConstraint &C)
     return Ar;
 }
 
+inline FArchive &operator<<(FArchive &Ar, FClothEdgeCollisionConstraint &C)
+{
+    Ar << C.ParticleA;
+    Ar << C.ParticleB;
+    Ar << C.RestLength;
+    Ar << C.Padding;
+    return Ar;
+}
+
 inline FArchive &operator<<(FArchive &Ar, FClothVertexPaintData &V)
 {
     Ar << V.MaxDistance;
