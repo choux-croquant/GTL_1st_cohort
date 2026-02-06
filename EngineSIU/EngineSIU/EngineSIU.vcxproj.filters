@@ -1685,6 +1685,9 @@
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshDecimator_Voronoi.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothGPURenderStructs.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Renderer\ClothRenderPass.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Engine\ClothMaterial.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Core\Serialization\ArchiveFileReader.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Core\Serialization\ArchiveFileWriter.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="EngineSIU.natvis" />
@@ -1875,6 +1878,9 @@
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothSkinningWeightGenerator.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothGPURenderStructs.h" />
     <ClInclude Include="Engine\Source\Runtime\Renderer\ClothRenderPass.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Engine\ClothMaterial.h" />
+    <ClInclude Include="Engine\Source\Runtime\Core\Serialization\ArchiveFileReader.h" />
+    <ClInclude Include="Engine\Source\Runtime\Core\Serialization\ArchiveFileWriter.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\CompositingShader.hlsl" />
