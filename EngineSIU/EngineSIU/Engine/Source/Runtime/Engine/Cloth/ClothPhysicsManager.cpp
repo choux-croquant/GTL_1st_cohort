@@ -6,6 +6,7 @@
 #include "Cloth/ClothBatchManager.h"
 #include "Cloth/ClothBatchedSolver.h"
 #include "Engine/Engine.h"
+#include "Engine/UserInterface/Console.h"
 
 FClothPhysicsManager::FClothPhysicsManager() = default;
 
@@ -46,11 +47,9 @@ FClothWorld* FClothPhysicsManager::CreateClothWorld(UWorld* World)
 
 	for (UPrimitiveComponent* Primitive : Primitives)
 	{
-		// Register colliders from this component's BodySetup
 		int32 NumColliders = CollisionMgr->RegisterCollider(Primitive);
 
-		/*UE_LOG(ELogLevel::Display, TEXT("Registered %d colliders from %s"),
-			NumColliders, *Actor->GetName());*/
+		UE_LOG(ELogLevel::Display, TEXT("Registered %d colliders"), NumColliders);
 	}
 
 	return NewWorld;
@@ -72,8 +71,6 @@ void FClothPhysicsManager::RemoveClothWorld(UWorld* World)
 	FClothWorld* Found = ClothWorldMap[World];
 	if (Found)
 	{
-		// CRITICAL FIX: Clear collision manager before destroying world
-		// This prevents stale component pointers from Editor world persisting into PIE
 		FClothCollisionManager* CollisionMgr = Found->GetCollisionManager();
 		if (CollisionMgr)
 		{

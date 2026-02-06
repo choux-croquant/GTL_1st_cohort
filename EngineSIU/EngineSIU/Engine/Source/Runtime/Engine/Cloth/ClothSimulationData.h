@@ -81,7 +81,6 @@ struct FClothDistanceConstraint
     {
     }
 
-    // 선택: XPBD 파라미터를 직접 지정하는 생성자
     FClothDistanceConstraint(uint32 InA, uint32 InB, float InRestLength, float InStiffness, float InCompliance)
         : ParticleA(InA), ParticleB(InB), RestLength(InRestLength), Stiffness(InStiffness), Compliance(InCompliance), Lambda(0.0f) // 누적값은 항상 0으로 시작
     {
@@ -184,34 +183,6 @@ struct FClothVertexPaintData
 
     FClothVertexPaintData()
         : MaxDistance(1.0f), BackstopDistance(0.0f), BackstopRadius(0.0f), Stiffness(1.0f), bFixed(false)
-    {
-    }
-};
-
-/**
- * Runtime simulation state data
- */
-struct FClothSimulationData
-{
-    uint32 NumParticles = 0;
-    uint32 NumConstraints = 0;
-    uint32 NumBendConstraints = 0;
-
-    // CPU-side copies (for debugging and readback)
-    TArray<FVector> CurrentPositions;
-    TArray<FVector> CurrentVelocities;
-
-    // External forces
-    FVector Gravity = FVector(0.0f, 0.0f, 0.0f); // cm/s^2
-    FVector Wind = FVector(0.0f, 0.0f, 0.0f);
-    FVector ExternalForce = FVector(0.0f, 0.0f, 0.0f);
-
-    // Timing
-    float CurrentTime = 0.0f;
-    float AccumulatedTime = 0.0f;
-
-    FClothSimulationData()
-        : NumParticles(0), NumConstraints(0), NumBendConstraints(0), Gravity(0.0f, 0.0f, 0.0f), Wind(0.0f, 0.0f, 0.0f), ExternalForce(0.0f, 0.0f, 0.0f), CurrentTime(0.0f), AccumulatedTime(0.0f)
     {
     }
 };
@@ -460,25 +431,6 @@ inline FArchive &operator<<(FArchive &Ar, FClothVertexPaintData &V)
     Ar << V.BackstopRadius;
     Ar << V.Stiffness;
     Ar << V.bFixed;
-    return Ar;
-}
-
-inline FArchive &operator<<(FArchive &Ar, FClothSimulationData &Sim)
-{
-    Ar << Sim.NumParticles;
-    Ar << Sim.NumConstraints;
-    Ar << Sim.NumBendConstraints;
-
-    Ar << Sim.CurrentPositions;
-    Ar << Sim.CurrentVelocities;
-
-    Ar << Sim.Gravity;
-    Ar << Sim.Wind;
-    Ar << Sim.ExternalForce;
-
-    Ar << Sim.CurrentTime;
-    Ar << Sim.AccumulatedTime;
-
     return Ar;
 }
 
