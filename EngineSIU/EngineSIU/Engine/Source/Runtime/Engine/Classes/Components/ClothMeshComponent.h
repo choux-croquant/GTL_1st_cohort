@@ -159,7 +159,9 @@ public:
 
     UPROPERTY(EditAnywhere, EClothDecimationMethod, DecimationMethod, = EClothDecimationMethod::Voronoi)
         
-    // === Simulation Parameters ===
+    // === Simulation Parameters per cloth instance===
+
+    UPROPERTY(EditAnywhere, float, RestLengthMultiplier, = 1.0f)
 
     UPROPERTY(EditAnywhere, float, StretchStiffness, = 0.9f)
 
@@ -167,13 +169,7 @@ public:
 
     UPROPERTY(EditAnywhere, float, AreaStiffness, = 0.001f)
 
-    UPROPERTY(EditAnywhere, float, Damping, = 0.01f)
-
-    UPROPERTY(EditAnywhere, FVector, Gravity, = FVector(0, 0, -980.0f))
-
     UPROPERTY(EditAnywhere, float, TotalMass, = 1.0f)
-
-    UPROPERTY(EditAnywhere, EClothLODLevel, LODLevel, = EClothLODLevel::LOD_0)
 
     // === Status Display (read-only) ===
 
