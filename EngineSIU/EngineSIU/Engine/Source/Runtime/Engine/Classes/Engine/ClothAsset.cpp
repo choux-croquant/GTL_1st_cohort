@@ -22,13 +22,6 @@ void UClothAsset::InitializeFromMesh(UStaticMesh *InSourceMesh)
     }
 
     SourceMesh = InSourceMesh;
-
-    // TODO: Extract mesh data from static mesh
-    // This would involve:
-    // 1. Getting vertex positions, normals, UVs
-    // 2. Getting index buffer
-    // 3. Generating constraints from mesh topology
-    // 4. Calculating inverse masses
 }
 
 void UClothAsset::SerializeAsset(FArchive &Ar)

@@ -597,6 +597,7 @@ void PropertyEditorPanel::RenderForClothMesh(UClothMeshComponent* ClothMeshComp)
                 {
                     ClothMeshComp->GeneratedClothAsset = Asset;
                     ClothMeshComp->SetClothAsset(Asset);
+                    ClothMeshComp->UnregisterFromClothWorld();
                     ClothMeshComp->RegisterWithClothWorld();
                     UE_LOG(ELogLevel::Display, TEXT("ClothAsset loaded: %s"), filePath);
                 }
