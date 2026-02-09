@@ -1071,10 +1071,10 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
     DispatchIntegration(UsedParticleCount);
 
      // Self-collision (after constraint solving, before kinematic targets)
-    if (Config.bEnableSelfCollision && bSelfCollisionInitialized)
+    /*if (Config.bEnableSelfCollision && bSelfCollisionInitialized)
     {
         DispatchSelfCollision(UsedParticleCount);
-    }
+    }*/
     // Collision (collision data updated once per frame in Simulate, not here)
     DispatchCollisionSDF(UsedParticleCount);
     
@@ -1102,6 +1102,10 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
             //DispatchAreaConstraintSolver(UsedAreaConstraintCount);
         }
 
+        if (Config.bEnableSelfCollision && bSelfCollisionInitialized)
+        {
+            DispatchSelfCollision(UsedParticleCount);
+        }
         DispatchApplyDeltas(UsedParticleCount);
     }
     
@@ -2286,7 +2290,7 @@ void FClothBatchedSolver::DispatchSelfCollision(uint32 ParticleCount)
     }
     
     // PASS 3: Apply accumulated corrections (reuse existing method)
-    DispatchApplyDeltas(ParticleCount);
+    //DispatchApplyDeltas(ParticleCount);
 }
 
 void FClothBatchedSolver::UpdateSelfCollisionParams()
@@ -2296,11 +2300,11 @@ void FClothBatchedSolver::UpdateSelfCollisionParams()
     
     // Compute grid bounds from current particle positions
     // TODO: Compute AABB dynamically on CPU or GPU (for now, use fixed bounds)
-    FVector gridMin = FVector(-500.0f, -500.0f, 0.0f);  // 5m × 5m × 5m centered at origin
-    
+    //FVector gridMin = FVector(-500.0f, -500.0f, 0.0f);  // 5m × 5m × 5m centered at origin
+    FVector gridMin = FVector(-5.0f, -5.0f, 0.0f);  // 5m × 5m × 5m centered at origin
     // Compute cell size from average edge length
     // TODO: Compute from mesh topology (for now, use reasonable default)
-    float avgEdgeLength = 10.0f;  // 10cm typical for cloth
+    float avgEdgeLength = 0.5f;  // 10cm typical for cloth
     float cellSize = avgEdgeLength * 2.0f;
     
     // Fill params

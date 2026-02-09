@@ -203,7 +203,7 @@ void ClothConfigPanel::RenderClothConfig()
         bConfigChanged |= ImGui::SliderFloat("Collision Thickness", &Config.CollisionThickness, 0.001f, 10.0f, "%.3f");
         bConfigChanged |= ImGui::SliderFloat("Friction", &Config.CollisionFriction, 0.0f, 10.0f, "%.3f");
         bConfigChanged |= ImGui::SliderFloat("Self Collision Radius", &Config.SelfCollisionRadius, 0.001f, 2.0f, "%.3f");
-        bConfigChanged |= ImGui::SliderFloat("Self Collision Stiffness", &Config.SelfCollisionStiffness, 0.001f, 1.0f, "%.3f");
+        bConfigChanged |= ImGui::SliderFloat("Self Collision Stiffness", &Config.SelfCollisionStiffness, 0.001f, 10.0f, "%.3f");
 
         ImGui::TreePop();
     }

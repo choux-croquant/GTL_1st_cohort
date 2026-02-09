@@ -121,7 +121,7 @@ void SolveSelfCollisionsCS(uint3 DTid : SV_DispatchThreadID)
                             continue;
                         
                         // Compute corrections with stiffness
-                        float3 correction = normal * penetration * CollisionStiffness * 0.01f;
+                        float3 correction = normal * penetration * CollisionStiffness;
                         float3 corrA = -correction * (invMassA / wSum);
                         float3 corrB = +correction * (invMassB / wSum);
                         
