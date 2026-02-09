@@ -44,6 +44,25 @@ cbuffer ClothSimConstants : register(b0)
 };
 
 /**
+ * Self-collision grid parameters (constant buffer b1)
+ * Used for spatial hash grid-based self-collision detection
+ * Must match FClothSelfCollisionParams in ClothGPUStructs.h
+ */
+cbuffer SelfCollisionParams : register(b1)
+{
+    float3 GridMin;              // AABB min
+    float CellSize;              // Cell size
+    
+    uint3 GridDimensions;        // Grid dimensions (e.g., 32x32x32)
+    uint MaxParticlesPerCell;    // Max particles per cell
+    
+    float CollisionRadius;       // Particle radius
+    float CollisionStiffness;    // Separation strength (0-1)
+    uint bEnableSelfCollision;   // Enable/disable flag
+    uint SelfCollisionPadding;   // Alignment padding
+};
+
+/**
  * Particle data structure
  * Stores position and instance ID for batched simulation
  * InvMass is now stored in a separate buffer for batching support

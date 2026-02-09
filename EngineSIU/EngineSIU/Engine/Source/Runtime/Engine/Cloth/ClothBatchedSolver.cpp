@@ -87,6 +87,19 @@ FClothBatchedSolver::FClothBatchedSolver()
     RenderNormalsUAV = nullptr;
     RenderNormalsSRV = nullptr;
     RenderPositionsSRV = nullptr;
+    
+    // Self-collision buffers
+    SelfCollisionCellCountersBuffer = nullptr;
+    SelfCollisionCellDataBuffer = nullptr;
+    SelfCollisionParamsBuffer = nullptr;
+    SelfCollisionCellCountersUAV = nullptr;
+    SelfCollisionCellDataUAV = nullptr;
+    SelfCollisionCellCountersSRV = nullptr;
+    SelfCollisionCellDataSRV = nullptr;
+    SelfCollisionBuildGridCS = nullptr;
+    SelfCollisionSolverCS = nullptr;
+    AllocatedSelfCollisionCells = 0;
+    bSelfCollisionInitialized = false;
 }
 
 FClothBatchedSolver::~FClothBatchedSolver()
@@ -141,6 +154,8 @@ void FClothBatchedSolver::Release()
     NormalizeVertexNormalsCS = nullptr;  // NEW: Pass 2
     CollisionSolverCS = nullptr;
     EdgeCollisionSolverCS = nullptr;     // NEW: Edge collision solver
+    SelfCollisionBuildGridCS = nullptr;  // NEW: Self-collision shaders
+    SelfCollisionSolverCS = nullptr;
 
     // Do NOT release collision manager - it's shared and owned by ClothWorld
     CollisionManager = nullptr;
@@ -219,8 +234,18 @@ void FClothBatchedSolver::Release()
     SAFE_RELEASE(RenderNormalsUAV);
     SAFE_RELEASE(RenderNormalsSRV);
     SAFE_RELEASE(RenderPositionsSRV);
+    
+    // Release self-collision buffers
+    SAFE_RELEASE(SelfCollisionCellCountersBuffer);
+    SAFE_RELEASE(SelfCollisionCellDataBuffer);
+    SAFE_RELEASE(SelfCollisionParamsBuffer);
+    SAFE_RELEASE(SelfCollisionCellCountersUAV);
+    SAFE_RELEASE(SelfCollisionCellDataUAV);
+    SAFE_RELEASE(SelfCollisionCellCountersSRV);
+    SAFE_RELEASE(SelfCollisionCellDataSRV);
 
     bInitialized = false;
+    bSelfCollisionInitialized = false;
 
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Released resources"));
 }
@@ -744,6 +769,13 @@ bool FClothBatchedSolver::AllocateBuffers(uint32 MaxParticles, uint32 MaxConstra
     UsedRenderVertexCount = 0;
     UsedRenderIndexCount = 0;
 
+    // Allocate self-collision buffers if enabled
+    if (!AllocateSelfCollisionBuffers())
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to allocate self-collision buffers, disabling self-collision"));
+        Config.bEnableSelfCollision = false;
+    }
+
     // Mark as fully initialized now that both shaders and buffers are ready
     bInitialized = true;
 
@@ -861,6 +893,122 @@ bool FClothBatchedSolver::AllocateRenderBuffers(uint32 MaxRenderVertices, uint32
     return true;
 }
 
+bool FClothBatchedSolver::AllocateSelfCollisionBuffers()
+{
+    if (!Graphics || !Graphics->Device)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Invalid graphics device for self-collision"));
+        return false;
+    }
+
+    uint32 gridDim = Config.SelfCollisionGridDim;
+    uint32 totalCells = gridDim * gridDim * gridDim;
+    uint32 maxPerCell = Config.SelfCollisionMaxPerCell;
+
+    AllocatedSelfCollisionCells = totalCells;
+
+    HRESULT hr;
+    D3D11_BUFFER_DESC bufferDesc = {};
+    D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+
+    // Create cell counters buffer (atomic counters)
+    bufferDesc = {};
+    bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+    bufferDesc.ByteWidth = sizeof(uint32) * totalCells;
+    bufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
+    bufferDesc.StructureByteStride = sizeof(uint32);
+    bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+
+    hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &SelfCollisionCellCountersBuffer);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create self-collision cell counters buffer"));
+        return false;
+    }
+
+    // Create UAV for cell counters
+    uavDesc = {};
+    uavDesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+    uavDesc.Format = DXGI_FORMAT_UNKNOWN;
+    uavDesc.Buffer.NumElements = totalCells;
+
+    hr = Graphics->Device->CreateUnorderedAccessView(SelfCollisionCellCountersBuffer, &uavDesc, &SelfCollisionCellCountersUAV);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create self-collision cell counters UAV"));
+        return false;
+    }
+
+    // Create SRV for cell counters
+    srvDesc = {};
+    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+    srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+    srvDesc.Buffer.NumElements = totalCells;
+
+    hr = Graphics->Device->CreateShaderResourceView(SelfCollisionCellCountersBuffer, &srvDesc, &SelfCollisionCellCountersSRV);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create self-collision cell counters SRV"));
+        return false;
+    }
+
+    // Create cell data buffer (flat array of particle indices)
+    bufferDesc = {};
+    bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+    bufferDesc.ByteWidth = sizeof(uint32) * totalCells * maxPerCell;
+    bufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
+    bufferDesc.StructureByteStride = sizeof(uint32);
+    bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+
+    hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &SelfCollisionCellDataBuffer);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create self-collision cell data buffer"));
+        return false;
+    }
+
+    // Create UAV for cell data
+    uavDesc.Buffer.NumElements = totalCells * maxPerCell;
+    hr = Graphics->Device->CreateUnorderedAccessView(SelfCollisionCellDataBuffer, &uavDesc, &SelfCollisionCellDataUAV);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create self-collision cell data UAV"));
+        return false;
+    }
+
+    // Create SRV for cell data
+    srvDesc.Buffer.NumElements = totalCells * maxPerCell;
+    hr = Graphics->Device->CreateShaderResourceView(SelfCollisionCellDataBuffer, &srvDesc, &SelfCollisionCellDataSRV);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create self-collision cell data SRV"));
+        return false;
+    }
+
+    // Create constant buffer for self-collision parameters
+    D3D11_BUFFER_DESC cbDesc = {};
+    cbDesc.Usage = D3D11_USAGE_DYNAMIC;
+    cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    cbDesc.ByteWidth = (sizeof(FClothSelfCollisionParams) + 0xf) & 0xfffffff0; // 16-byte aligned
+
+    hr = Graphics->Device->CreateBuffer(&cbDesc, nullptr, &SelfCollisionParamsBuffer);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create self-collision params buffer"));
+        return false;
+    }
+
+    bSelfCollisionInitialized = true;
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Allocated self-collision buffers - Grid: %ux%ux%u (%u cells), MaxPerCell: %u, Memory: ~%.2f MB"),
+           gridDim, gridDim, gridDim, totalCells, maxPerCell,
+           (totalCells * sizeof(uint32) + totalCells * maxPerCell * sizeof(uint32)) / (1024.0f * 1024.0f));
+
+    return true;
+}
+
 void FClothBatchedSolver::Simulate(float DeltaTime)
 {
     QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_Simulate);
@@ -922,6 +1070,11 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
     // Apply Force & Position prediction
     DispatchIntegration(UsedParticleCount);
 
+     // Self-collision (after constraint solving, before kinematic targets)
+    if (Config.bEnableSelfCollision && bSelfCollisionInitialized)
+    {
+        DispatchSelfCollision(UsedParticleCount);
+    }
     // Collision (collision data updated once per frame in Simulate, not here)
     DispatchCollisionSDF(UsedParticleCount);
     
@@ -951,7 +1104,7 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
 
         DispatchApplyDeltas(UsedParticleCount);
     }
-
+    
     // Apply kinematic constraints (NEW: GPU-based computation - P1 optimization)
     // Use GPU-based kinematic target computation if available
     if (ComputeKinematicTargetsCS && AttachmentDataSRV && UsedAttachmentCount > 0)
@@ -1092,6 +1245,25 @@ bool FClothBatchedSolver::LoadComputeShaders()
         UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to compile ClothComputeKinematicTargets shader (optional)"));
     }
     ComputeKinematicTargetsCS = ShaderManager->GetComputeShaderByKey(L"ClothComputeKinematicTargetsCS");
+
+    // Load self-collision shaders
+    hr = ShaderManager->AddComputeShader(L"ClothSelfCollisionBuildGridCS",
+                                         L"Shaders/Cloth/ClothSelfCollisionBuildGrid.hlsl",
+                                         "BuildSpatialHashGridCS");
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to compile ClothSelfCollisionBuildGrid shader (optional)"));
+    }
+    SelfCollisionBuildGridCS = ShaderManager->GetComputeShaderByKey(L"ClothSelfCollisionBuildGridCS");
+
+    hr = ShaderManager->AddComputeShader(L"ClothSelfCollisionSolverCS",
+                                         L"Shaders/Cloth/ClothSelfCollisionSolver.hlsl",
+                                         "SolveSelfCollisionsCS");
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to compile ClothSelfCollisionSolver shader (optional)"));
+    }
+    SelfCollisionSolverCS = ShaderManager->GetComputeShaderByKey(L"ClothSelfCollisionSolverCS");
 
     // Verify critical shaders loaded
     if (!IntegrateCS || !ConstraintSolverCS || !BendConstraintSolverCS || !ApplyDeltasCS || !FinalizeCS)
@@ -2028,6 +2200,129 @@ void FClothBatchedSolver::DispatchEdgeCollisionSDF(uint32 EdgeCollisionCount)
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
     ID3D11ShaderResourceView *nullSRVs[4] = {nullptr, nullptr, nullptr, nullptr};
     Graphics->DeviceContext->CSSetShaderResources(0, 4, nullSRVs);
+}
+
+void FClothBatchedSolver::DispatchSelfCollision(uint32 ParticleCount)
+{
+    if (!Graphics || !Graphics->DeviceContext || ParticleCount == 0)
+        return;
+    
+    if (!SelfCollisionBuildGridCS || !SelfCollisionSolverCS)
+        return;
+    
+    if (!bSelfCollisionInitialized)
+        return;
+    
+    // Update self-collision parameters
+    UpdateSelfCollisionParams();
+    
+    // PASS 1: Build spatial hash grid
+    {
+        // Clear cell counters
+        UINT clearValue[4] = {0, 0, 0, 0};
+        Graphics->DeviceContext->ClearUnorderedAccessViewUint(SelfCollisionCellCountersUAV, clearValue);
+        
+        // Bind shader
+        Graphics->DeviceContext->CSSetShader(SelfCollisionBuildGridCS, nullptr, 0);
+        
+        // Bind constant buffers
+        ID3D11Buffer* cbs[] = {BatchSimConstantBuffer, SelfCollisionParamsBuffer};
+        Graphics->DeviceContext->CSSetConstantBuffers(0, 2, cbs);
+        
+        // Bind SRVs
+        ID3D11ShaderResourceView* srvs[] = {UnifiedPredictedSRV, UnifiedInvMassSRV};
+        Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
+        
+        // Bind UAVs
+        ID3D11UnorderedAccessView* uavs[] = {SelfCollisionCellCountersUAV, SelfCollisionCellDataUAV};
+        Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, nullptr);
+        
+        // Dispatch
+        uint32 dispatchCount = GetDispatchCount(ParticleCount, 256);
+        Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
+        
+        // Unbind
+        ID3D11UnorderedAccessView* nullUAVs[] = {nullptr, nullptr};
+        Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
+        ID3D11ShaderResourceView* nullSRVs[] = {nullptr, nullptr};
+        Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
+    }
+    
+    // PASS 2: Solve self-collisions
+    {
+        // Bind shader
+        Graphics->DeviceContext->CSSetShader(SelfCollisionSolverCS, nullptr, 0);
+        
+        // Bind constant buffers
+        ID3D11Buffer* cbs[] = {BatchSimConstantBuffer, SelfCollisionParamsBuffer};
+        Graphics->DeviceContext->CSSetConstantBuffers(0, 2, cbs);
+        
+        // Bind SRVs
+        ID3D11ShaderResourceView* srvs[] = {
+            UnifiedPredictedSRV,
+            UnifiedInvMassSRV,
+            SelfCollisionCellCountersSRV,
+            SelfCollisionCellDataSRV,
+            UnifiedIndexSRV  // For topology check
+        };
+        Graphics->DeviceContext->CSSetShaderResources(0, 5, srvs);
+        
+        // Bind UAVs (reuse existing delta/weight buffers)
+        ID3D11UnorderedAccessView* uavs[] = {
+            UnifiedPositionDeltaUAV,
+            UnifiedPositionWeightUAV
+        };
+        Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, nullptr);
+        
+        // Dispatch
+        uint32 dispatchCount = GetDispatchCount(ParticleCount, 256);
+        Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
+        
+        // Unbind
+        ID3D11UnorderedAccessView* nullUAVs[] = {nullptr, nullptr};
+        Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
+        ID3D11ShaderResourceView* nullSRVs[] = {nullptr, nullptr, nullptr, nullptr, nullptr};
+        Graphics->DeviceContext->CSSetShaderResources(0, 5, nullSRVs);
+    }
+    
+    // PASS 3: Apply accumulated corrections (reuse existing method)
+    DispatchApplyDeltas(ParticleCount);
+}
+
+void FClothBatchedSolver::UpdateSelfCollisionParams()
+{
+    if (!Graphics || !Graphics->DeviceContext || !SelfCollisionParamsBuffer)
+        return;
+    
+    // Compute grid bounds from current particle positions
+    // TODO: Compute AABB dynamically on CPU or GPU (for now, use fixed bounds)
+    FVector gridMin = FVector(-500.0f, -500.0f, 0.0f);  // 5m × 5m × 5m centered at origin
+    
+    // Compute cell size from average edge length
+    // TODO: Compute from mesh topology (for now, use reasonable default)
+    float avgEdgeLength = 10.0f;  // 10cm typical for cloth
+    float cellSize = avgEdgeLength * 2.0f;
+    
+    // Fill params
+    SelfCollisionParams.GridMin = gridMin;
+    SelfCollisionParams.CellSize = cellSize;
+    SelfCollisionParams.GridDimX = Config.SelfCollisionGridDim;
+    SelfCollisionParams.GridDimY = Config.SelfCollisionGridDim;
+    SelfCollisionParams.GridDimZ = Config.SelfCollisionGridDim;
+    SelfCollisionParams.MaxParticlesPerCell = Config.SelfCollisionMaxPerCell;
+    SelfCollisionParams.CollisionRadius = Config.SelfCollisionRadius;
+    SelfCollisionParams.CollisionStiffness = Config.SelfCollisionStiffness;
+    SelfCollisionParams.bEnableSelfCollision = Config.bEnableSelfCollision ? 1 : 0;
+    SelfCollisionParams.Padding = 0;
+    
+    // Upload to GPU
+    D3D11_MAPPED_SUBRESOURCE msr;
+    HRESULT hr = Graphics->DeviceContext->Map(SelfCollisionParamsBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &msr);
+    if (SUCCEEDED(hr))
+    {
+        memcpy(msr.pData, &SelfCollisionParams, sizeof(FClothSelfCollisionParams));
+        Graphics->DeviceContext->Unmap(SelfCollisionParamsBuffer, 0);
+    }
 }
 
 void FClothBatchedSolver::UpdateFrameConstants(float DeltaTime)

@@ -176,6 +176,7 @@ float4 main(PS_INPUT_ClothMesh Input) : SV_TARGET
     // 8. Two-sided lighting support
     // If backfacing, flip the normal for lighting (already handled by rasterizer state)
     // The rasterizer is set to D3D11_CULL_NONE, so both sides render
+    //litColor.rgb = LinearToSRGB(litColor.rgb);
     
     return litColor;
     // Shader connection TEST Color;

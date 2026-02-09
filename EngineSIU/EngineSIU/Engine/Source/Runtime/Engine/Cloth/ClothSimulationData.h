@@ -52,6 +52,12 @@ struct FClothConfig
     float CollisionFriction = 0.1f;
     bool bEnableSelfCollision = false;
     
+    // Self-collision parameters (spatial hash grid approach)
+    float SelfCollisionRadius = 0.01f;      // Particle radius (cm)
+    float SelfCollisionStiffness = 0.01f;   // Separation strength (0-1)
+    uint32 SelfCollisionGridDim = 32;      // Grid dimension (32^3 default)
+    uint32 SelfCollisionMaxPerCell = 16;   // Max particles per cell
+    
     // Edge-based collision (NEW: Prevents edge penetration in low-resolution meshes)
     bool bEnableEdgeCollision = true;      // Enable edge-based SDF collision
     int32 EdgeSamplesPerEdge = 3;          // Number of sample points per edge (3-5 recommended)
@@ -366,6 +372,12 @@ inline FArchive &operator<<(FArchive &Ar, FClothConfig &Cfg)
     Ar << Cfg.CollisionThickness;
     Ar << Cfg.CollisionFriction;
     Ar << Cfg.bEnableSelfCollision;
+    
+    // Self-collision parameters
+    Ar << Cfg.SelfCollisionRadius;
+    Ar << Cfg.SelfCollisionStiffness;
+    Ar << Cfg.SelfCollisionGridDim;
+    Ar << Cfg.SelfCollisionMaxPerCell;
     
     // NEW: Edge collision parameters
     Ar << Cfg.bEnableEdgeCollision;

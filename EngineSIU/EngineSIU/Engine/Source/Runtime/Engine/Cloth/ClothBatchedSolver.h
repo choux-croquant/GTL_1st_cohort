@@ -145,12 +145,15 @@ private:
     void DispatchUpdateNormals(uint32 TriangleCount);
     void DispatchCollisionSDF(uint32 ParticleCount);
     void DispatchEdgeCollisionSDF(uint32 EdgeCollisionCount);
+    void DispatchSelfCollision(uint32 ParticleCount);
 
     void UpdateFrameConstants(float DeltaTime);
+    void UpdateSelfCollisionParams();
     void UpdateIterationConstants(int32 CurrentIteration);
 
     bool CreateGPUResources();
     bool LoadComputeShaders();
+    bool AllocateSelfCollisionBuffers();
 
     uint32 GetDispatchCount(uint32 ElementCount, uint32 ThreadGroupSize = 64) const;
 
@@ -173,6 +176,10 @@ private:
     ID3D11ComputeShader *NormalizeVertexNormalsCS;  // NEW: Pass 2 - Vertex normal normalization
     ID3D11ComputeShader *CollisionSolverCS;        // NEW: SDF collision shader
     ID3D11ComputeShader *EdgeCollisionSolverCS;    // NEW: Edge-based SDF collision shader
+    
+    // Self-collision compute shaders
+    ID3D11ComputeShader *SelfCollisionBuildGridCS;  // NEW: Build spatial hash grid
+    ID3D11ComputeShader *SelfCollisionSolverCS;     // NEW: Solve self-collisions
 
     // Collision manager (NEW)
     FClothCollisionManager *CollisionManager;
@@ -203,6 +210,11 @@ private:
     ID3D11Buffer *UnifiedSkinningWeightBuffer;      // Unified skinning weight buffer (render → sim mapping)
     ID3D11Buffer *RenderNormalsBuffer;              // Interpolated render mesh normals (optional, for compute-based skinning)
     ID3D11Buffer *RenderPositionsBuffer;            // Skinned render mesh positions (optional, for compute-based skinning)
+    
+    // Self-collision buffers
+    ID3D11Buffer *SelfCollisionCellCountersBuffer;  // Per-cell particle counters
+    ID3D11Buffer *SelfCollisionCellDataBuffer;      // Flat array of particle indices per cell
+    ID3D11Buffer *SelfCollisionParamsBuffer;        // Constant buffer for self-collision parameters
 
     // UAVs and SRVs
     ID3D11UnorderedAccessView *UnifiedPositionUAV;
@@ -239,6 +251,12 @@ private:
     ID3D11UnorderedAccessView *RenderNormalsUAV;     // For compute-based skinning (optional)
     ID3D11ShaderResourceView *RenderNormalsSRV;      // For compute-based skinning (optional)
     ID3D11ShaderResourceView *RenderPositionsSRV;    // For compute-based skinning (optional)
+    
+    // Self-collision UAVs and SRVs
+    ID3D11UnorderedAccessView *SelfCollisionCellCountersUAV;
+    ID3D11UnorderedAccessView *SelfCollisionCellDataUAV;
+    ID3D11ShaderResourceView *SelfCollisionCellCountersSRV;
+    ID3D11ShaderResourceView *SelfCollisionCellDataSRV;
 
     // Per-instance parameter buffer
     ID3D11Buffer *InstanceParameterBuffer;
@@ -278,6 +296,11 @@ private:
 
     // NEW: P2 optimization - cached constants to avoid repeated full buffer uploads
     FClothSimConstants CachedConstants;
+    
+    // Self-collision state
+    FClothSelfCollisionParams SelfCollisionParams;
+    uint32 AllocatedSelfCollisionCells;
+    bool bSelfCollisionInitialized;
 
     static constexpr uint32 THREAD_GROUP_SIZE = 64;
 };

@@ -219,6 +219,28 @@ struct FClothEdgeCollisionConstraintGPU
                        // Total: 16 bytes
 };
 
+/**
+ * Self-collision grid parameters (GPU constant buffer)
+ * Must match shader constant buffer layout in ClothCommon.hlsli
+ * Used for spatial hash grid-based self-collision detection
+ */
+struct FClothSelfCollisionParams
+{
+    FVector GridMin;           // 12 bytes - AABB min
+    float CellSize;            // 4 bytes
+    
+    uint32 GridDimX;           // 4 bytes
+    uint32 GridDimY;           // 4 bytes
+    uint32 GridDimZ;           // 4 bytes
+    uint32 MaxParticlesPerCell; // 4 bytes
+    
+    float CollisionRadius;     // 4 bytes - Particle radius
+    float CollisionStiffness;  // 4 bytes - Separation strength
+    uint32 bEnableSelfCollision; // 4 bytes
+    uint32 Padding;            // 4 bytes
+    // Total: 48 bytes (aligned)
+};
+
 // Static assertions to verify structure sizes (C++ only)
 static_assert(sizeof(FClothParticleGPU) == 16, "FClothParticleGPU must be 16 bytes");
 static_assert(sizeof(FClothVelocityGPU) == 16, "FClothVelocityGPU must be 16 bytes");
@@ -231,6 +253,7 @@ static_assert(sizeof(FClothCollisionSphereGPU) == 16, "FClothCollisionSphereGPU 
 static_assert(sizeof(FClothCollisionCapsuleGPU) == 32, "FClothCollisionCapsuleGPU must be 32 bytes");
 static_assert(sizeof(FClothColliderGPU) == 64, "FClothColliderGPU must be 64 bytes");
 static_assert(sizeof(FClothEdgeCollisionConstraintGPU) == 16, "FClothEdgeCollisionConstraintGPU must be 16 bytes");
+static_assert(sizeof(FClothSelfCollisionParams) == 48, "FClothSelfCollisionParams must be 48 bytes");
 
 // Verify alignment
 static_assert(alignof(FClothParticleGPU) == 4, "FClothParticleGPU alignment");

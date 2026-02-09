@@ -108,7 +108,7 @@ void ClothConfigPanel::RenderClothConfig()
     // Constraint Stiffness
     if (ImGui::TreeNodeEx("Constraint Stiffness", ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen))
     {
-        bConfigChanged |= ImGui::SliderFloat("Stretch Stiffness", &Config.StretchStiffness, 0.0f, 1.0f, "%.3f");
+        bConfigChanged |= ImGui::SliderFloat("Stretch Stiffness", &Config.StretchStiffness, 0.001f, 1.0f, "%.3f");
         if (ImGui::IsItemHovered())
         {
             ImGui::SetTooltip("Controls fabric stretching resistance");
@@ -194,14 +194,16 @@ void ClothConfigPanel::RenderClothConfig()
     // Collision Settings
     if (ImGui::TreeNodeEx("Collision", ImGuiTreeNodeFlags_Framed))
     {
-        bConfigChanged |= ImGui::SliderFloat("Collision Thickness", &Config.CollisionThickness, 0.001f, 10.0f, "%.3f");
-        bConfigChanged |= ImGui::SliderFloat("Friction", &Config.CollisionFriction, 0.0f, 10.0f, "%.3f");
-        /*bool bSelfCollision = Config.bEnableSelfCollision;
+        bool bSelfCollision = Config.bEnableSelfCollision;
         if (ImGui::Checkbox("Enable Self Collision", &bSelfCollision))
         {
             Config.bEnableSelfCollision = bSelfCollision;
             bConfigChanged = true;
-        }*/
+        }
+        bConfigChanged |= ImGui::SliderFloat("Collision Thickness", &Config.CollisionThickness, 0.001f, 10.0f, "%.3f");
+        bConfigChanged |= ImGui::SliderFloat("Friction", &Config.CollisionFriction, 0.0f, 10.0f, "%.3f");
+        bConfigChanged |= ImGui::SliderFloat("Self Collision Radius", &Config.SelfCollisionRadius, 0.001f, 2.0f, "%.3f");
+        bConfigChanged |= ImGui::SliderFloat("Self Collision Stiffness", &Config.SelfCollisionStiffness, 0.001f, 1.0f, "%.3f");
 
         ImGui::TreePop();
     }
