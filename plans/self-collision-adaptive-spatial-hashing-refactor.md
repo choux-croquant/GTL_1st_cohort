@@ -2,7 +2,14 @@
 
 ## Executive Summary
 
-This plan details the refactoring of the spatial hash-based self-collision system to automatically compute adaptive grid parameters per cloth instance, eliminating hardcoded values and enabling natural collision behavior across cloths with different resolutions.
+This plan details the refactoring of the spatial hash-based self-collision system to automatically compute adaptive grid parameters per cloth instance with **GPU-based dynamic bounds tracking**, eliminating hardcoded values and enabling natural collision behavior across cloths with different resolutions and motion scenarios.
+
+### Core Features (Mandatory)
+1. **Adaptive Parameter Computation** - Per-cloth mesh analysis at initialization
+2. **GPU-Based AABB Computation** - Parallel reduction shader for real-time bounds
+3. **Dynamic Bounds Tracking** - Frame-to-frame motion detection and grid updates
+4. **Multiplier-Based Configuration** - Artist-friendly tuning controls
+5. **Comprehensive Validation** - Automatic diagnostics and warnings
 
 ---
 
@@ -109,8 +116,10 @@ struct FClothInstanceMetadata
     
     // NEW: Adaptive self-collision parameters (computed at initialization)
     float AvgEdgeLength;        // Average edge length in world units
-    FVector MeshBoundsMin;      // Dynamic AABB min
-    FVector MeshBoundsMax;      // Dynamic AABB max
+    FVector MeshBoundsMin;      // Dynamic AABB min (updated per frame)
+    FVector MeshBoundsMax;      // Dynamic AABB max (updated per frame)
+    FVector PrevBoundsMin;      // Previous frame bounds (for motion tracking)
+    FVector PrevBoundsMax;      // Previous frame bounds (for motion tracking)
     float AdaptiveCellSize;     // Computed: AvgEdgeLength × 1.5
     float AdaptiveCollisionRadius; // Computed: AvgEdgeLength × 0.5
     uint32 AdaptiveGridDimX;    // Computed from bounds and cell size
@@ -118,17 +127,27 @@ struct FClothInstanceMetadata
     uint32 AdaptiveGridDimZ;
     uint32 AdaptiveMaxPerCell;  // Computed from particle density
     
+    // NEW: Dynamic bounds tracking state
+    float AccumulatedMotion;    // Accumulated displacement since last bounds update
+    uint32 FramesSinceLastBoundsUpdate; // Frame counter for periodic updates
+    bool bNeedsBoundsUpdate;    // Flag to trigger bounds recomputation
+    
     FClothInstanceMetadata()
         : /* existing initializers */
         , AvgEdgeLength(0.0f)
         , MeshBoundsMin(FVector::ZeroVector)
         , MeshBoundsMax(FVector::ZeroVector)
+        , PrevBoundsMin(FVector::ZeroVector)
+        , PrevBoundsMax(FVector::ZeroVector)
         , AdaptiveCellSize(0.0f)
         , AdaptiveCollisionRadius(0.0f)
         , AdaptiveGridDimX(0)
         , AdaptiveGridDimY(0)
         , AdaptiveGridDimZ(0)
         , AdaptiveMaxPerCell(0)
+        , AccumulatedMotion(0.0f)
+        , FramesSinceLastBoundsUpdate(0)
+        , bNeedsBoundsUpdate(false)
     {
     }
 };
@@ -544,13 +563,307 @@ void FClothBatchedSolver::UpdateSelfCollisionParams(
 
 ---
 
-### Phase 4: Convert `FClothConfig` to Multipliers
+### Phase 4: GPU-Based AABB Computation (MANDATORY)
 
-**Goal**: Change from absolute values to multipliers for artist control.
+**Goal**: Implement parallel reduction compute shader for real-time bounds computation on GPU.
+
+#### 4.1 Update `FClothSelfCollisionParams` Structure
+
+**File**: [`ClothGPUStructs.h:227`](EngineSIU/EngineSIU/Engine/Source/Runtime/Engine/Cloth/ClothGPUStructs.h:227)
+
+```cpp
+struct FClothSelfCollisionParams
+{
+    FVector GridMin;           // 12 bytes - AABB min (updated from GPU bounds)
+    float CellSize;            // 4 bytes
+    
+    uint32 GridDimX;           // 4 bytes
+    uint32 GridDimY;           // 4 bytes
+    uint32 GridDimZ;           // 4 bytes
+    uint32 MaxParticlesPerCell; // 4 bytes
+    
+    float CollisionRadius;     // 4 bytes - Particle radius
+    float CollisionStiffness;  // 4 bytes - Separation strength
+    uint32 bEnableSelfCollision; // 4 bytes
+    uint32 bBoundsNeedUpdate;  // 4 bytes - NEW: Flag for bounds update
+    // Total: 48 bytes (aligned)
+};
+```
+
+#### 4.2 Create GPU Bounds Buffer Structure
+
+**File**: `ClothGPUStructs.h` (add new structure)
+
+```cpp
+/**
+ * GPU bounds buffer for parallel reduction
+ * Stores min/max bounds computed from particle positions
+ */
+struct FClothBoundsGPU
+{
+    FVector BoundsMin;  // 12 bytes
+    float Padding0;     // 4 bytes
+    FVector BoundsMax;  // 12 bytes
+    float Padding1;     // 4 bytes
+    // Total: 32 bytes
+};
+```
+
+#### 4.3 Create Parallel Reduction Compute Shader
+
+**New File**: `EngineSIU/EngineSIU/Shaders/Cloth/ClothComputeBounds.hlsl`
+
+```hlsl
+/**
+ * Cloth Compute Bounds Shader
+ * GPU parallel reduction to compute AABB from particle positions
+ *
+ * Two-pass approach:
+ * Pass 1: Thread-local reduction (256 threads → 256 local bounds)
+ * Pass 2: Final reduction (256 local bounds → 1 global bound)
+ */
+
+#include "ClothCommon.hlsli"
+
+// Input
+StructuredBuffer<FClothParticle> Particles : register(t0);
+StructuredBuffer<float> InvMass : register(t1);
+
+// Output
+RWStructuredBuffer<FClothBoundsGPU> BoundsBuffer : register(u0);
+
+// Shared memory for reduction
+groupshared float3 SharedMin[256];
+groupshared float3 SharedMax[256];
+
+/**
+ * Pass 1: Compute per-thread-group bounds
+ * Each thread group processes a chunk of particles
+ */
+[numthreads(256, 1, 1)]
+void ComputeBoundsPass1CS(
+    uint3 GroupID : SV_GroupID,
+    uint3 GroupThreadID : SV_GroupThreadID,
+    uint3 DispatchThreadID : SV_DispatchThreadID)
+{
+    uint threadIdx = GroupThreadID.x;
+    uint globalIdx = DispatchThreadID.x;
+    
+    // Initialize thread-local bounds
+    float3 localMin = float3(1e10, 1e10, 1e10);
+    float3 localMax = float3(-1e10, -1e10, -1e10);
+    
+    // Process particles (each thread handles multiple particles if needed)
+    uint particlesPerThread = (NumParticles + 255) / 256;
+    for (uint i = 0; i < particlesPerThread; ++i)
+    {
+        uint particleIdx = globalIdx + i * 256;
+        if (particleIdx >= NumParticles)
+            break;
+        
+        // Skip kinematic particles (they don't move)
+        if (InvMass[particleIdx] == 0.0f)
+            continue;
+        
+        float3 pos = Particles[particleIdx].Position;
+        localMin = min(localMin, pos);
+        localMax = max(localMax, pos);
+    }
+    
+    // Store in shared memory
+    SharedMin[threadIdx] = localMin;
+    SharedMax[threadIdx] = localMax;
+    GroupMemoryBarrierWithGroupSync();
+    
+    // Parallel reduction within thread group
+    [unroll]
+    for (uint stride = 128; stride > 0; stride >>= 1)
+    {
+        if (threadIdx < stride)
+        {
+            SharedMin[threadIdx] = min(SharedMin[threadIdx], SharedMin[threadIdx + stride]);
+            SharedMax[threadIdx] = max(SharedMax[threadIdx], SharedMax[threadIdx + stride]);
+        }
+        GroupMemoryBarrierWithGroupSync();
+    }
+    
+    // Thread 0 writes group result
+    if (threadIdx == 0)
+    {
+        BoundsBuffer[GroupID.x].BoundsMin = SharedMin[0];
+        BoundsBuffer[GroupID.x].BoundsMax = SharedMax[0];
+    }
+}
+
+/**
+ * Pass 2: Final reduction across thread groups
+ * Single thread group reduces all group results to final bounds
+ */
+[numthreads(256, 1, 1)]
+void ComputeBoundsPass2CS(
+    uint3 GroupThreadID : SV_GroupThreadID,
+    uint3 DispatchThreadID : SV_DispatchThreadID)
+{
+    uint threadIdx = GroupThreadID.x;
+    uint numGroups = (NumParticles + 255) / 256;
+    
+    // Load group bounds into shared memory
+    float3 localMin = float3(1e10, 1e10, 1e10);
+    float3 localMax = float3(-1e10, -1e10, -1e10);
+    
+    if (threadIdx < numGroups)
+    {
+        localMin = BoundsBuffer[threadIdx].BoundsMin;
+        localMax = BoundsBuffer[threadIdx].BoundsMax;
+    }
+    
+    SharedMin[threadIdx] = localMin;
+    SharedMax[threadIdx] = localMax;
+    GroupMemoryBarrierWithGroupSync();
+    
+    // Parallel reduction
+    [unroll]
+    for (uint stride = 128; stride > 0; stride >>= 1)
+    {
+        if (threadIdx < stride)
+        {
+            SharedMin[threadIdx] = min(SharedMin[threadIdx], SharedMin[threadIdx + stride]);
+            SharedMax[threadIdx] = max(SharedMax[threadIdx], SharedMax[threadIdx + stride]);
+        }
+        GroupMemoryBarrierWithGroupSync();
+    }
+    
+    // Thread 0 writes final result to slot 0
+    if (threadIdx == 0)
+    {
+        BoundsBuffer[0].BoundsMin = SharedMin[0];
+        BoundsBuffer[0].BoundsMax = SharedMax[0];
+    }
+}
+```
+
+#### 4.4 Add GPU Bounds Buffers to Solver
+
+**File**: [`ClothBatchedSolver.h`](EngineSIU/EngineSIU/Engine/Source/Runtime/Engine/Cloth/ClothBatchedSolver.h)
+
+```cpp
+class FClothBatchedSolver
+{
+private:
+    // ... existing buffers ...
+    
+    // NEW: GPU bounds computation buffers
+    ID3D11Buffer* BoundsComputeBuffer;              // Intermediate bounds (one per thread group)
+    ID3D11Buffer* FinalBoundsBuffer;                // Final computed bounds
+    ID3D11UnorderedAccessView* BoundsComputeUAV;
+    ID3D11UnorderedAccessView* FinalBoundsUAV;
+    ID3D11ShaderResourceView* FinalBoundsSRV;
+    
+    // NEW: GPU bounds compute shaders
+    ID3D11ComputeShader* ComputeBoundsPass1CS;
+    ID3D11ComputeShader* ComputeBoundsPass2CS;
+    
+    // NEW: Bounds computation methods
+    void DispatchComputeBounds(uint32 ParticleCount);
+    void ReadbackBounds(FVector& OutMin, FVector& OutMax);
+};
+```
+
+#### 4.5 Implement GPU Bounds Computation
+
+**File**: [`ClothBatchedSolver.cpp`](EngineSIU/EngineSIU/Engine/Source/Runtime/Engine/Cloth/ClothBatchedSolver.cpp)
+
+```cpp
+void FClothBatchedSolver::DispatchComputeBounds(uint32 ParticleCount)
+{
+    if (!Graphics || !Graphics->DeviceContext || ParticleCount == 0)
+        return;
+    
+    if (!ComputeBoundsPass1CS || !ComputeBoundsPass2CS)
+        return;
+    
+    // Pass 1: Per-thread-group reduction
+    {
+        Graphics->DeviceContext->CSSetShader(ComputeBoundsPass1CS, nullptr, 0);
+        Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
+        
+        ID3D11ShaderResourceView* srvs[] = {UnifiedPositionSRV, UnifiedInvMassSRV};
+        Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
+        
+        Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &BoundsComputeUAV, nullptr);
+        
+        uint32 numGroups = (ParticleCount + 255) / 256;
+        Graphics->DeviceContext->Dispatch(numGroups, 1, 1);
+        
+        // Unbind
+        ID3D11UnorderedAccessView* nullUAV = nullptr;
+        Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+        ID3D11ShaderResourceView* nullSRVs[] = {nullptr, nullptr};
+        Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
+    }
+    
+    // Pass 2: Final reduction
+    {
+        Graphics->DeviceContext->CSSetShader(ComputeBoundsPass2CS, nullptr, 0);
+        Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
+        
+        Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &BoundsComputeUAV, nullptr);
+        
+        Graphics->DeviceContext->Dispatch(1, 1, 1);
+        
+        // Unbind
+        ID3D11UnorderedAccessView* nullUAV = nullptr;
+        Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+    }
+}
+
+void FClothBatchedSolver::ReadbackBounds(FVector& OutMin, FVector& OutMax)
+{
+    if (!Graphics || !Graphics->DeviceContext || !FinalBoundsBuffer)
+        return;
+    
+    // Create staging buffer for readback (one-time creation)
+    static ID3D11Buffer* stagingBuffer = nullptr;
+    if (!stagingBuffer)
+    {
+        D3D11_BUFFER_DESC stagingDesc = {};
+        stagingDesc.Usage = D3D11_USAGE_STAGING;
+        stagingDesc.ByteWidth = sizeof(FClothBoundsGPU);
+        stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        
+        HRESULT hr = Graphics->Device->CreateBuffer(&stagingDesc, nullptr, &stagingBuffer);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("Failed to create bounds staging buffer"));
+            return;
+        }
+    }
+    
+    // Copy GPU bounds to staging
+    Graphics->DeviceContext->CopyResource(stagingBuffer, FinalBoundsBuffer);
+    
+    // Map and read
+    D3D11_MAPPED_SUBRESOURCE msr;
+    HRESULT hr = Graphics->DeviceContext->Map(stagingBuffer, 0, D3D11_MAP_READ, 0, &msr);
+    if (SUCCEEDED(hr))
+    {
+        FClothBoundsGPU* bounds = static_cast<FClothBoundsGPU*>(msr.pData);
+        OutMin = bounds->BoundsMin;
+        OutMax = bounds->BoundsMax;
+        Graphics->DeviceContext->Unmap(stagingBuffer, 0);
+    }
+}
+```
+
+---
+
+### Phase 5: Dynamic Bounds Tracking (MANDATORY)
+
+**Goal**: Implement frame-to-frame motion detection and automatic bounds updates.
+
+#### 5.1 Add Motion Tracking to Config
 
 **File**: [`ClothSimulationData.h:56`](EngineSIU/EngineSIU/Engine/Source/Runtime/Engine/Cloth/ClothSimulationData.h:56)
-
-#### 4.1 Update `FClothConfig`
 
 ```cpp
 struct FClothConfig
@@ -568,12 +881,137 @@ struct FClothConfig
     // Grid capacity (still absolute, but computed adaptively per instance)
     uint32 SelfCollisionMaxPerCell = 32;   // Max particles per cell (safety limit)
     
+    // NEW: Dynamic bounds tracking parameters
+    float BoundsUpdateMotionThreshold = 0.15f;  // Trigger update when motion exceeds 15% of bounds size
+    uint32 BoundsUpdateMaxFrames = 60;          // Force update every N frames regardless of motion
+    bool bEnableDynamicBoundsUpdate = true;     // Enable/disable dynamic bounds tracking
+    
     // DEPRECATED (kept for backwards compatibility, but ignored)
     float SelfCollisionRadius = 0.01f;      // DEPRECATED: Use multiplier instead
     float SelfCollisionStiffness = 0.01f;   // DEPRECATED: Use multiplier instead
     uint32 SelfCollisionGridDim = 32;       // DEPRECATED: Computed adaptively
 };
 ```
+
+#### 5.2 Implement Motion Tracking in Solver
+
+**File**: [`ClothBatchedSolver.cpp`](EngineSIU/EngineSIU/Engine/Source/Runtime/Engine/Cloth/ClothBatchedSolver.cpp)
+
+```cpp
+void FClothBatchedSolver::UpdateDynamicBounds(
+    TArray<FClothInstanceMetadata>& InstanceMetadata)
+{
+    if (!Config.bEnableDynamicBoundsUpdate)
+        return;
+    
+    for (FClothInstanceMetadata& meta : InstanceMetadata)
+    {
+        if (!meta.bIsActive)
+            continue;
+        
+        meta.FramesSinceLastBoundsUpdate++;
+        
+        // Check if forced update needed (periodic)
+        bool bForceUpdate = meta.FramesSinceLastBoundsUpdate >= Config.BoundsUpdateMaxFrames;
+        
+        // Check if motion threshold exceeded
+        bool bMotionExceeded = false;
+        if (!bForceUpdate)
+        {
+            // Compute GPU bounds for this instance
+            FVector newMin, newMax;
+            DispatchComputeBounds(meta.ParticleCount);
+            ReadbackBounds(newMin, newMax);
+            
+            // Calculate motion as percentage of current bounds size
+            FVector currentExtent = meta.MeshBoundsMax - meta.MeshBoundsMin;
+            FVector displacement = (newMin - meta.MeshBoundsMin).GetAbs() +
+                                   (newMax - meta.MeshBoundsMax).GetAbs();
+            
+            float maxDisplacement = FMath::Max3(
+                displacement.X / FMath::Max(currentExtent.X, 0.01f),
+                displacement.Y / FMath::Max(currentExtent.Y, 0.01f),
+                displacement.Z / FMath::Max(currentExtent.Z, 0.01f));
+            
+            meta.AccumulatedMotion = maxDisplacement;
+            bMotionExceeded = maxDisplacement > Config.BoundsUpdateMotionThreshold;
+            
+            if (bMotionExceeded || bForceUpdate)
+            {
+                // Update bounds
+                meta.PrevBoundsMin = meta.MeshBoundsMin;
+                meta.PrevBoundsMax = meta.MeshBoundsMax;
+                meta.MeshBoundsMin = newMin;
+                meta.MeshBoundsMax = newMax;
+                
+                // Recompute grid parameters
+                FClothMeshAnalysis::ComputeAdaptiveSpatialHashParams(
+                    meta.AvgEdgeLength,
+                    meta.MeshBoundsMin,
+                    meta.MeshBoundsMax,
+                    meta.ParticleCount,
+                    meta.AdaptiveCellSize,
+                    meta.AdaptiveCollisionRadius,
+                    /* OutGridMin/Max computed internally */,
+                    meta.AdaptiveGridDimX,
+                    meta.AdaptiveGridDimY,
+                    meta.AdaptiveGridDimZ,
+                    meta.AdaptiveMaxPerCell);
+                
+                meta.FramesSinceLastBoundsUpdate = 0;
+                meta.AccumulatedMotion = 0.0f;
+                meta.bNeedsBoundsUpdate = true;
+                
+                UE_LOG(ELogLevel::Display,
+                    TEXT("Cloth Instance %d: Bounds updated (Motion=%.2f%%, Forced=%d)"),
+                    /* instance id */, maxDisplacement * 100.0f, bForceUpdate ? 1 : 0);
+            }
+        }
+    }
+}
+```
+
+#### 5.3 Integrate into Simulation Loop
+
+**File**: [`ClothBatchedSolver.cpp`](EngineSIU/EngineSIU/Engine/Source/Runtime/Engine/Cloth/ClothBatchedSolver.cpp)
+
+```cpp
+void FClothBatchedSolver::Simulate(float DeltaTime)
+{
+    // ... existing simulation code ...
+    
+    // NEW: Update dynamic bounds BEFORE self-collision (once per frame)
+    if (Config.bEnableSelfCollision && bSelfCollisionInitialized)
+    {
+        UpdateDynamicBounds(InstanceMetadata);
+    }
+    
+    // Update collision ONCE per frame (not per substep)
+    if (CollisionManager && CollisionManager->GetColliderCount() > 0)
+    {
+        CollisionManager->UpdateTransforms();
+        CollisionManager->UploadToGPU(Graphics->Device, Graphics->DeviceContext);
+    }
+    
+    // Update self-collision params with potentially updated bounds
+    if (Config.bEnableSelfCollision && bSelfCollisionInitialized)
+    {
+        UpdateSelfCollisionParams(InstanceMetadata);
+    }
+    
+    // ... rest of simulation ...
+}
+```
+
+---
+
+### Phase 6: Convert `FClothConfig` to Multipliers
+
+**Goal**: Change from absolute values to multipliers for artist control (already shown in Phase 5.1).
+
+---
+
+### Phase 7: Add Validation and Diagnostics
 
 #### 4.2 Update Serialization
 
@@ -623,7 +1061,7 @@ void FClothConfig::MigrateDeprecatedParams()
 
 ---
 
-### Phase 5: Add Validation and Diagnostics
+### Phase 8: Add Validation and Diagnostics
 
 **Goal**: Automatic sanity checks and comprehensive logging.
 
@@ -742,7 +1180,7 @@ if (!bValid)
 
 ---
 
-### Phase 6: Testing Strategy
+### Phase 9: Testing Strategy
 
 #### 6.1 Test Cases
 
@@ -756,9 +1194,16 @@ if (!bValid)
    - Fine cloth (0.1m) + Coarse cloth (1.0m)
    - Verify: Median parameters used, both cloths collide naturally
    
-4. **Dynamic Bounds Update**
-   - Move cloth significantly
-   - Verify: Bounds update, grid still covers mesh
+4. **Dynamic Bounds Update** (MANDATORY TEST)
+   - Move cloth significantly (>15% of bounds size)
+   - Verify: Bounds update triggered, grid recomputed
+   - Verify: GPU bounds computation matches CPU readback
+   - Test periodic forced update (60 frames)
+   
+5. **GPU Bounds Performance**
+   - Measure GPU bounds computation time
+   - Target: <0.1ms for 10k particles
+   - Verify: No GPU stalls or synchronization issues
 
 #### 6.2 Console Commands for Testing
 
@@ -800,79 +1245,156 @@ CONSOLE_COMMAND(cloth.selfcollision.multiplier <radius|stiffness|cellsize> <valu
 ### Files to Modify
 
 1. **[`ClothBatchTypes.h`](EngineSIU/EngineSIU/Engine/Source/Runtime/Engine/Cloth/ClothBatchTypes.h)**
-   - Extend `FClothInstanceMetadata` with adaptive parameters
+   - Extend `FClothInstanceMetadata` with adaptive parameters and motion tracking state
 
 2. **[`ClothSimulationData.h`](EngineSIU/EngineSIU/Engine/Source/Runtime/Engine/Cloth/ClothSimulationData.h)**
    - Convert `FClothConfig` self-collision params to multipliers
+   - Add dynamic bounds tracking parameters
    - Add migration logic
 
-3. **[`ClothBatchedSolver.h`](EngineSIU/EngineSIU/Engine/Source/Runtime/Engine/Cloth/ClothBatchedSolver.h)**
+3. **[`ClothGPUStructs.h`](EngineSIU/EngineSIU/Engine/Source/Runtime/Engine/Cloth/ClothGPUStructs.h)**
+   - Update `FClothSelfCollisionParams` with bounds update flag
+   - Add `FClothBoundsGPU` structure
+
+4. **[`ClothBatchedSolver.h`](EngineSIU/EngineSIU/Engine/Source/Runtime/Engine/Cloth/ClothBatchedSolver.h)**
+   - Add GPU bounds computation buffers and shaders
+   - Add `DispatchComputeBounds()` and `ReadbackBounds()` methods
+   - Add `UpdateDynamicBounds()` method
    - Update `UpdateSelfCollisionParams()` signature to accept metadata
 
-4. **[`ClothBatchedSolver.cpp`](EngineSIU/EngineSIU/Engine/Source/Runtime/Engine/Cloth/ClothBatchedSolver.cpp)**
+5. **[`ClothBatchedSolver.cpp`](EngineSIU/EngineSIU/Engine/Source/Runtime/Engine/Cloth/ClothBatchedSolver.cpp)**
+   - Implement GPU bounds computation dispatch
+   - Implement dynamic bounds tracking logic
    - Refactor `UpdateSelfCollisionParams()` to compute adaptive values
+   - Integrate bounds updates into simulation loop
    - Remove hardcoded values (lines 2303-2308)
 
-5. **`ClothBatchManager.cpp`** (or instance creation location)
+6. **`ClothBatchManager.cpp`** (or instance creation location)
    - Call mesh analysis functions during instance creation
    - Store computed parameters in metadata
+   - Initialize motion tracking state
 
 ### Files to Create
 
 1. **`ClothMeshAnalysis.h`** - New utility class for mesh analysis
 2. **`ClothMeshAnalysis.cpp`** - Implementation of analysis functions
+3. **`Shaders/Cloth/ClothComputeBounds.hlsl`** - GPU parallel reduction shader for AABB computation
 
 ---
 
-## Integration Points
+## Architecture Overview
 
-### Batched Solver Architecture
+### System Data Flow
+
+```mermaid
+graph TB
+    subgraph Initialization
+        A[Cloth Instance Creation] --> B[CPU: Compute Average Edge Length]
+        B --> C[CPU: Initial AABB from Rest Positions]
+        C --> D[Store in FClothInstanceMetadata]
+    end
+    
+    subgraph Runtime Per Frame
+        E[Frame Start] --> F{Motion Check Enabled?}
+        F -->|Yes| G[Increment Frame Counter]
+        G --> H{Periodic Update OR Motion Threshold?}
+        H -->|Yes| I[GPU: Compute AABB Pass 1]
+        I --> J[GPU: Compute AABB Pass 2]
+        J --> K[CPU: Readback GPU Bounds]
+        K --> L[Calculate Motion Percentage]
+        L --> M{Motion > Threshold?}
+        M -->|Yes| N[Update Metadata Bounds]
+        M -->|No| O[Use Cached Bounds]
+        H -->|No| O
+        F -->|No| O
+        
+        N --> P[Aggregate All Instance Bounds]
+        O --> P
+        P --> Q[Compute Median Parameters]
+        Q --> R[Apply Config Multipliers]
+        R --> S[Upload to FClothSelfCollisionParams]
+        S --> T[GPU: Build Spatial Hash Grid]
+        T --> U[GPU: Solve Self-Collisions]
+    end
+```
+
+### Integration Points
+
+#### Batched Solver Architecture
 
 The refactored system maintains the batched architecture:
 
 1. **Per-Instance Computation** (at creation time)
    - Each cloth computes its own optimal parameters
    - Stored in `FClothInstanceMetadata`
+   - Average edge length computed once (static)
 
-2. **Unified Grid** (at runtime)
+2. **Dynamic Bounds Tracking** (per frame, adaptive)
+   - GPU computes AABB from current particle positions
+   - Motion detection triggers grid parameter updates
+   - Periodic forced updates (every 60 frames)
+
+3. **Unified Grid** (at runtime)
    - Solver uses median/weighted average of all active instances
    - Single spatial hash grid covers all cloths
-   - Updated once per frame (not per substep)
+   - Updated when any instance bounds change significantly
 
-3. **Artist Control**
+4. **Artist Control**
    - Multipliers in `FClothConfig` allow global tuning
+   - Motion threshold configurable
    - Per-instance parameters provide automatic baseline
 
 ### Memory Considerations
 
-- **Per-Instance Overhead**: +48 bytes per instance (adaptive params in metadata)
-- **No GPU Changes**: GPU buffers remain unchanged
-- **Computation Cost**: O(E) edge iteration at instance creation (one-time cost)
+- **Per-Instance Overhead**: +80 bytes per instance (adaptive params + motion tracking)
+- **GPU Bounds Buffers**: 32 bytes × (NumThreadGroups + 1) ≈ 8 KB for 10k particles
+- **Computation Cost**:
+  - Initial: O(E) edge iteration at instance creation (one-time)
+  - Runtime: O(N) GPU parallel reduction per bounds update (~0.1ms)
 
 ---
 
 ## Success Criteria
 
+### Core Functionality
 ✅ **No hardcoded spatial hash parameters remain**
 - All values computed from mesh topology
 
 ✅ **Each cloth automatically computes optimal collision parameters**
 - Based on actual average edge length
 
+✅ **GPU-based AABB computation works correctly**
+- Parallel reduction produces accurate bounds
+- Performance target: <0.1ms for 10k particles
+
+✅ **Dynamic bounds tracking responds to motion**
+- Bounds update when motion exceeds threshold (15%)
+- Periodic forced updates work (every 60 frames)
+- No false positives or missed updates
+
 ✅ **Artists can tune collision behavior via intuitive multipliers**
 - Multipliers scale adaptive base values
+- Motion threshold configurable
 
 ✅ **Self-collision works naturally across different resolutions**
 - Fine cloth (0.1m edges) and coarse cloth (1.0m edges) both work
+- Bounds adapt to cloth movement
 
 ✅ **System logs clear diagnostic information**
 - Validation warnings for potential issues
+- Bounds update events logged
 - Debug commands for testing
 
 ✅ **Minimal code duplication**
 - Reuses existing `FClothInstanceMetadata`
 - Extends existing `FClothConfig`
 - No duplicate structures
+
+### Performance Benchmarks
+- **GPU Bounds Computation**: <0.1ms per frame (10k particles)
+- **Motion Detection**: <0.05ms per frame (CPU-side)
+- **Bounds Update Frequency**: Adaptive (15% threshold) or 60 frames max
+- **Memory Overhead**: +64 bytes per instance (motion tracking state)
 
 ---
 
@@ -884,12 +1406,506 @@ The refactored system maintains the batched architecture:
 
 ---
 
+## Detailed Implementation Guide
+
+### Step-by-Step Implementation Sequence
+
+#### Step 1: Create Mesh Analysis Utilities (Phase 1)
+
+1. Create `ClothMeshAnalysis.h` and `ClothMeshAnalysis.cpp`
+2. Implement `ComputeAverageEdgeLength()` using hash set for unique edges
+3. Implement `ComputeAABB()` for CPU-side bounds
+4. Implement `ComputeAdaptiveSpatialHashParams()` with Müller et al. formulas
+5. Implement `EstimateAverageParticlesPerCell()`
+6. Implement `ValidateSelfCollisionSetup()`
+7. Add to build system (CMakeLists or project files)
+
+#### Step 2: Extend Metadata Structures (Phase 2)
+
+1. Add adaptive parameters to `FClothInstanceMetadata`
+2. Add motion tracking state variables (AccumulatedMotion, FramesSinceLastBoundsUpdate, etc.)
+3. Update constructor with proper initialization
+4. Verify struct size and alignment
+
+#### Step 3: Refactor UpdateSelfCollisionParams (Phase 3)
+
+1. Add `InstanceMetadata` parameter to function signature in header
+2. Implement median aggregation logic for multi-cloth scenarios
+3. Remove all hardcoded values (gridMin, avgEdgeLength, cellSize)
+4. Apply config multipliers to computed values
+5. Add parameter logging
+6. Call validation function
+
+#### Step 4: Implement GPU Bounds Computation (Phase 4)
+
+**4.1 Create GPU Structures**:
+1. Add `FClothBoundsGPU` struct to `ClothGPUStructs.h`
+2. Update `FClothSelfCollisionParams` with `bBoundsNeedUpdate` flag
+3. Add static assertions for struct sizes
+
+**4.2 Create Compute Shader**:
+1. Create `Shaders/Cloth/ClothComputeBounds.hlsl`
+2. Implement `ComputeBoundsPass1CS` with shared memory reduction
+3. Implement `ComputeBoundsPass2CS` for final reduction
+4. Add proper synchronization barriers
+5. Test shader compilation
+
+**4.3 Add GPU Buffers to Solver**:
+1. Add buffer declarations to `ClothBatchedSolver.h`:
+   - `BoundsComputeBuffer` (intermediate results)
+   - `FinalBoundsBuffer` (final result)
+   - UAVs and SRVs
+2. Initialize buffers in constructor
+3. Create buffers in `AllocateBuffers()` or separate method
+4. Release buffers in destructor
+
+**4.4 Implement Dispatch Methods**:
+1. Implement `DispatchComputeBounds()`:
+   - Bind position and invmass buffers
+   - Dispatch Pass 1 (N thread groups)
+   - Dispatch Pass 2 (1 thread group)
+   - Proper resource binding/unbinding
+2. Implement `ReadbackBounds()`:
+   - Create staging buffer (static, one-time)
+   - Copy GPU buffer to staging
+   - Map and read bounds
+   - Handle errors gracefully
+
+**4.5 Load Shaders**:
+1. Add shader loading in `LoadComputeShaders()`:
+   ```cpp
+   ShaderManager->AddComputeShader(L"ClothComputeBoundsPass1CS",
+       L"Shaders/Cloth/ClothComputeBounds.hlsl", "ComputeBoundsPass1CS");
+   ShaderManager->AddComputeShader(L"ClothComputeBoundsPass2CS",
+       L"Shaders/Cloth/ClothComputeBounds.hlsl", "ComputeBoundsPass2CS");
+   ```
+2. Get shader pointers
+3. Handle compilation errors
+
+#### Step 5: Implement Dynamic Bounds Tracking (Phase 5)
+
+**5.1 Add Motion Tracking Parameters**:
+1. Add to `FClothConfig`:
+   - `BoundsUpdateMotionThreshold` (default 0.15)
+   - `BoundsUpdateMaxFrames` (default 60)
+   - `bEnableDynamicBoundsUpdate` (default true)
+2. Update serialization operator
+
+**5.2 Implement UpdateDynamicBounds()**:
+1. Create method in `ClothBatchedSolver.cpp`
+2. Iterate through all active instances
+3. Increment frame counter
+4. Check periodic forced update condition
+5. If not forced, compute GPU bounds and check motion threshold
+6. Calculate displacement as percentage of current bounds
+7. If threshold exceeded or forced:
+   - Update metadata bounds
+   - Recompute grid parameters
+   - Reset counters
+   - Log update event
+
+**5.3 Integrate into Simulation Loop**:
+1. Add `UpdateDynamicBounds()` call in `Simulate()` before self-collision
+2. Ensure proper call ordering:
+   - UpdateDynamicBounds → UpdateSelfCollisionParams → DispatchSelfCollision
+3. Add profiling markers for performance tracking
+
+#### Step 6: Config Multipliers (Phase 6)
+
+1. Add multiplier fields to `FClothConfig` (already shown in Phase 5.1)
+2. Mark old fields as deprecated with comments
+3. Update serialization operator to include new fields
+4. Implement `MigrateDeprecatedParams()` method
+5. Call migration after loading configs
+6. Update all config references throughout codebase
+
+#### Step 7: Simulation Loop Integration (Phase 7)
+
+**7.1 In ClothBatchManager (or instance creation)**:
+```cpp
+// During AddInstance() or similar
+metadata.AvgEdgeLength = FClothMeshAnalysis::ComputeAverageEdgeLength(
+    params.RestPositions, params.Indices);
+FClothMeshAnalysis::ComputeAABB(
+    params.RestPositions, metadata.MeshBoundsMin, metadata.MeshBoundsMax);
+// Initialize prev bounds
+metadata.PrevBoundsMin = metadata.MeshBoundsMin;
+metadata.PrevBoundsMax = metadata.MeshBoundsMax;
+```
+
+**7.2 In ClothBatchedSolver::Simulate()**:
+```cpp
+// Before substep loop
+if (Config.bEnableSelfCollision && bSelfCollisionInitialized)
+{
+    UpdateDynamicBounds(InstanceMetadata);  // NEW
+    UpdateSelfCollisionParams(InstanceMetadata);  // REFACTORED
+}
+```
+
+#### Step 8: Validation and Diagnostics (Phase 8)
+
+1. Implement `ValidateSelfCollisionSetup()` in `ClothMeshAnalysis.cpp`
+2. Add validation calls after parameter computation
+3. Add console commands:
+   - `cloth.selfcollision.debug` - Log all parameters
+   - `cloth.selfcollision.multiplier` - Adjust multipliers
+   - `cloth.selfcollision.forceboundsupdate` - Force immediate update
+   - `cloth.selfcollision.dynamicbounds` - Toggle dynamic tracking
+4. Add diagnostic logging throughout
+
+#### Step 9: Testing (Phase 9)
+
+**9.1 Unit Tests**:
+- Test `ComputeAverageEdgeLength()` with various meshes
+- Test `ComputeAABB()` with edge cases
+- Test GPU bounds vs CPU bounds accuracy
+
+**9.2 Integration Tests**:
+- Single fine resolution cloth
+- Single coarse resolution cloth
+- Mixed resolution multi-cloth
+- Dynamic bounds with moving cloth
+- Bounds stability across frames
+
+**9.3 Performance Tests**:
+- Measure GPU bounds computation time
+- Measure motion detection overhead
+- Verify no frame rate impact
+
+---
+
+## Implementation Checklist
+
+### Phase 1: Mesh Analysis Functions
+- [ ] Create `ClothMeshAnalysis.h` with class declaration
+- [ ] Create `ClothMeshAnalysis.cpp` with implementations
+- [ ] Implement `ComputeAverageEdgeLength()` with edge deduplication
+- [ ] Implement `ComputeAABB()` with min/max tracking
+- [ ] Implement `ComputeAdaptiveSpatialHashParams()` with Müller formulas
+- [ ] Implement `EstimateAverageParticlesPerCell()`
+- [ ] Implement `ValidateSelfCollisionSetup()`
+- [ ] Add to build system (CMakeLists or project files)
+
+### Phase 2: Metadata Extension
+- [ ] Add adaptive parameters to `FClothInstanceMetadata`
+- [ ] Add motion tracking state variables
+- [ ] Update constructor initialization
+- [ ] Verify struct size doesn't break GPU alignment
+
+### Phase 3: UpdateSelfCollisionParams Refactor
+- [ ] Update function signature to accept metadata array
+- [ ] Implement median aggregation for multi-cloth
+- [ ] Remove hardcoded gridMin, avgEdgeLength, cellSize
+- [ ] Apply config multipliers
+- [ ] Add parameter logging
+- [ ] Call validation function
+
+### Phase 4: GPU Bounds Computation
+- [ ] Add `FClothBoundsGPU` struct to `ClothGPUStructs.h`
+- [ ] Update `FClothSelfCollisionParams` with bounds update flag
+- [ ] Create `ClothComputeBounds.hlsl` shader file
+- [ ] Implement `ComputeBoundsPass1CS` (thread-group reduction)
+- [ ] Implement `ComputeBoundsPass2CS` (final reduction)
+- [ ] Add bounds buffers to `ClothBatchedSolver.h`
+- [ ] Allocate bounds buffers in solver initialization
+- [ ] Implement `DispatchComputeBounds()` in solver
+- [ ] Implement `ReadbackBounds()` with staging buffer
+- [ ] Load shaders in `LoadComputeShaders()`
+- [ ] Test GPU vs CPU bounds accuracy
+- [ ] Profile GPU bounds computation performance
+
+### Phase 5: Dynamic Bounds Tracking
+- [ ] Add motion tracking params to `FClothConfig`
+- [ ] Update `FClothConfig` serialization
+- [ ] Implement `UpdateDynamicBounds()` method
+- [ ] Add motion threshold detection logic
+- [ ] Add periodic forced update logic
+- [ ] Integrate into `Simulate()` loop before self-collision
+- [ ] Test motion detection sensitivity
+- [ ] Verify bounds update triggers correctly
+
+### Phase 6: Config Multipliers
+- [ ] Add multiplier fields to `FClothConfig`
+- [ ] Mark old fields as deprecated
+- [ ] Update serialization operator
+- [ ] Implement `MigrateDeprecatedParams()`
+- [ ] Call migration after config loading
+- [ ] Update all config references in codebase
+
+### Phase 7: Simulation Loop Integration
+- [ ] Add mesh analysis calls in instance creation
+- [ ] Initialize motion tracking state
+- [ ] Add `UpdateDynamicBounds()` call in `Simulate()`
+- [ ] Pass metadata to `UpdateSelfCollisionParams()`
+- [ ] Ensure proper call ordering
+- [ ] Add profiling markers
+
+### Phase 8: Validation and Diagnostics
+- [ ] Implement `ValidateSelfCollisionSetup()`
+- [ ] Add validation calls after parameter computation
+- [ ] Add console command: `cloth.selfcollision.debug`
+- [ ] Add console command: `cloth.selfcollision.multiplier`
+- [ ] Add console command: `cloth.selfcollision.forceboundsupdate`
+- [ ] Add console command: `cloth.selfcollision.dynamicbounds`
+- [ ] Add diagnostic logging throughout
+
+### Phase 9: Testing
+- [ ] Test fine resolution cloth (0.05m edges)
+- [ ] Test coarse resolution cloth (1.0m edges)
+- [ ] Test mixed resolution multi-cloth
+- [ ] Test dynamic bounds with moving cloth (>15% motion)
+- [ ] Test periodic forced updates (60 frames)
+- [ ] Measure GPU bounds performance (<0.1ms target)
+- [ ] Verify bounds stability across frames
+- [ ] Test backwards compatibility with old configs
+- [ ] Verify no GPU stalls or synchronization issues
+
+---
+
+## Performance Optimization Notes
+
+### GPU Bounds Computation Optimization
+
+**Two-Pass Reduction Strategy**:
+- **Pass 1**: Each thread group (256 threads) processes chunk of particles
+  - Shared memory reduction: 256 → 1 bound per group
+  - Output: N group bounds (where N = ceil(ParticleCount / 256))
+  
+- **Pass 2**: Single thread group reduces all group bounds
+  - Input: N group bounds
+  - Output: 1 final global bound
+  - Efficient for N < 256 (typical case)
+
+**Performance Targets**:
+- 1,000 particles: ~0.02ms
+- 10,000 particles: ~0.08ms
+- 50,000 particles: ~0.3ms
+
+**Optimization Techniques**:
+- Skip kinematic particles (InvMass == 0)
+- Use shared memory for reduction
+- Minimize GPU-CPU synchronization (readback only when needed)
+- Consider async readback with frame delay for better pipelining
+
+### Motion Detection Optimization
+
+**Threshold-Based Updates**:
+- Only recompute when motion exceeds 15% of bounds size
+- Prevents unnecessary updates for small oscillations
+- Periodic forced updates (60 frames) catch drift
+
+**Adaptive Thresholds**:
+- Higher threshold for stable cloths (hanging flags)
+- Lower threshold for dynamic cloths (capes in wind)
+- Configurable per-instance if needed
+
+**Optimization Strategies**:
+- Batch bounds computation for all instances in single GPU dispatch
+- Cache previous bounds to avoid redundant comparisons
+- Use early-out when no instances need updates
+
+---
+
+## Testing Requirements
+
+### Acceptance Criteria
+
+#### Functional Tests
+
+1. **Adaptive Parameter Computation**
+   - ✅ Average edge length computed correctly for various mesh topologies
+   - ✅ AABB covers all particles with appropriate margin
+   - ✅ Grid dimensions scale with mesh size
+   - ✅ Cell size follows Müller et al. recommendations (1.0-1.5× edge length)
+
+2. **GPU Bounds Computation**
+   - ✅ Parallel reduction produces identical results to CPU computation (within epsilon)
+   - ✅ Handles edge cases (0 particles, all kinematic, single particle)
+   - ✅ No GPU errors or validation layer warnings
+   - ✅ Staging buffer readback works correctly
+   - ✅ Shared memory reduction is race-condition free
+
+3. **Dynamic Bounds Tracking**
+   - ✅ Motion threshold detection works (15% default)
+   - ✅ Periodic forced updates trigger (60 frames)
+   - ✅ Bounds expand when cloth moves outside current grid
+   - ✅ No false positives from numerical precision issues
+   - ✅ Accumulated motion resets after update
+
+4. **Multi-Cloth Scenarios**
+   - ✅ Median aggregation works with 2+ cloths
+   - ✅ Mixed resolutions (0.1m + 1.0m) both collide correctly
+   - ✅ Adding/removing instances updates parameters correctly
+   - ✅ Global bounds cover all active instances
+
+5. **Configuration Multipliers**
+   - ✅ Radius multiplier scales collision thickness
+   - ✅ Cell size multiplier affects grid resolution
+   - ✅ Stiffness multiplier controls separation strength
+   - ✅ Backwards compatibility with old configs
+   - ✅ Migration logic converts old values correctly
+
+#### Performance Tests
+
+1. **GPU Bounds Computation**
+   - 1k particles: <0.02ms
+   - 10k particles: <0.1ms
+   - 50k particles: <0.5ms
+   - No GPU stalls or pipeline bubbles
+
+2. **Motion Detection**
+   - CPU overhead: <0.05ms per frame
+   - No frame rate impact when bounds stable
+   - Minimal overhead when disabled
+
+3. **Memory Usage**
+   - Per-instance overhead: <100 bytes
+   - GPU bounds buffers: <10 KB total
+   - No memory leaks over extended runtime
+
+#### Stability Tests
+
+1. **Bounds Stability**
+   - No jitter or oscillation in grid parameters
+   - Smooth transitions when bounds update
+   - No collision artifacts during grid changes
+   - Bounds don't shrink incorrectly
+
+2. **Numerical Precision**
+   - Works with very small cloths (1cm scale)
+   - Works with very large cloths (100m scale)
+   - No overflow in grid dimension calculations
+   - Epsilon handling in motion detection
+
+3. **Edge Cases**
+   - Single particle cloth
+   - All kinematic particles
+   - Zero-area triangles
+   - Degenerate meshes
+
+---
+
+## Migration Guide for Existing Projects
+
+### For Artists/Designers
+
+**Old Configuration** (absolute values):
+```cpp
+Config.SelfCollisionRadius = 0.02f;      // 2cm collision radius
+Config.SelfCollisionStiffness = 0.5f;    // 50% stiffness
+Config.SelfCollisionGridDim = 32;        // 32×32×32 grid
+```
+
+**New Configuration** (multipliers):
+```cpp
+Config.SelfCollisionRadiusMultiplier = 1.0f;    // Default (auto-computed)
+Config.SelfCollisionStiffnessMultiplier = 0.5f; // 50% of base stiffness
+Config.SelfCollisionCellSizeMultiplier = 1.0f;  // Default (auto-computed)
+Config.BoundsUpdateMotionThreshold = 0.15f;     // 15% motion triggers update
+Config.BoundsUpdateMaxFrames = 60;              // Force update every 60 frames
+// Grid dimensions now computed automatically
+```
+
+**Tuning Guide**:
+- **Thicker collision**: Increase `SelfCollisionRadiusMultiplier` (1.5× = 50% thicker)
+- **Stiffer separation**: Increase `SelfCollisionStiffnessMultiplier`
+- **Finer grid**: Decrease `SelfCollisionCellSizeMultiplier` (0.8× = 20% smaller cells)
+- **More motion sensitivity**: Decrease `BoundsUpdateMotionThreshold` (0.1 = 10%)
+- **More frequent updates**: Decrease `BoundsUpdateMaxFrames` (30 = every 30 frames)
+
+### For Programmers
+
+**Required Code Changes**:
+
+1. **Instance Creation** (in ClothBatchManager or similar):
+```cpp
+// Add after uploading particle data
+metadata.AvgEdgeLength = FClothMeshAnalysis::ComputeAverageEdgeLength(
+    params.RestPositions, params.Indices);
+FClothMeshAnalysis::ComputeAABB(
+    params.RestPositions, metadata.MeshBoundsMin, metadata.MeshBoundsMax);
+metadata.PrevBoundsMin = metadata.MeshBoundsMin;
+metadata.PrevBoundsMax = metadata.MeshBoundsMax;
+metadata.FramesSinceLastBoundsUpdate = 0;
+```
+
+2. **Simulation Loop** (in ClothBatchedSolver::Simulate):
+```cpp
+// Add before self-collision
+if (Config.bEnableSelfCollision && bSelfCollisionInitialized)
+{
+    UpdateDynamicBounds(InstanceMetadata);
+    UpdateSelfCollisionParams(InstanceMetadata);
+}
+```
+
+3. **Config Loading**:
+```cpp
+// Add after loading config
+Config.MigrateDeprecatedParams();
+```
+
+---
+
+## Debugging and Diagnostics
+
+### Console Commands
+
+```cpp
+// Log all adaptive parameters
+cloth.selfcollision.debug
+
+// Adjust multipliers at runtime
+cloth.selfcollision.multiplier radius 1.5
+cloth.selfcollision.multiplier stiffness 0.8
+cloth.selfcollision.multiplier cellsize 1.2
+
+// Force bounds update immediately
+cloth.selfcollision.forceboundsupdate
+
+// Toggle dynamic bounds tracking
+cloth.selfcollision.dynamicbounds 0/1
+
+// Adjust motion threshold
+cloth.selfcollision.motionthreshold 0.2
+
+// Visualize spatial hash grid (debug rendering)
+cloth.selfcollision.visualizegrid 1
+```
+
+### Diagnostic Logging
+
+**Initialization**:
+```
+Cloth Instance 0: AvgEdgeLength=0.085, CellSize=0.128, CollisionRadius=0.043, Grid=24x18x32
+Cloth Instance 1: AvgEdgeLength=0.950, CellSize=1.425, CollisionRadius=0.475, Grid=8x6x12
+```
+
+**Runtime Updates**:
+```
+Cloth Instance 0: Bounds updated (Motion=18.5%, Forced=0)
+Self-Collision: GridMin=(-2.5,-1.8,0.0), CellSize=0.650, Grid=16x12x20, Radius=0.260
+GPU Bounds Computation: 0.08ms (10240 particles)
+```
+
+**Validation Warnings**:
+```
+[Warning] Self-Collision: CellSize (0.050) < 1.5×CollisionRadius (0.075). May miss collisions!
+[Warning] Self-Collision: MaxParticlesPerCell (16) may be insufficient. Avg=12, recommend 36
+[Error] Self-Collision: Grid doesn't cover mesh bounds! Extent=(5.2,3.8,4.1), Grid=(4.8,3.6,3.9)
+```
+
+---
+
 ## Future Enhancements
 
-1. **Dynamic Bounds Update**: Recompute AABB when cloth moves significantly
-2. **Per-Instance Grids**: Separate spatial hash per cloth (more memory, better accuracy)
-3. **GPU-Based AABB**: Compute bounds on GPU from particle buffer
-4. **Topology-Aware Adjacency**: Replace heuristic with proper adjacency buffer
+1. **Per-Instance Grids**: Separate spatial hash per cloth (more memory, better accuracy)
+2. **Topology-Aware Adjacency**: Replace heuristic with proper adjacency buffer
+3. **Asynchronous Bounds Readback**: Use GPU queries to avoid stalls
+4. **Hierarchical Spatial Hash**: Multi-level grid for very large cloths
+5. **Predictive Bounds**: Extrapolate future bounds from velocity for better coverage
+6. **Adaptive Motion Thresholds**: Per-instance thresholds based on cloth behavior
 
 ---
 
@@ -897,4 +1913,6 @@ The refactored system maintains the batched architecture:
 
 - **Müller et al.**: "Position Based Dynamics" (spatial hash recommendations)
 - **Velvet**: Cloth simulation system (adaptive parameter inspiration)
+- **GPU Gems 3**: "Parallel Prefix Sum (Scan) with CUDA" (reduction patterns)
+- **DirectX 11 Programming Guide**: Compute shader optimization techniques
 - **Existing Implementation**: [`ClothBatchedSolver.cpp:2296`](EngineSIU/EngineSIU/Engine/Source/Runtime/Engine/Cloth/ClothBatchedSolver.cpp:2296)
