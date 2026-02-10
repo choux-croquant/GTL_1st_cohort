@@ -420,9 +420,11 @@ bool FClothAssetGenerator::CalculateSkinningWeights(
 {
     FClothSkinningResult result;
     
+    // Pass simulation mesh indices for barycentric method support
     if (!FClothSkinningWeightGenerator::GenerateSkinningWeights(
         RenderMesh.Positions,
         SimMesh.Positions,
+        SimMesh.Indices,  // NEW: Pass triangle topology for barycentric method
         Params,
         result))
     {

@@ -1689,6 +1689,7 @@
     <ClCompile Include="Engine\Source\Runtime\Core\Serialization\ArchiveFileReader.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Core\Serialization\ArchiveFileWriter.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshAnalysis.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothSkinningWeightGenerator_Barycentric.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="EngineSIU.natvis" />
