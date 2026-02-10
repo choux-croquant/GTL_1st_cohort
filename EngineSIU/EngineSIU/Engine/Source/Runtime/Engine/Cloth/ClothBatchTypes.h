@@ -94,39 +94,57 @@ static_assert(sizeof(FClothInstanceParameters) == 112, "FClothInstanceParameters
  */
 struct FClothInstanceMetadata
 {
-    // Simulation mesh buffer ranges
-    uint32 ParticleOffset;
-    uint32 ParticleCount;
-    uint32 ConstraintOffset;
-    uint32 ConstraintCount;
-    uint32 BendConstraintOffset;
-    uint32 BendConstraintCount;
-    uint32 KinematicTargetOffset;
-    uint32 KinematicTargetCount;
-    uint32 TriangleOffset;
-    uint32 TriangleCount;
-    uint32 AreaConstraintOffset;   // Area constraint offset
-    uint32 AreaConstraintCount;    // Area constraint count
-    uint32 EdgeCollisionOffset;    // Edge collision offset
-    uint32 EdgeCollisionCount;     // Edge collision count
+	// Simulation mesh buffer ranges
+	uint32 ParticleOffset;
+	uint32 ParticleCount;
+	uint32 ConstraintOffset;
+	uint32 ConstraintCount;
+	uint32 BendConstraintOffset;
+	uint32 BendConstraintCount;
+	uint32 KinematicTargetOffset;
+	uint32 KinematicTargetCount;
+	uint32 TriangleOffset;
+	uint32 TriangleCount;
+	uint32 AreaConstraintOffset;   // Area constraint offset
+	uint32 AreaConstraintCount;    // Area constraint count
+	uint32 EdgeCollisionOffset;    // Edge collision offset
+	uint32 EdgeCollisionCount;     // Edge collision count
 
-    // Render mesh buffer ranges (for production rendering)
-    uint32 RenderVertexOffset;     // Offset into unified render vertex buffers
-    uint32 RenderVertexCount;      // Number of render vertices
-    uint32 RenderIndexOffset;      // Offset into unified render index buffer
-    uint32 RenderIndexCount;       // Number of render indices (triangles * 3)
+	// Render mesh buffer ranges (for production rendering)
+	uint32 RenderVertexOffset;     // Offset into unified render vertex buffers
+	uint32 RenderVertexCount;      // Number of render vertices
+	uint32 RenderIndexOffset;      // Offset into unified render index buffer
+	uint32 RenderIndexCount;       // Number of render indices (triangles * 3)
 
-    // Instance ID in parameter buffer
-    uint32 InstanceParameterIndex;
+	// Instance ID in parameter buffer
+	uint32 InstanceParameterIndex;
 
-    // State
-    bool bIsActive;
-    EClothLODLevel CurrentLOD;
+	// State
+	bool bIsActive;
+	EClothLODLevel CurrentLOD;
 
-    FClothInstanceMetadata()
-        : ParticleOffset(0), ParticleCount(0), ConstraintOffset(0), ConstraintCount(0), BendConstraintOffset(0), BendConstraintCount(0), KinematicTargetOffset(0), KinematicTargetCount(0), TriangleOffset(0), TriangleCount(0), AreaConstraintOffset(0), AreaConstraintCount(0), EdgeCollisionOffset(0), EdgeCollisionCount(0), RenderVertexOffset(0), RenderVertexCount(0), RenderIndexOffset(0), RenderIndexCount(0), InstanceParameterIndex(0), bIsActive(true), CurrentLOD(EClothLODLevel::LOD_0)
-    {
-    }
+	// NEW: Adaptive self-collision parameters (computed at initialization)
+	float AvgEdgeLength;           // Average edge length in world units
+	FVector MeshBoundsMin;         // Dynamic AABB min (updated per frame)
+	FVector MeshBoundsMax;         // Dynamic AABB max (updated per frame)
+	FVector PrevBoundsMin;         // Previous frame bounds (for motion tracking)
+	FVector PrevBoundsMax;         // Previous frame bounds (for motion tracking)
+	float AdaptiveCellSize;        // Computed: AvgEdgeLength × 1.5
+	float AdaptiveCollisionRadius; // Computed: AvgEdgeLength × 0.5
+	uint32 AdaptiveGridDimX;       // Computed from bounds and cell size
+	uint32 AdaptiveGridDimY;
+	uint32 AdaptiveGridDimZ;
+	uint32 AdaptiveMaxPerCell;     // Computed from particle density
+
+	// NEW: Dynamic bounds tracking state
+	float AccumulatedMotion;       // Accumulated displacement since last bounds update
+	uint32 FramesSinceLastBoundsUpdate; // Frame counter for periodic updates
+	bool bNeedsBoundsUpdate;       // Flag to trigger bounds recomputation
+
+	FClothInstanceMetadata()
+		: ParticleOffset(0), ParticleCount(0), ConstraintOffset(0), ConstraintCount(0), BendConstraintOffset(0), BendConstraintCount(0), KinematicTargetOffset(0), KinematicTargetCount(0), TriangleOffset(0), TriangleCount(0), AreaConstraintOffset(0), AreaConstraintCount(0), EdgeCollisionOffset(0), EdgeCollisionCount(0), RenderVertexOffset(0), RenderVertexCount(0), RenderIndexOffset(0), RenderIndexCount(0), InstanceParameterIndex(0), bIsActive(true), CurrentLOD(EClothLODLevel::LOD_0), AvgEdgeLength(0.0f), MeshBoundsMin(FVector::ZeroVector), MeshBoundsMax(FVector::ZeroVector), PrevBoundsMin(FVector::ZeroVector), PrevBoundsMax(FVector::ZeroVector), AdaptiveCellSize(0.0f), AdaptiveCollisionRadius(0.0f), AdaptiveGridDimX(0), AdaptiveGridDimY(0), AdaptiveGridDimZ(0), AdaptiveMaxPerCell(0), AccumulatedMotion(0.0f), FramesSinceLastBoundsUpdate(0), bNeedsBoundsUpdate(false)
+	{
+	}
 };
 
 /**

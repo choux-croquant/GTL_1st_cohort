@@ -54,7 +54,7 @@ public:
     bool AllocateRenderBuffers(uint32 MaxRenderVertices, uint32 MaxRenderIndices);
 
     // Simulation
-    void Simulate(float DeltaTime);
+    void Simulate(float DeltaTime, TArray<FClothInstanceMetadata>& InstanceMetadata);
 
     // Data upload
     void UploadParticleData(const TArray<FVector> &Positions,
@@ -148,12 +148,18 @@ private:
     void DispatchSelfCollision(uint32 ParticleCount);
 
     void UpdateFrameConstants(float DeltaTime);
-    void UpdateSelfCollisionParams();
+    void UpdateSelfCollisionParams(const TArray<FClothInstanceMetadata>& InstanceMetadata);
     void UpdateIterationConstants(int32 CurrentIteration);
-
+    
+    // NEW: Dynamic bounds tracking methods
+    void UpdateDynamicBounds(TArray<FClothInstanceMetadata>& InstanceMetadata);
+    void DispatchComputeBounds(uint32 ParticleCount);
+    void ReadbackBounds(FVector& OutMin, FVector& OutMax);
+   
     bool CreateGPUResources();
     bool LoadComputeShaders();
     bool AllocateSelfCollisionBuffers();
+    bool AllocateBoundsComputeBuffers();
 
     uint32 GetDispatchCount(uint32 ElementCount, uint32 ThreadGroupSize = 64) const;
 
@@ -180,6 +186,10 @@ private:
     // Self-collision compute shaders
     ID3D11ComputeShader *SelfCollisionBuildGridCS;  // NEW: Build spatial hash grid
     ID3D11ComputeShader *SelfCollisionSolverCS;     // NEW: Solve self-collisions
+    
+    // NEW: GPU bounds computation shaders
+    ID3D11ComputeShader *ComputeBoundsPass1CS;      // Pass 1: Per-group reduction
+    ID3D11ComputeShader *ComputeBoundsPass2CS;      // Pass 2: Final reduction
 
     // Collision manager (NEW)
     FClothCollisionManager *CollisionManager;
@@ -215,6 +225,11 @@ private:
     ID3D11Buffer *SelfCollisionCellCountersBuffer;  // Per-cell particle counters
     ID3D11Buffer *SelfCollisionCellDataBuffer;      // Flat array of particle indices per cell
     ID3D11Buffer *SelfCollisionParamsBuffer;        // Constant buffer for self-collision parameters
+    
+    // NEW: GPU bounds computation buffers
+    ID3D11Buffer *BoundsComputeBuffer;              // Intermediate bounds (one per thread group)
+    ID3D11Buffer *BoundsReadbackBuffer;             // Staging buffer for CPU readback
+    ID3D11UnorderedAccessView *BoundsComputeUAV;    // UAV for bounds computation
 
     // UAVs and SRVs
     ID3D11UnorderedAccessView *UnifiedPositionUAV;

@@ -226,19 +226,33 @@ struct FClothEdgeCollisionConstraintGPU
  */
 struct FClothSelfCollisionParams
 {
-    FVector GridMin;           // 12 bytes - AABB min
-    float CellSize;            // 4 bytes
-    
-    uint32 GridDimX;           // 4 bytes
-    uint32 GridDimY;           // 4 bytes
-    uint32 GridDimZ;           // 4 bytes
-    uint32 MaxParticlesPerCell; // 4 bytes
-    
-    float CollisionRadius;     // 4 bytes - Particle radius
-    float CollisionStiffness;  // 4 bytes - Separation strength
-    uint32 bEnableSelfCollision; // 4 bytes
-    uint32 Padding;            // 4 bytes
-    // Total: 48 bytes (aligned)
+	FVector GridMin;           // 12 bytes - AABB min
+	float CellSize;            // 4 bytes
+	
+	uint32 GridDimX;           // 4 bytes
+	uint32 GridDimY;           // 4 bytes
+	uint32 GridDimZ;           // 4 bytes
+	uint32 MaxParticlesPerCell; // 4 bytes
+	
+	float CollisionRadius;     // 4 bytes - Particle radius
+	float CollisionStiffness;  // 4 bytes - Separation strength
+	uint32 bEnableSelfCollision; // 4 bytes
+	uint32 Padding;            // 4 bytes
+	// Total: 48 bytes (aligned)
+};
+
+/**
+ * GPU bounds buffer for parallel reduction
+ * Stores min/max bounds computed from particle positions
+ * Used for dynamic AABB computation on GPU
+ */
+struct FClothBoundsGPU
+{
+	FVector BoundsMin;  // 12 bytes
+	float Padding0;     // 4 bytes
+	FVector BoundsMax;  // 12 bytes
+	float Padding1;     // 4 bytes
+	// Total: 32 bytes
 };
 
 // Static assertions to verify structure sizes (C++ only)
@@ -254,6 +268,7 @@ static_assert(sizeof(FClothCollisionCapsuleGPU) == 32, "FClothCollisionCapsuleGP
 static_assert(sizeof(FClothColliderGPU) == 64, "FClothColliderGPU must be 64 bytes");
 static_assert(sizeof(FClothEdgeCollisionConstraintGPU) == 16, "FClothEdgeCollisionConstraintGPU must be 16 bytes");
 static_assert(sizeof(FClothSelfCollisionParams) == 48, "FClothSelfCollisionParams must be 48 bytes");
+static_assert(sizeof(FClothBoundsGPU) == 32, "FClothBoundsGPU must be 32 bytes");
 
 // Verify alignment
 static_assert(alignof(FClothParticleGPU) == 4, "FClothParticleGPU alignment");

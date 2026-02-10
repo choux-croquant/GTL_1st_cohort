@@ -7,6 +7,7 @@
 #include "ClothBatchedSolver.h"
 #include "ClothInstanceHandle.h"
 #include "ClothSkinningWeightGenerator.h"
+#include "ClothMeshAnalysis.h"
 #include "Classes/Engine/ClothAsset.h"
 #include "Classes/Components/ClothComponent.h"
 #include "Classes/Components/SceneComponent.h"
@@ -172,6 +173,48 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
     metadata.InstanceParameterIndex = Instances.Num();
     metadata.bIsActive = Params.bStartActive;
     metadata.CurrentLOD = Params.InitialLOD;
+   
+    // NEW: Compute adaptive self-collision parameters from mesh topology
+    metadata.AvgEdgeLength = FClothMeshAnalysis::ComputeAverageEdgeLength(
+    	Params.RestPositions, Params.Indices);
+    
+    // Compute AABB from rest positions (will be updated dynamically at runtime)
+    FClothMeshAnalysis::ComputeAABB(
+    	Params.RestPositions,
+    	metadata.MeshBoundsMin,
+    	metadata.MeshBoundsMax);
+    
+    // Initialize previous bounds
+    metadata.PrevBoundsMin = metadata.MeshBoundsMin;
+    metadata.PrevBoundsMax = metadata.MeshBoundsMax;
+    
+    // Compute adaptive spatial hash parameters
+    FVector gridMin, gridMax;
+    FClothMeshAnalysis::ComputeAdaptiveSpatialHashParams(
+    	metadata.AvgEdgeLength,
+    	metadata.MeshBoundsMin,
+    	metadata.MeshBoundsMax,
+    	metadata.ParticleCount,
+    	metadata.AdaptiveCellSize,
+    	metadata.AdaptiveCollisionRadius,
+    	gridMin,
+    	gridMax,
+    	metadata.AdaptiveGridDimX,
+    	metadata.AdaptiveGridDimY,
+    	metadata.AdaptiveGridDimZ,
+    	metadata.AdaptiveMaxPerCell);
+    
+    // Initialize motion tracking state
+    metadata.AccumulatedMotion = 0.0f;
+    metadata.FramesSinceLastBoundsUpdate = 0;
+    metadata.bNeedsBoundsUpdate = false;
+    
+    // Log computed adaptive parameters
+    UE_LOG(ELogLevel::Display,
+    	TEXT("ClothBatchManager[LOD%d]: Instance %d Adaptive Params - AvgEdge=%.3f, CellSize=%.3f, Radius=%.3f, Grid=%ux%ux%u"),
+    	static_cast<int32>(LODLevel), Instances.Num(),
+    	metadata.AvgEdgeLength, metadata.AdaptiveCellSize, metadata.AdaptiveCollisionRadius,
+    	metadata.AdaptiveGridDimX, metadata.AdaptiveGridDimY, metadata.AdaptiveGridDimZ);
 
     // ENHANCED VALIDATION LOGGING
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: ===== Instance %d Metadata ====="),
@@ -604,52 +647,52 @@ void FClothBatchManager::Update(float DeltaTime)
 
 void FClothBatchManager::Simulate(float DeltaTime)
 {
-    if (!bIsInitialized || !BatchedSolver)
-        return;
+	if (!bIsInitialized || !BatchedSolver)
+		return;
 
-    if (TotalParticleCount == 0)
-        return;
+	if (TotalParticleCount == 0)
+		return;
 
-    // Delegate to batched solver
-    BatchedSolver->Simulate(DeltaTime);
+	// Delegate to batched solver with instance metadata
+	BatchedSolver->Simulate(DeltaTime, InstanceMetadata);
 }
 
 void FClothBatchManager::SimulateFixedTimestep(float DeltaTime)
 {
-    if (!FixedTimestepState.bUseFixedTimestep)
-    {
-        // Variable timestep mode
-        BatchedSolver->Simulate(DeltaTime);
-        return;
-    }
+	if (!FixedTimestepState.bUseFixedTimestep)
+	{
+		// Variable timestep mode
+		BatchedSolver->Simulate(DeltaTime, InstanceMetadata);
+		return;
+	}
 
-    // Clamp maximum DeltaTime to prevent spiral of death
-    float clampedDT = FMath::Min(DeltaTime, 0.1f); // Max 100ms
+	// Clamp maximum DeltaTime to prevent spiral of death
+	float clampedDT = FMath::Min(DeltaTime, 0.1f); // Max 100ms
 
-    // Accumulate time
-    FixedTimestepState.AccumulatedTime += clampedDT;
+	// Accumulate time
+	FixedTimestepState.AccumulatedTime += clampedDT;
 
-    // If we're falling too far behind, reset accumulator
-    if (FixedTimestepState.AccumulatedTime > FixedTimestepState.FixedTimestep * 10.0f)
-    {
-        UE_LOG(ELogLevel::Warning, TEXT("ClothBatchManager[LOD%d]: Simulation falling behind - resetting accumulator"),
-               static_cast<int32>(LODLevel));
-        FixedTimestepState.AccumulatedTime = FixedTimestepState.FixedTimestep;
-    }
+	// If we're falling too far behind, reset accumulator
+	if (FixedTimestepState.AccumulatedTime > FixedTimestepState.FixedTimestep * 10.0f)
+	{
+		UE_LOG(ELogLevel::Warning, TEXT("ClothBatchManager[LOD%d]: Simulation falling behind - resetting accumulator"),
+			   static_cast<int32>(LODLevel));
+		FixedTimestepState.AccumulatedTime = FixedTimestepState.FixedTimestep;
+	}
 
-    // Fixed timestep loop
-    int32 substepCount = 0;
-    float fixedDT = FixedTimestepState.FixedTimestep;
+	// Fixed timestep loop
+	int32 substepCount = 0;
+	float fixedDT = FixedTimestepState.FixedTimestep;
 
-    while (FixedTimestepState.AccumulatedTime >= fixedDT &&
-           substepCount < FixedTimestepState.MaxSubsteps)
-    {
-        // Simulate one fixed timestep
-        BatchedSolver->Simulate(fixedDT);
+	while (FixedTimestepState.AccumulatedTime >= fixedDT &&
+		   substepCount < FixedTimestepState.MaxSubsteps)
+	{
+		// Simulate one fixed timestep with instance metadata
+		BatchedSolver->Simulate(fixedDT, InstanceMetadata);
 
-        FixedTimestepState.AccumulatedTime -= fixedDT;
-        substepCount++;
-    }
+		FixedTimestepState.AccumulatedTime -= fixedDT;
+		substepCount++;
+	}
 }
 
 bool FClothBatchManager::CanAcceptInstance(uint32 ParticleCount) const

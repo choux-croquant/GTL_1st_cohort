@@ -1688,6 +1688,7 @@
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Engine\ClothMaterial.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Core\Serialization\ArchiveFileReader.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Core\Serialization\ArchiveFileWriter.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshAnalysis.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="EngineSIU.natvis" />
@@ -1881,6 +1882,7 @@
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Engine\ClothMaterial.h" />
     <ClInclude Include="Engine\Source\Runtime\Core\Serialization\ArchiveFileReader.h" />
     <ClInclude Include="Engine\Source\Runtime\Core\Serialization\ArchiveFileWriter.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshAnalysis.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\CompositingShader.hlsl" />

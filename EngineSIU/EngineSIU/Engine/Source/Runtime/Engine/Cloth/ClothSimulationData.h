@@ -52,11 +52,24 @@ struct FClothConfig
     float CollisionFriction = 0.1f;
     bool bEnableSelfCollision = false;
     
-    // Self-collision parameters (spatial hash grid approach)
-    float SelfCollisionRadius = 0.01f;      // Particle radius (cm)
-    float SelfCollisionStiffness = 0.01f;   // Separation strength (0-1)
-    uint32 SelfCollisionGridDim = 32;      // Grid dimension (32^3 default)
-    uint32 SelfCollisionMaxPerCell = 16;   // Max particles per cell
+    // Self-collision parameters (REFACTORED: Now use multipliers for adaptive computation)
+    // MULTIPLIERS (applied to adaptive base values computed from mesh topology)
+    float SelfCollisionRadiusMultiplier = 1.0f;      // × (AvgEdgeLength × 0.5)
+    float SelfCollisionStiffnessMultiplier = 0.3f;   // × adaptive base stiffness
+    float SelfCollisionCellSizeMultiplier = 1.0f;    // × (AvgEdgeLength × 1.5)
+    
+    // Grid capacity (still absolute, but computed adaptively per instance)
+    uint32 SelfCollisionMaxPerCell = 32;   // Max particles per cell (safety limit)
+    
+    // NEW: Dynamic bounds tracking parameters
+    float BoundsUpdateMotionThreshold = 0.15f;  // Trigger update when motion exceeds 15% of bounds size
+    uint32 BoundsUpdateMaxFrames = 60;          // Force update every N frames regardless of motion
+    bool bEnableDynamicBoundsUpdate = true;     // Enable/disable dynamic bounds tracking
+    
+    // DEPRECATED (kept for backwards compatibility, but ignored in favor of multipliers)
+    float SelfCollisionRadius = 0.01f;      // DEPRECATED: Use SelfCollisionRadiusMultiplier instead
+    float SelfCollisionStiffness = 0.01f;   // DEPRECATED: Use SelfCollisionStiffnessMultiplier instead
+    uint32 SelfCollisionGridDim = 32;       // DEPRECATED: Computed adaptively from mesh bounds
     
     // Edge-based collision (NEW: Prevents edge penetration in low-resolution meshes)
     bool bEnableEdgeCollision = true;      // Enable edge-based SDF collision
@@ -373,11 +386,21 @@ inline FArchive &operator<<(FArchive &Ar, FClothConfig &Cfg)
     Ar << Cfg.CollisionFriction;
     Ar << Cfg.bEnableSelfCollision;
     
-    // Self-collision parameters
+    // Self-collision parameters (NEW: Multipliers for adaptive computation)
+    Ar << Cfg.SelfCollisionRadiusMultiplier;
+    Ar << Cfg.SelfCollisionStiffnessMultiplier;
+    Ar << Cfg.SelfCollisionCellSizeMultiplier;
+    Ar << Cfg.SelfCollisionMaxPerCell;
+    
+    // Dynamic bounds tracking parameters
+    Ar << Cfg.BoundsUpdateMotionThreshold;
+    Ar << Cfg.BoundsUpdateMaxFrames;
+    Ar << Cfg.bEnableDynamicBoundsUpdate;
+    
+    // DEPRECATED: Old absolute values (kept for backwards compatibility)
     Ar << Cfg.SelfCollisionRadius;
     Ar << Cfg.SelfCollisionStiffness;
     Ar << Cfg.SelfCollisionGridDim;
-    Ar << Cfg.SelfCollisionMaxPerCell;
     
     // NEW: Edge collision parameters
     Ar << Cfg.bEnableEdgeCollision;

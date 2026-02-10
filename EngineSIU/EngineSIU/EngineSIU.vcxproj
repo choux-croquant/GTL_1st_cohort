@@ -409,6 +409,7 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothCollisionManager.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothGPURenderStructs.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothInstanceHandle.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshAnalysis.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshDecimator.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshDecimator_Voronoi.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothSkinningWeightGenerator.cpp" />
@@ -837,6 +838,7 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothCollisionManager.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothGPURenderStructs.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothInstanceHandle.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshAnalysis.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshDecimator.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothSimulationData.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothGPUStructs.h" />
