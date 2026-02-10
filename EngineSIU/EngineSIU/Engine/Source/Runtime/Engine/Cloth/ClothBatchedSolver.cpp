@@ -1129,17 +1129,17 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
             //DispatchAreaConstraintSolver(UsedAreaConstraintCount);
         }
 
-       /* if (Config.bEnableSelfCollision && bSelfCollisionInitialized)
+        if (Config.bEnableSelfCollision && bSelfCollisionInitialized)
         {
             DispatchSelfCollision(UsedParticleCount);
-        }*/
+        }
         DispatchApplyDeltas(UsedParticleCount);
     }
     
-    if (Config.bEnableSelfCollision && bSelfCollisionInitialized)
+  /*  if (Config.bEnableSelfCollision && bSelfCollisionInitialized)
     {
         DispatchSelfCollision(UsedParticleCount);
-    }
+    }*/
     // Apply kinematic constraints (NEW: GPU-based computation - P1 optimization)
     // Use GPU-based kinematic target computation if available
     if (ComputeKinematicTargetsCS && AttachmentDataSRV && UsedAttachmentCount > 0)
@@ -2339,7 +2339,7 @@ void FClothBatchedSolver::DispatchSelfCollision(uint32 ParticleCount)
     }
     
     // PASS 3: Apply accumulated corrections (reuse existing method)
-    DispatchApplyDeltas(ParticleCount);
+    //DispatchApplyDeltas(ParticleCount);
 }
 
 void FClothBatchedSolver::UpdateSelfCollisionParams(const TArray<FClothInstanceMetadata>& InstanceMetadata)

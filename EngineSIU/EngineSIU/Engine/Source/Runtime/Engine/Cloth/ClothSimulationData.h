@@ -68,7 +68,7 @@ struct FClothConfig
     
     // DEPRECATED (kept for backwards compatibility, but ignored in favor of multipliers)
     float SelfCollisionRadius = 0.01f;      // DEPRECATED: Use SelfCollisionRadiusMultiplier instead
-    float SelfCollisionStiffness = 0.01f;   // DEPRECATED: Use SelfCollisionStiffnessMultiplier instead
+    float SelfCollisionStiffness = 1.0f;   // DEPRECATED: Use SelfCollisionStiffnessMultiplier instead
     uint32 SelfCollisionGridDim = 32;       // DEPRECATED: Computed adaptively from mesh bounds
     
     // Edge-based collision (NEW: Prevents edge penetration in low-resolution meshes)
