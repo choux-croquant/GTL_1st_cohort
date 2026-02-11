@@ -492,24 +492,24 @@ UClothAsset* FClothAssetGenerator::PackageIntoAsset(
     
     // TEST
     
-    //FClothAttachmentData attachment1;
-    //attachment1.ClothVertexIndex = 0;
-    //attachment1.Type = EClothAttachmentType::WorldPosition;
-    //attachment1.Stiffness = 1.0f;
-    //attachment1.bIsKinematic = true;
-    //attachment1.AttachDistance = 0.0f;
-    //attachment1.WorldPosition = FVector(-10.f, 0.0f, 0.0f);
-    //asset->AddAttachmentData(attachment1);
+    FClothAttachmentData attachment1;
+    attachment1.ClothVertexIndex = 0;
+    attachment1.Type = EClothAttachmentType::WorldPosition;
+    attachment1.Stiffness = 1.0f;
+    attachment1.bIsKinematic = true;
+    attachment1.AttachDistance = 0.0f;
+    attachment1.WorldPosition = FVector(-10.f, 0.0f, 0.0f);
+    asset->AddAttachmentData(attachment1);
 
-    //// Attach second endpoint
-    //FClothAttachmentData attachment2;
-    //attachment2.ClothVertexIndex = 100;
-    //attachment2.Type = EClothAttachmentType::WorldPosition;
-    //attachment2.Stiffness = 1.0f;
-    //attachment2.bIsKinematic = true;
-    //attachment2.AttachDistance = 0.0f;
-    //attachment2.WorldPosition = FVector(10.f, 0.0f, 0.0f);
-    //asset->AddAttachmentData(attachment2);
+    // Attach second endpoint
+    FClothAttachmentData attachment2;
+    attachment2.ClothVertexIndex = 100;
+    attachment2.Type = EClothAttachmentType::WorldPosition;
+    attachment2.Stiffness = 1.0f;
+    attachment2.bIsKinematic = true;
+    attachment2.AttachDistance = 0.0f;
+    attachment2.WorldPosition = FVector(10.f, 0.0f, 0.0f);
+    asset->AddAttachmentData(attachment2);
     ///
     ///
     /// 
