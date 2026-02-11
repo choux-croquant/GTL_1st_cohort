@@ -1,8 +1,3 @@
-/**
- * Cloth Component Implementation (Refactored)
- * Uses centralized ClothWorld manager instead of per-component solver
- */
-
 #include "ClothComponent.h"
 #include "Engine/ClothAsset.h"
 #include "Cloth/ClothInstanceHandle.h"
@@ -12,7 +7,7 @@
 #include "Cloth/ClothPhysicsManager.h"
 
 UClothComponent::UClothComponent()
-    : ClothAsset(nullptr), ClothInstanceHandle(nullptr), bIsSimulating(false), bUseBatchedMode(false), bDebugDrawEnabled(false), AccumulatedForce(FVector::ZeroVector)
+    : ClothAsset(nullptr), ClothInstanceHandle(nullptr), bIsSimulating(false), bUseBatchedMode(false)
 {
 }
 
@@ -50,11 +45,6 @@ void UClothComponent::TickComponent(float DeltaTime)
     {
         // Batched mode
         // Apply accumulated forces (TODO: implement force system for batched mode)
-        if (AccumulatedForce.SizeSquared() > 0.0f)
-        {
-            // TODO: Add force support to batched system
-            AccumulatedForce = FVector::ZeroVector;
-        }
     }
 }
 
@@ -164,13 +154,7 @@ void UClothComponent::ResetSimulation()
         UE_LOG(ELogLevel::Warning, TEXT("ClothComponent: Reset not yet implemented for batched mode"));
     }
 
-    AccumulatedForce = FVector::ZeroVector;
     UE_LOG(ELogLevel::Display, TEXT("ClothComponent: Simulation reset"));
-}
-
-void UClothComponent::AddForce(const FVector &Force)
-{
-    AccumulatedForce += Force;
 }
 
 void UClothComponent::AddImpulse(const FVector &Impulse)

@@ -172,7 +172,6 @@ bool FQuat::IsNormalized() const
 
 void FQuat::Normalize(float Tolerance)
 {
-    // TODO: 추후에 SIMD 사용
     const float SquareSum = X * X + Y * Y + Z * Z + W * W;
 
     if (SquareSum >= Tolerance)
@@ -203,8 +202,6 @@ float FQuat::GetAngle() const
 
 FVector FQuat::GetRotationAxis() const
 {
-    // TODO: 추후에 SIMD 사용
-
     // 벡터 성분의 제곱합 계산
     const float SquareSum = X*X + Y*Y + Z*Z;
     if (SquareSum < SMALL_NUMBER)

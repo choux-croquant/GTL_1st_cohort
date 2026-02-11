@@ -346,7 +346,6 @@ void ControlEditorPanel::CreateModifyButton(const ImVec2 ButtonSize, ImFont* Ico
 
     ImGui::SameLine();
 
-    // @todo 적절한 이름으로 변경 바람
     ImGui::PushFont(IconFont);
     if (ImGui::Button("\ue9c8", ButtonSize))
     {
@@ -402,7 +401,6 @@ void ControlEditorPanel::CreateModifyButton(const ImVec2 ButtonSize, ImFont* Ico
                 }
                 case OBJ_CUBE:
                 {
-                    // TODO: 다른 부분들 전부 Actor만 소환하도록 하고, Component 생성은 Actor가 자체적으로 하도록 변경.
                     ACube* CubeActor = World->SpawnActor<ACube>();
                     CubeActor->SetActorLabel(TEXT("OBJ_CUBE"));
                     break;
