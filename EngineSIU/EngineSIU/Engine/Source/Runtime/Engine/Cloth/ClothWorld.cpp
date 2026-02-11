@@ -177,10 +177,11 @@ FClothInstanceHandle *FClothWorld::RegisterClothInstanceBatched(UClothComponent 
         Params.RenderNormals = Asset->RenderNormals;
         Params.RenderUVs = Asset->RenderUVs;
         Params.RenderIndices = Asset->RenderIndices;
-        Params.SkinningWeights = Asset->SkinningWeights;
+        Params.SkinningWeights = Asset->SkinningWeights;  // Legacy K-nearest neighbor weights
+        Params.TriangleSkinningWeights = Asset->TriangleSkinningWeights;  // NEW: Triangle-based weights
         
-        UE_LOG(ELogLevel::Display, TEXT("ClothWorld: Registering cloth with production rendering - RenderVerts: %d, SimVerts: %d"),
-               Params.RenderRestPositions.Num(), Params.RestPositions.Num());
+        UE_LOG(ELogLevel::Display, TEXT("ClothWorld: Registering cloth with production rendering - RenderVerts: %d, SimVerts: %d, TriangleWeights: %d"),
+               Params.RenderRestPositions.Num(), Params.RestPositions.Num(), Params.TriangleSkinningWeights.Num());
     }
 
     // CRITICAL FIX: Get component's world transform for converting local positions to world space

@@ -79,12 +79,14 @@ FClothBatchedSolver::FClothBatchedSolver()
 	UnifiedRenderVertexBuffer = nullptr;
 	UnifiedRenderIndexBuffer = nullptr;
 	UnifiedSkinningWeightBuffer = nullptr;
+	UnifiedTriangleSkinningWeightBuffer = nullptr;  // NEW: Triangle-based skinning weights
 	RenderNormalsBuffer = nullptr;
 	RenderPositionsBuffer = nullptr;
 	
 	UnifiedRenderVertexSRV = nullptr;
 	UnifiedRenderIndexSRV = nullptr;
 	SkinningWeightsSRV = nullptr;
+	TriangleSkinningWeightsSRV = nullptr;  // NEW: Triangle-based skinning weights SRV
 	RenderNormalsUAV = nullptr;
 	RenderNormalsSRV = nullptr;
 	RenderPositionsSRV = nullptr;
@@ -233,12 +235,14 @@ void FClothBatchedSolver::Release()
     SAFE_RELEASE(UnifiedRenderVertexBuffer);
     SAFE_RELEASE(UnifiedRenderIndexBuffer);
     SAFE_RELEASE(UnifiedSkinningWeightBuffer);
+    SAFE_RELEASE(UnifiedTriangleSkinningWeightBuffer);  // NEW: Triangle-based skinning weights
     SAFE_RELEASE(RenderNormalsBuffer);
     SAFE_RELEASE(RenderPositionsBuffer);
     
     SAFE_RELEASE(UnifiedRenderVertexSRV);
     SAFE_RELEASE(UnifiedRenderIndexSRV);
     SAFE_RELEASE(SkinningWeightsSRV);
+    SAFE_RELEASE(TriangleSkinningWeightsSRV);  // NEW: Triangle-based skinning weights SRV
     SAFE_RELEASE(RenderNormalsUAV);
     SAFE_RELEASE(RenderNormalsSRV);
     SAFE_RELEASE(RenderPositionsSRV);
@@ -877,7 +881,7 @@ bool FClothBatchedSolver::AllocateRenderBuffers(uint32 MaxRenderVertices, uint32
         }
     }
 
-    // Create unified skinning weight buffer
+    // Create unified legacy K-nearest neighbor skinning weight buffer
     if (MaxRenderVertices > 0)
     {
         bufferDesc = {};
@@ -890,7 +894,7 @@ bool FClothBatchedSolver::AllocateRenderBuffers(uint32 MaxRenderVertices, uint32
         hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &UnifiedSkinningWeightBuffer);
         if (FAILED(hr))
         {
-            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create skinning weight buffer"));
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create legacy skinning weight buffer"));
             return false;
         }
 
@@ -902,12 +906,42 @@ bool FClothBatchedSolver::AllocateRenderBuffers(uint32 MaxRenderVertices, uint32
         hr = Graphics->Device->CreateShaderResourceView(UnifiedSkinningWeightBuffer, &srvDesc, &SkinningWeightsSRV);
         if (FAILED(hr))
         {
-            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create skinning weight SRV"));
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create legacy skinning weight SRV"));
+            return false;
+        }
+    }
+    
+    // NEW: Create unified triangle-based skinning weight buffer
+    if (MaxRenderVertices > 0)
+    {
+        bufferDesc = {};
+        bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+        bufferDesc.ByteWidth = sizeof(FClothSkinningWeightTriangleGPU) * MaxRenderVertices;
+        bufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        bufferDesc.StructureByteStride = sizeof(FClothSkinningWeightTriangleGPU);
+        bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+
+        hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &UnifiedTriangleSkinningWeightBuffer);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create triangle skinning weight buffer"));
+            return false;
+        }
+
+        srvDesc = {};
+        srvDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+        srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+        srvDesc.Buffer.NumElements = MaxRenderVertices;
+
+        hr = Graphics->Device->CreateShaderResourceView(UnifiedTriangleSkinningWeightBuffer, &srvDesc, &TriangleSkinningWeightsSRV);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create triangle skinning weight SRV"));
             return false;
         }
     }
 
-    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Allocated render buffers - Vertices: %u, Indices: %u"),
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Allocated render buffers - Vertices: %u, Indices: %u (Legacy + Triangle skinning)"),
            MaxRenderVertices, MaxRenderIndices);
 
     return true;
@@ -1680,9 +1714,11 @@ void FClothBatchedSolver::UploadRenderMeshData(
             SAFE_RELEASE(UnifiedRenderVertexBuffer);
             SAFE_RELEASE(UnifiedRenderIndexBuffer);
             SAFE_RELEASE(UnifiedSkinningWeightBuffer);
+            SAFE_RELEASE(UnifiedTriangleSkinningWeightBuffer);  // NEW: Triangle-based skinning weights
             SAFE_RELEASE(UnifiedRenderVertexSRV);
             SAFE_RELEASE(UnifiedRenderIndexSRV);
             SAFE_RELEASE(SkinningWeightsSRV);
+            SAFE_RELEASE(TriangleSkinningWeightsSRV);  // NEW: Triangle-based skinning weights SRV
             
             UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Reallocating render buffers - Old: V=%u I=%u, Required: V=%u I=%u"),
                    AllocatedRenderVertexCapacity, AllocatedRenderIndexCapacity,
@@ -1782,7 +1818,65 @@ void FClothBatchedSolver::UploadSkinningWeights(
     Graphics->DeviceContext->UpdateSubresource(UnifiedSkinningWeightBuffer, 0, &destBox,
                                                gpuWeights.GetData(), 0, 0);
 
-    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Uploaded skinning weights - Count: %u (offset %u)"),
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Uploaded legacy skinning weights - Count: %u (offset %u)"),
+           numWeights, RenderVertexOffset);
+}
+
+// NEW: Upload triangle-based skinning weights (fixes edge curling and UV distortion)
+void FClothBatchedSolver::UploadTriangleSkinningWeights(
+    const TArray<FClothSkinningWeightTriangle>& Weights,
+    uint32 RenderVertexOffset)
+{
+    if (!Graphics || !Graphics->DeviceContext)
+        return;
+
+    if (Weights.Num() == 0)
+        return;
+
+    if (!UnifiedTriangleSkinningWeightBuffer)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Triangle skinning weight buffer not allocated"));
+        return;
+    }
+
+    uint32 numWeights = Weights.Num();
+
+    // Convert CPU triangle skinning weights to GPU format
+    TArray<FClothSkinningWeightTriangleGPU> gpuWeights;
+    gpuWeights.SetNum(numWeights);
+
+    for (uint32 i = 0; i < numWeights; ++i)
+    {
+        const FClothSkinningWeightTriangle& cpuWeight = Weights[i];
+        FClothSkinningWeightTriangleGPU& gpuWeight = gpuWeights[i];
+
+        // Copy triangle indices
+        gpuWeight.SimTriangleIndices[0] = cpuWeight.SimTriangleIndices[0];
+        gpuWeight.SimTriangleIndices[1] = cpuWeight.SimTriangleIndices[1];
+        gpuWeight.SimTriangleIndices[2] = cpuWeight.SimTriangleIndices[2];
+        
+        // Copy barycentric coordinates
+        gpuWeight.BarycentricCoords[0] = cpuWeight.BarycentricCoords[0];
+        gpuWeight.BarycentricCoords[1] = cpuWeight.BarycentricCoords[1];
+        gpuWeight.BarycentricCoords[2] = cpuWeight.BarycentricCoords[2];
+        
+        // Copy tangent-space offset
+        gpuWeight.TangentSpaceOffset = cpuWeight.TangentSpaceOffset;
+    }
+
+    // Upload to GPU
+    D3D11_BOX destBox;
+    destBox.left = RenderVertexOffset * sizeof(FClothSkinningWeightTriangleGPU);
+    destBox.right = destBox.left + numWeights * sizeof(FClothSkinningWeightTriangleGPU);
+    destBox.top = 0;
+    destBox.bottom = 1;
+    destBox.front = 0;
+    destBox.back = 1;
+
+    Graphics->DeviceContext->UpdateSubresource(UnifiedTriangleSkinningWeightBuffer, 0, &destBox,
+                                               gpuWeights.GetData(), 0, 0);
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Uploaded triangle skinning weights - Count: %u (offset %u)"),
            numWeights, RenderVertexOffset);
 }
 

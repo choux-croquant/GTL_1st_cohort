@@ -49,7 +49,8 @@ struct FClothSimulationMeshData
  */
 struct FClothSkinningData
 {
-    TArray<FClothSkinningWeight> Weights;  // One per render vertex
+    TArray<FClothSkinningWeight> Weights;  // One per render vertex (K-nearest neighbor, legacy)
+    TArray<FClothSkinningWeightTriangle> TriangleWeights;  // One per render vertex (triangle-based, recommended)
 };
 
 /**

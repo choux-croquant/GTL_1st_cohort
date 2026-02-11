@@ -168,7 +168,8 @@ struct FClothInstanceCreationParams
     TArray<FVector> RenderNormals;                          // Render mesh normals
     TArray<FVector2D> RenderUVs;                            // Render mesh UVs
     TArray<uint32> RenderIndices;                           // Render mesh indices
-    TArray<struct FClothSkinningWeight> SkinningWeights;    // Render → Sim vertex mapping
+    TArray<struct FClothSkinningWeight> SkinningWeights;    // Legacy K-nearest neighbor skinning weights
+    TArray<struct FClothSkinningWeightTriangle> TriangleSkinningWeights;  // NEW: Triangle-based skinning weights (recommended)
 
     // Configuration
     FClothConfig Config;

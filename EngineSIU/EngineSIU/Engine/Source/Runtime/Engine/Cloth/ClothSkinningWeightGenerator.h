@@ -50,6 +50,40 @@ inline FArchive& operator<<(FArchive& Ar, FClothSkinningWeight& W)
 }
 
 /**
+ * Triangle-based skinning weight with tangent-space offset
+ * Binds render vertex to closest simulation triangle
+ * Preserves local surface detail through tangent-space encoding
+ */
+struct FClothSkinningWeightTriangle
+{
+    uint32 SimTriangleIndices[3];      // 3 simulation vertex indices forming triangle
+    float BarycentricCoords[3];        // Barycentric coordinates (u, v, w) where u+v+w=1
+    FVector TangentSpaceOffset;        // Offset in triangle's local tangent frame (tangent, bitangent, normal)
+    
+    FClothSkinningWeightTriangle()
+    {
+        SimTriangleIndices[0] = 0;
+        SimTriangleIndices[1] = 0;
+        SimTriangleIndices[2] = 0;
+        BarycentricCoords[0] = 1.0f;
+        BarycentricCoords[1] = 0.0f;
+        BarycentricCoords[2] = 0.0f;
+        TangentSpaceOffset = FVector::ZeroVector;
+    }
+};
+
+// Serialization operator for FClothSkinningWeightTriangle
+inline FArchive& operator<<(FArchive& Ar, FClothSkinningWeightTriangle& W)
+{
+    for (int i = 0; i < 3; ++i)
+        Ar << W.SimTriangleIndices[i];
+    for (int i = 0; i < 3; ++i)
+        Ar << W.BarycentricCoords[i];
+    Ar << W.TangentSpaceOffset;
+    return Ar;
+}
+
+/**
  * Skinning weight generation parameters
  */
 struct FClothSkinningParams
@@ -99,6 +133,27 @@ public:
         FClothSkinningResult& OutResult
     );
     
+    /**
+     * Generate triangle-based skinning weights with tangent-space offsets
+     * Fixes edge curling and UV distortion by preserving local surface detail
+     *
+     * @param RenderPositions - High-res render mesh vertices
+     * @param SimPositions - Low-res simulation mesh vertices
+     * @param SimIndices - Low-res simulation mesh triangle indices
+     * @param Params - Generation parameters
+     * @param OutWeights - Output triangle-based skinning weights
+     * @param OutError - Error message if generation fails
+     * @return Success/failure
+     */
+    static bool GenerateTriangleSkinningWeights(
+        const TArray<FVector>& RenderPositions,
+        const TArray<FVector>& SimPositions,
+        const TArray<uint32>& SimIndices,
+        const FClothSkinningParams& Params,
+        TArray<FClothSkinningWeightTriangle>& OutWeights,
+        FString& OutError
+    );
+    
 private:
     // Spatial acceleration structure for nearest neighbor search
     struct FSimpleSpatialHash
@@ -129,5 +184,32 @@ private:
     static bool ValidateWeights(
         const TArray<FClothSkinningWeight>& Weights,
         FString& OutErrorMessage
+    );
+    
+    // Helper: Compute barycentric coordinates of point P in triangle (A, B, C)
+    static FVector ComputeBarycentricCoordinates(
+        const FVector& P,
+        const FVector& A,
+        const FVector& B,
+        const FVector& C
+    );
+    
+    // Helper: Find closest triangle to a point (brute force)
+    static int32 FindClosestTriangleBruteForce(
+        const FVector& Point,
+        const TArray<FVector>& Positions,
+        const TArray<uint32>& Indices,
+        FVector& OutClosestPoint,
+        float& OutMinDistance
+    );
+    
+    // Helper: Compute tangent frame for a triangle
+    static void ComputeTangentFrame(
+        const FVector& V0,
+        const FVector& V1,
+        const FVector& V2,
+        FVector& OutTangent,
+        FVector& OutBitangent,
+        FVector& OutNormal
     );
 };

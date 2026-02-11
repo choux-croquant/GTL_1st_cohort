@@ -94,6 +94,11 @@ public:
     void UploadSkinningWeights(
         const TArray<struct FClothSkinningWeight>& Weights,
         uint32 RenderVertexOffset);
+    
+    // NEW: Upload triangle-based skinning weights (fixes edge curling and UV distortion)
+    void UploadTriangleSkinningWeights(
+        const TArray<struct FClothSkinningWeightTriangle>& Weights,
+        uint32 RenderVertexOffset);
 
     // Index buffer access
     ID3D11Buffer *GetUnifiedIndexBuffer() const { return UnifiedIndexBuffer; }
@@ -101,6 +106,7 @@ public:
     
     // NEW: Production rendering - buffer access for rendering
     ID3D11ShaderResourceView* GetSkinningWeightBufferSRV() const { return SkinningWeightsSRV; }
+    ID3D11ShaderResourceView* GetTriangleSkinningWeightBufferSRV() const { return TriangleSkinningWeightsSRV; }  // NEW: Triangle-based weights
     ID3D11Buffer* GetUnifiedRenderVertexBuffer() const { return UnifiedRenderVertexBuffer; }
 
     // Configuration
@@ -217,7 +223,8 @@ private:
     // NEW: Production rendering buffers (for high-res render mesh with GPU skinning)
     ID3D11Buffer *UnifiedRenderVertexBuffer;        // Unified render vertex buffer (position, normal, UV)
     ID3D11Buffer *UnifiedRenderIndexBuffer;         // Unified render index buffer
-    ID3D11Buffer *UnifiedSkinningWeightBuffer;      // Unified skinning weight buffer (render → sim mapping)
+    ID3D11Buffer *UnifiedSkinningWeightBuffer;      // Unified legacy K-nearest neighbor skinning weight buffer
+    ID3D11Buffer *UnifiedTriangleSkinningWeightBuffer;  // NEW: Unified triangle-based skinning weight buffer
     ID3D11Buffer *RenderNormalsBuffer;              // Interpolated render mesh normals (optional, for compute-based skinning)
     ID3D11Buffer *RenderPositionsBuffer;            // Skinned render mesh positions (optional, for compute-based skinning)
     
@@ -262,7 +269,8 @@ private:
     // NEW: Production rendering UAVs/SRVs
     ID3D11ShaderResourceView *UnifiedRenderVertexSRV;
     ID3D11ShaderResourceView *UnifiedRenderIndexSRV;
-    ID3D11ShaderResourceView *SkinningWeightsSRV;
+    ID3D11ShaderResourceView *SkinningWeightsSRV;           // Legacy K-nearest neighbor weights
+    ID3D11ShaderResourceView *TriangleSkinningWeightsSRV;   // NEW: Triangle-based weights
     ID3D11UnorderedAccessView *RenderNormalsUAV;     // For compute-based skinning (optional)
     ID3D11ShaderResourceView *RenderNormalsSRV;      // For compute-based skinning (optional)
     ID3D11ShaderResourceView *RenderPositionsSRV;    // For compute-based skinning (optional)

@@ -418,15 +418,33 @@ bool FClothAssetGenerator::CalculateSkinningWeights(
     FClothSkinningData& OutSkinningData,
     FString& OutError)
 {
-    FClothSkinningResult result;
+    // NEW: Use triangle-based skinning weights (fixes edge curling and UV distortion)
+    TArray<FClothSkinningWeightTriangle> triangleWeights;
+    FString error;
     
+    if (!FClothSkinningWeightGenerator::GenerateTriangleSkinningWeights(
+        RenderMesh.Positions,
+        SimMesh.Positions,
+        SimMesh.Indices,
+        Params,
+        triangleWeights,
+        error))
+    {
+        OutError = "Triangle skinning weight generation failed: " + error;
+        return false;
+    }
+    
+    OutSkinningData.TriangleWeights = triangleWeights;
+    
+    // Also generate legacy K-nearest neighbor weights for backward compatibility
+    FClothSkinningResult result;
     if (!FClothSkinningWeightGenerator::GenerateSkinningWeights(
         RenderMesh.Positions,
         SimMesh.Positions,
         Params,
         result))
     {
-        OutError = "Skinning weight generation failed: " + result.ErrorMessage;
+        OutError = "Legacy skinning weight generation failed: " + result.ErrorMessage;
         return false;
     }
     
@@ -506,14 +524,18 @@ UClothAsset* FClothAssetGenerator::PackageIntoAsset(
     asset->RenderNormals = RenderMesh.Normals;
     asset->RenderUVs = RenderMesh.UVs;
     asset->RenderIndices = RenderMesh.Indices;
-    asset->SkinningWeights = SkinningData.Weights;
+    asset->SkinningWeights = SkinningData.Weights;  // Legacy K-nearest neighbor weights
+    
+    // NEW: Store triangle-based skinning weights (fixes edge curling and UV distortion)
+    asset->bUseTriangleSkinning = true;
+    asset->TriangleSkinningWeights = SkinningData.TriangleWeights;
     
     // Store generation metadata
     asset->OriginalVertexCount = RenderMesh.GetVertexCount();
     asset->DecimatedVertexCount = SimMesh.GetVertexCount();
     
-    UE_LOG(ELogLevel::Display, TEXT("ClothAssetGenerator: Packaged asset with render mesh - RenderVerts: %d, SimVerts: %d, SkinningWeights: %d"),
-           asset->RenderRestPositions.Num(), asset->RestPositions.Num(), asset->SkinningWeights.Num());
+    UE_LOG(ELogLevel::Display, TEXT("ClothAssetGenerator: Packaged asset with render mesh - RenderVerts: %d, SimVerts: %d, LegacyWeights: %d, TriangleWeights: %d"),
+           asset->RenderRestPositions.Num(), asset->RestPositions.Num(), asset->SkinningWeights.Num(), asset->TriangleSkinningWeights.Num());
     
     return asset;
 }

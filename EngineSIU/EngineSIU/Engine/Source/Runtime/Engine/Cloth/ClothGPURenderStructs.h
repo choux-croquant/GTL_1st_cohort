@@ -35,6 +35,36 @@ struct FClothSkinningWeightGPU
 static_assert(sizeof(FClothSkinningWeightGPU) == 32, "FClothSkinningWeightGPU must be 32 bytes for GPU alignment");
 
 /**
+ * GPU-compatible triangle-based skinning weight structure
+ * Maps a render vertex to a simulation triangle with tangent-space offset
+ * Must match HLSL struct layout exactly
+ */
+struct FClothSkinningWeightTriangleGPU
+{
+    uint32 SimTriangleIndices[3];  // 3 simulation vertex indices forming triangle (12 bytes)
+    uint32 Padding1;                // 4 bytes padding for alignment
+    float BarycentricCoords[3];     // Barycentric coordinates (u, v, w) (12 bytes)
+    float Padding2;                 // 4 bytes padding for alignment
+    FVector TangentSpaceOffset;     // Offset in triangle's local tangent frame (12 bytes)
+    float Padding3;                 // 4 bytes padding for alignment
+    
+    FClothSkinningWeightTriangleGPU()
+        : Padding1(0), Padding2(0.0f), Padding3(0.0f)
+    {
+        SimTriangleIndices[0] = 0;
+        SimTriangleIndices[1] = 0;
+        SimTriangleIndices[2] = 0;
+        BarycentricCoords[0] = 1.0f;
+        BarycentricCoords[1] = 0.0f;
+        BarycentricCoords[2] = 0.0f;
+        TangentSpaceOffset = FVector::ZeroVector;
+    }
+};
+
+// Verify structure size for GPU compatibility (48 bytes with padding for float3 alignment)
+static_assert(sizeof(FClothSkinningWeightTriangleGPU) == 48, "FClothSkinningWeightTriangleGPU must be 48 bytes for GPU alignment");
+
+/**
  * Per-instance constant buffer for cloth rendering
  * Provides offsets and metadata for GPU skinning
  * Must be 16-byte aligned for D3D11

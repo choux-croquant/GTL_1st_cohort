@@ -549,8 +549,36 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
             globalSkinningWeights.Add(globalWeight);
         }
         
-        // Upload skinning weights
+        // Upload legacy K-nearest neighbor skinning weights
         BatchedSolver->UploadSkinningWeights(globalSkinningWeights, metadata.RenderVertexOffset);
+        
+        // NEW: Upload triangle-based skinning weights (fixes edge curling and UV distortion)
+        if (Params.TriangleSkinningWeights.Num() > 0)
+        {
+            // Convert triangle skinning weights to use global simulation vertex indices
+            TArray<FClothSkinningWeightTriangle> globalTriangleWeights;
+            globalTriangleWeights.Reserve(Params.TriangleSkinningWeights.Num());
+            
+            for (const FClothSkinningWeightTriangle& localWeight : Params.TriangleSkinningWeights)
+            {
+                FClothSkinningWeightTriangle globalWeight = localWeight;
+                
+                // Convert local sim vertex indices to global indices
+                globalWeight.SimTriangleIndices[0] += metadata.ParticleOffset;
+                globalWeight.SimTriangleIndices[1] += metadata.ParticleOffset;
+                globalWeight.SimTriangleIndices[2] += metadata.ParticleOffset;
+                
+                // Barycentric coords and tangent-space offset remain unchanged
+                
+                globalTriangleWeights.Add(globalWeight);
+            }
+            
+            // Upload triangle skinning weights
+            BatchedSolver->UploadTriangleSkinningWeights(globalTriangleWeights, metadata.RenderVertexOffset);
+            
+            UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Uploaded triangle skinning weights - Count: %u"),
+                   static_cast<int32>(LODLevel), globalTriangleWeights.Num());
+        }
         
         // Update totals
         TotalRenderVertexCount += renderVertexCount;
