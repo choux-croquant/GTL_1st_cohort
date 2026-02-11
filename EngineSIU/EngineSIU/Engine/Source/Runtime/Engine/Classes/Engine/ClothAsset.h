@@ -85,7 +85,11 @@ public:
     TArray<FVector> RenderNormals;                      // Render mesh normals
     TArray<FVector2D> RenderUVs;                        // Render mesh UVs
     TArray<uint32> RenderIndices;                       // Render mesh indices
-    TArray<FClothSkinningWeight> SkinningWeights;       // Render → Sim mapping
+    TArray<FClothSkinningWeight> SkinningWeights;       // Render → Sim mapping (K-nearest neighbor, legacy)
+    
+    // NEW: Triangle-based skinning weights (fixes edge curling and UV distortion)
+    bool bUseTriangleSkinning = true;                   // Flag: use triangle-based skinning (recommended)
+    TArray<FClothSkinningWeightTriangle> TriangleSkinningWeights;  // Render → Sim triangle mapping with tangent-space offsets
     
     // Generation metadata
     float QEMReductionRatio = 0.1f;                     // How much was the sim mesh reduced

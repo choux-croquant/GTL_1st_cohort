@@ -38,7 +38,8 @@ struct FClothRenderData
     // NEW: Production rendering - render mesh data
     ID3D11Buffer *UnifiedRenderVertexBuffer;        // Unified render vertex buffer (position, normal, UV)
     ID3D11Buffer *UnifiedRenderIndexBuffer;         // Unified render index buffer
-    ID3D11ShaderResourceView *SkinningWeightBufferSRV;  // Skinning weight buffer SRV
+    ID3D11ShaderResourceView *SkinningWeightBufferSRV;  // Legacy K-nearest neighbor skinning weight buffer SRV (t16)
+    ID3D11ShaderResourceView *TriangleSkinningWeightBufferSRV;  // NEW: Triangle-based skinning weight buffer SRV (t17)
     uint32 RenderVertexOffset;                      // Offset into unified render vertex buffers
     uint32 RenderVertexCount;                       // Number of render vertices
     uint32 RenderIndexOffset;                       // Offset into unified render index buffer
@@ -55,7 +56,7 @@ struct FClothRenderData
     bool bIsBatchedMode;
 
     FClothRenderData()
-        : PositionBufferSRV(nullptr), NormalBufferSRV(nullptr), IndexBufferSRV(nullptr), Indices(nullptr), UnifiedIndexBuffer(nullptr), ParticleOffset(0), IndexOffset(0), UnifiedRenderVertexBuffer(nullptr), UnifiedRenderIndexBuffer(nullptr), SkinningWeightBufferSRV(nullptr), RenderVertexOffset(0), RenderVertexCount(0), RenderIndexOffset(0), RenderIndexCount(0), bUseProductionRendering(false), NumVertices(0), NumTriangles(0), WorldTransform(FMatrix::Identity), Material(nullptr), bIsBatchedMode(false)
+        : PositionBufferSRV(nullptr), NormalBufferSRV(nullptr), IndexBufferSRV(nullptr), Indices(nullptr), UnifiedIndexBuffer(nullptr), ParticleOffset(0), IndexOffset(0), UnifiedRenderVertexBuffer(nullptr), UnifiedRenderIndexBuffer(nullptr), SkinningWeightBufferSRV(nullptr), TriangleSkinningWeightBufferSRV(nullptr), RenderVertexOffset(0), RenderVertexCount(0), RenderIndexOffset(0), RenderIndexCount(0), bUseProductionRendering(false), NumVertices(0), NumTriangles(0), WorldTransform(FMatrix::Identity), Material(nullptr), bIsBatchedMode(false)
     {
     }
 };

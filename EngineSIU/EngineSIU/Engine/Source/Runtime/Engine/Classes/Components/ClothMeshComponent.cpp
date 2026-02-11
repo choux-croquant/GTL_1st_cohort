@@ -113,7 +113,8 @@ void UClothMeshComponent::GetRenderData(FClothRenderData &OutData) const
             OutData.bUseProductionRendering = true;
             OutData.UnifiedRenderVertexBuffer = batchedSolver->GetUnifiedRenderVertexBuffer();  // NEW: Actual vertex buffer
             OutData.UnifiedRenderIndexBuffer = batchedSolver->GetUnifiedRenderIndexBuffer();
-            OutData.SkinningWeightBufferSRV = batchedSolver->GetSkinningWeightBufferSRV();
+            OutData.SkinningWeightBufferSRV = batchedSolver->GetSkinningWeightBufferSRV();  // Legacy K-nearest neighbor weights (t16)
+            OutData.TriangleSkinningWeightBufferSRV = batchedSolver->GetTriangleSkinningWeightBufferSRV();  // NEW: Triangle-based weights (t17)
             OutData.RenderVertexOffset = metadata.RenderVertexOffset;
             OutData.RenderVertexCount = metadata.RenderVertexCount;
             OutData.RenderIndexOffset = metadata.RenderIndexOffset;

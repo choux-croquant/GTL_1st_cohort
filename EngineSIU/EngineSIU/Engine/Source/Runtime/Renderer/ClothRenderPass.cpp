@@ -185,9 +185,9 @@ void FClothRenderPass::PrepareRender(const std::shared_ptr<FEditorViewportClient
 
 void FClothRenderPass::CleanUpRender(const std::shared_ptr<FEditorViewportClient> &Viewport)
 {
-    // Unbind cloth simulation buffers (t14-t16)
-    ID3D11ShaderResourceView *nullSimSRVs[3] = {nullptr};
-    Graphics->DeviceContext->VSSetShaderResources(14, 3, nullSimSRVs);
+    // Unbind cloth simulation buffers (t14-t17)
+    ID3D11ShaderResourceView *nullSimSRVs[4] = {nullptr};
+    Graphics->DeviceContext->VSSetShaderResources(14, 4, nullSimSRVs);
     
     // Unbind material textures (t0-t8)
     ID3D11ShaderResourceView *nullMatSRVs[9] = {nullptr};
@@ -279,7 +279,11 @@ void FClothRenderPass::RenderClothComponent(UClothMeshComponent *ClothComponent,
     if (!renderData.bUseProductionRendering)
         return; // Fall back to debug rendering
 
-    if (!renderData.UnifiedRenderVertexBuffer || !renderData.UnifiedRenderIndexBuffer || !renderData.SkinningWeightBufferSRV)
+    if (!renderData.UnifiedRenderVertexBuffer || !renderData.UnifiedRenderIndexBuffer)
+        return;
+    
+    // Require at least one skinning weight buffer (triangle or legacy)
+    if (!renderData.TriangleSkinningWeightBufferSRV && !renderData.SkinningWeightBufferSRV)
         return;
 
     if (renderData.RenderIndexCount == 0)
@@ -291,13 +295,14 @@ void FClothRenderPass::RenderClothComponent(UClothMeshComponent *ClothComponent,
     Graphics->DeviceContext->IASetVertexBuffers(0, 1, &renderData.UnifiedRenderVertexBuffer, &stride, &offset);
 
     // CRITICAL FIX: Bind simulation buffers to slots that don't conflict with light buffers
-    // Light buffers use t10-t13, so use t14-t16 for cloth simulation data
+    // Light buffers use t10-t13, so use t14-t17 for cloth simulation data
     ID3D11ShaderResourceView *simSRVs[] = {
-        renderData.PositionBufferSRV,       // t14: Simulation positions
-        renderData.NormalBufferSRV,         // t15: Simulation normals
-        renderData.SkinningWeightBufferSRV  // t16: Skinning weights
+        renderData.PositionBufferSRV,                   // t14: Simulation positions
+        renderData.NormalBufferSRV,                     // t15: Simulation normals
+        renderData.SkinningWeightBufferSRV,             // t16: Legacy K-nearest neighbor skinning weights
+        renderData.TriangleSkinningWeightBufferSRV      // t17: NEW: Triangle-based skinning weights
     };
-    Graphics->DeviceContext->VSSetShaderResources(14, 3, simSRVs);
+    Graphics->DeviceContext->VSSetShaderResources(14, 4, simSRVs);
 
     // Update per-instance constant buffer
     FClothInstanceConstants constants;

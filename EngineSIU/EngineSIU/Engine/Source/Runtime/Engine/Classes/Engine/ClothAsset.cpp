@@ -38,12 +38,14 @@ void UClothAsset::SerializeAsset(FArchive &Ar)
         flags |= (BendConstraints.Num() > 0 ? 0x02 : 0);
         flags |= (AreaConstraints.Num() > 0 ? 0x04 : 0);
         flags |= (EdgeCollisions.Num() > 0 ? 0x08 : 0);
+        flags |= (bUseTriangleSkinning ? 0x10 : 0);  // NEW: Triangle skinning flag
     }
     Ar << flags;
     
     if (Ar.IsLoading())
     {
         bUseRenderMesh = (flags & 0x01) != 0;
+        bUseTriangleSkinning = (flags & 0x10) != 0;  // NEW: Load triangle skinning flag
     }
 
     // Simulation mesh data
@@ -58,7 +60,13 @@ void UClothAsset::SerializeAsset(FArchive &Ar)
         Ar << RenderNormals;
         Ar << RenderUVs;
         Ar << RenderIndices;
-        Ar << SkinningWeights;
+        Ar << SkinningWeights;  // Legacy K-nearest neighbor weights
+        
+        // NEW: Triangle-based skinning weights (if enabled)
+        if (bUseTriangleSkinning)
+        {
+            Ar << TriangleSkinningWeights;
+        }
     }
 
     // Constraints
@@ -168,6 +176,12 @@ uint64 UClothAsset::GetEstimatedFileSize() const
         size += RenderUVs.Num() * sizeof(FVector2D);
         size += RenderIndices.Num() * sizeof(uint32);
         size += SkinningWeights.Num() * sizeof(FClothSkinningWeight);
+        
+        // NEW: Triangle skinning weights
+        if (bUseTriangleSkinning)
+        {
+            size += TriangleSkinningWeights.Num() * sizeof(FClothSkinningWeightTriangle);
+        }
     }
     
     // Constraints
