@@ -1,7 +1,7 @@
 #include "LuaTextUI.h"
 
 LuaTextUI::LuaTextUI(FName InName)
-    :LuaUI(InName), Text(FString("Default Text")), FontStyle(ImGui::GetFont()), FontSize(18.0f), FontColor(FLinearColor(1.0f))
+    :LuaUI(InName), Text(FString("Default Text")), FontStyle(ImGui::GetFont()), FontSize(18.0f), FontColor(FLinearColor(1.0f, 1.0f, 1.0f))
 {
 }
 
