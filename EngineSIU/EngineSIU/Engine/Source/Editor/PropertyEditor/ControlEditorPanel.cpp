@@ -511,6 +511,7 @@ void ControlEditorPanel::CreateModifyButton(const ImVec2 ButtonSize, ImFont* Ico
                 case OBJ_CLOTH:
                 {
                     SpawnedActor = World->SpawnActor<AClothActor>();
+                    SpawnedActor->SetActorTickInEditor(true);
                     break;
                 }
                 case OBJ_PLAYER:

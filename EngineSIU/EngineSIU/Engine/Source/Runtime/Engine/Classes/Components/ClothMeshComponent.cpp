@@ -10,7 +10,13 @@
 #include "UObject/ObjectFactory.h"
 
 UClothMeshComponent::UClothMeshComponent()
-    : WorldTransform(FMatrix::Identity), DebugDrawMode(EClothDebugDrawMode::None), bIsVisible(true), bSimulate(true)
+    : WorldTransform(FMatrix::Identity),
+      DebugDrawMode(EClothDebugDrawMode::None),
+      bIsVisible(true),
+      bSimulate(true),
+      SpawnTransform(FMatrix::Identity),
+      LastEditorTransform(FMatrix::Identity),
+      bIsSimulationActive(false)
 {
     // WorldTransform will be updated from component hierarchy in InitializeComponent and TickComponent
 }
@@ -31,34 +37,40 @@ void UClothMeshComponent::InitializeComponent()
 void UClothMeshComponent::TickComponent(float DeltaTime)
 {
     Super::TickComponent(DeltaTime);
-
-    // Update world transform from component hierarchy every frame
-    // This ensures the cloth follows its parent component/actor transforms
-    /*WorldTransform = GetWorldMatrix();
-    FVector gravity = FTransform(WorldTransform).InverseTransformDirection(ClothInstance->GetClothWorld()->GetGlobalForces().GlobalGravity);
-    ClothInstance->SetGravity(gravity);*/
 }
 
 void UClothMeshComponent::BeginPlay()
 {
     Super::BeginPlay();
 
+    // Capture spawn transform
+    SpawnTransform = GetWorldMatrix();
+    LastEditorTransform = SpawnTransform;
+
     // Auto-start simulation
     if (GeneratedClothAsset)
     {
-        // TODO? : Register in begin play now
         RegisterWithClothWorld();
+        bIsSimulationActive = true;  // Lock transform during simulation
     }
 }
 
 UObject* UClothMeshComponent::Duplicate(UObject* InOuter)
 {
     ThisClass* NewComponent = Cast<ThisClass>(Super::Duplicate(InOuter));
+    
+    // Copy cloth asset and materials
     NewComponent->GeneratedClothAsset = GeneratedClothAsset;
     NewComponent->Materials = Materials;
+    
+    // Copy transform state - use CURRENT transform as spawn for duplicate
+    NewComponent->SpawnTransform = GetWorldMatrix();
+    NewComponent->LastEditorTransform = NewComponent->SpawnTransform;
+    
+    // Reset simulation state (duplicates start in editor mode)
+    NewComponent->bIsSimulationActive = false;
     NewComponent->bIsSimulating = false;
-
-    /*NewComponent->RegisterWithClothWorld();*/
+    
     return NewComponent;
 }
 
@@ -95,10 +107,16 @@ void UClothMeshComponent::GetRenderData(FClothRenderData &OutData) const
         OutData.IndexOffset = metadata.TriangleOffset * 3; // Convert triangle offset to index offset
         OutData.NumTriangles = metadata.TriangleCount;
 
-        // CRITICAL FIX: Use Identity transform for batched mode
-        // Particles are already in WORLD space (transformed during upload)
-        // No additional transform needed in vertex shader
-        OutData.WorldTransform = FMatrix::Identity;
+        if (!bIsSimulationActive && bRegisteredWithWorld)
+        {
+            // Edit mode: Apply component's world transform
+            OutData.WorldTransform = GetWorldMatrix();
+        }
+        else
+        {
+            // Simulation mode: Particles already in world space
+            OutData.WorldTransform = FMatrix::Identity;
+        }
 
         // Mark as batched mode
         OutData.bIsBatchedMode = true;
@@ -299,8 +317,12 @@ void UClothMeshComponent::RegisterWithClothWorld()
     if (ClothInstanceHandle)
     {
         bRegisteredWithWorld = true;
-        UE_LOG(ELogLevel::Display, TEXT("ClothActor: Registered with ClothWorld - MetadataIndex=%d"),
-            ClothInstanceHandle->GetMetadataIndex());
+        
+        // Initialize transform tracking
+        LastEditorTransform = GetWorldMatrix();
+        
+        UE_LOG(ELogLevel::Display, TEXT("ClothActor: Registered with ClothWorld - MetadataIndex=%d, SimulationActive=%d"),
+            ClothInstanceHandle->GetMetadataIndex(), bIsSimulationActive);
     }
     else
     {
@@ -320,10 +342,13 @@ void UClothMeshComponent::UnregisterFromClothWorld()
         this->StopSimulation();
     }
 
+    // Return to editor placement mode
+    bIsSimulationActive = false;
+
     ClothInstanceHandle = nullptr;
     bRegisteredWithWorld = false;
 
-    UE_LOG(ELogLevel::Display, TEXT("ClothActor: Unregistered from ClothWorld"));
+    UE_LOG(ELogLevel::Display, TEXT("ClothActor: Unregistered - Returned to EDITOR PLACEMENT mode"));
 }
 
 FClothAssetGenerationParams UClothMeshComponent::BuildGenerationParams() const

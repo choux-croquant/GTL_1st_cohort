@@ -91,8 +91,7 @@ public:
     virtual void InitializeComponent() override;
     virtual void BeginPlay() override;
     virtual void TickComponent(float DeltaTime) override;
-
-
+    
     UObject* Duplicate(UObject* InOuter);
 
     // Rendering interface
@@ -126,7 +125,7 @@ public:
     // Transform
     void SetWorldTransform(const FMatrix &Transform) { WorldTransform = Transform; }
     const FMatrix &GetWorldTransform() const { return WorldTransform; }
-
+    
     // Debug visualization
     void SetDebugDrawMode(EClothDebugDrawMode Mode) { DebugDrawMode = Mode; }
     EClothDebugDrawMode GetDebugDrawMode() const { return DebugDrawMode; }
@@ -197,6 +196,11 @@ protected:
 
     // Transform
     FMatrix WorldTransform;
+    
+    // Transform tracking for editor placement
+    FMatrix SpawnTransform;           // Initial spawn transform (for reset)
+    FMatrix LastEditorTransform;      // Last known editor transform
+    bool bIsSimulationActive;         // True when simulation is running
 
     // Debug
     EClothDebugDrawMode DebugDrawMode;
