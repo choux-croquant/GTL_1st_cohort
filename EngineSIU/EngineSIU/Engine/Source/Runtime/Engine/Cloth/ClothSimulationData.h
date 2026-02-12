@@ -50,7 +50,7 @@ struct FClothConfig
     // Collision
     float CollisionThickness = 0.01f;
     float CollisionFriction = 0.1f;
-    bool bEnableSelfCollision = false;
+    bool bEnableSelfCollision = true;
     
     // Self-collision parameters (REFACTORED: Now use multipliers for adaptive computation)
     // MULTIPLIERS (applied to adaptive base values computed from mesh topology)

@@ -896,10 +896,17 @@ void FEditorRenderPass::RenderSphereInstanced(uint64 ShowFlag)
 
 void FEditorRenderPass::RenderCapsuleInstanced(uint64 ShowFlag)
 {
-    BindShaderResource(L"CapsuleVS", L"CapsulePS", D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
-    
-    // 위치랑 bounding box 크기 정보 가져오기
-    TArray<FConstantBufferDebugCapsule> BufferAll;
+	BindShaderResource(L"CapsuleVS", L"CapsulePS", D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+	
+	// CRITICAL FIX: Unbind vertex buffer since capsule uses procedural generation
+	ID3D11Buffer* nullBuffer = nullptr;
+	UINT stride = 0;
+	UINT offset = 0;
+	Graphics->DeviceContext->IASetVertexBuffers(0, 1, &nullBuffer, &stride, &offset);
+	Graphics->DeviceContext->IASetIndexBuffer(nullptr, DXGI_FORMAT_R32_UINT, 0);
+	
+	// 위치랑 bounding box 크기 정보 가져오기
+	TArray<FConstantBufferDebugCapsule> BufferAll;
     for (UShapeComponent* ShapeComponent : Resources.Components.CapsuleComponents)
     {
         if (UCapsuleComponent* CapsuleComponent = Cast<UCapsuleComponent>(ShapeComponent))
@@ -1089,17 +1096,29 @@ void FEditorRenderPass::RenderClothColliders(uint64 ShowFlag)
     
     // Render capsules
     {
-        BindShaderResource(L"CapsuleVS", L"CapsulePS", D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
-        
-        TArray<FConstantBufferDebugCapsule> BufferAll;
+    	BindShaderResource(L"CapsuleVS", L"CapsulePS", D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+    	
+    	// CRITICAL FIX: Unbind vertex buffer for procedural generation
+    	ID3D11Buffer* nullBuffer = nullptr;
+    	UINT stride = 0;
+    	UINT offset = 0;
+    	Graphics->DeviceContext->IASetVertexBuffers(0, 1, &nullBuffer, &stride, &offset);
+    	Graphics->DeviceContext->IASetIndexBuffer(nullptr, DXGI_FORMAT_R32_UINT, 0);
+    	
+    	TArray<FConstantBufferDebugCapsule> BufferAll;
         for (const FClothColliderSource& Source : Colliders)
         {
             if (Source.Type == EClothColliderType::Capsule)
             {
                 FConstantBufferDebugCapsule b;
                 
-                // Build world matrix from cached transform
-                b.WorldMatrix = Source.CachedTransform.ToMatrixWithScale();
+                // Build local transform from PhysX shape data (rotation + offset)
+                FTransform LocalTransform(Source.CachedLocalRotation, Source.CachedLocalCenter, FVector::OneVector);
+                
+                // Compose: LocalTransform * ComponentTransform = World transform with proper rotation and offset
+                FTransform WorldTransform = LocalTransform * Source.CachedTransform;
+                
+                b.WorldMatrix = WorldTransform.ToMatrixWithScale();
                 
                 // Use stored radius and half-height
                 b.Radius = Source.CachedRadius;
