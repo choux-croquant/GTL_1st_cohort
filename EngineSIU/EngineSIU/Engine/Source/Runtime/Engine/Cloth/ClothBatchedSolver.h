@@ -189,9 +189,17 @@ private:
     ID3D11ComputeShader *CollisionSolverCS;        // NEW: SDF collision shader
     ID3D11ComputeShader *EdgeCollisionSolverCS;    // NEW: Edge-based SDF collision shader
     
-    // Self-collision compute shaders
-    ID3D11ComputeShader *SelfCollisionBuildGridCS;  // NEW: Build spatial hash grid
-    ID3D11ComputeShader *SelfCollisionSolverCS;     // NEW: Solve self-collisions
+    // Self-collision compute shaders (OLD - will be replaced)
+    ID3D11ComputeShader *SelfCollisionBuildGridCS;  // OLD: Build spatial hash grid
+    ID3D11ComputeShader *SelfCollisionSolverCS;     // OLD: Solve self-collisions
+    
+    // NEW: Improved self-collision compute shaders (P0)
+    ID3D11ComputeShader *SelfCollisionHashCS;              // Pass 1: Hash computation
+    ID3D11ComputeShader *SelfCollisionCountingSortCS;      // Pass 2: Counting sort histogram
+    ID3D11ComputeShader *SelfCollisionReorderCS;           // Pass 3: Particle reordering
+    ID3D11ComputeShader *SelfCollisionBuildCellsCS;        // Pass 4: Build cell ranges
+    ID3D11ComputeShader *SelfCollisionBuildNeighborsCS;    // Pass 5: Build neighbor lists
+    ID3D11ComputeShader *SelfCollisionSolverXPBDCS;        // Pass 6: XPBD solver
     
     // NEW: GPU bounds computation shaders
     ID3D11ComputeShader *ComputeBoundsPass1CS;      // Pass 1: Per-group reduction
@@ -228,10 +236,23 @@ private:
     ID3D11Buffer *RenderNormalsBuffer;              // Interpolated render mesh normals (optional, for compute-based skinning)
     ID3D11Buffer *RenderPositionsBuffer;            // Skinned render mesh positions (optional, for compute-based skinning)
     
-    // Self-collision buffers
+    // Self-collision buffers (OLD - will be replaced)
     ID3D11Buffer *SelfCollisionCellCountersBuffer;  // Per-cell particle counters
     ID3D11Buffer *SelfCollisionCellDataBuffer;      // Flat array of particle indices per cell
     ID3D11Buffer *SelfCollisionParamsBuffer;        // Constant buffer for self-collision parameters
+    
+    // NEW: Improved self-collision buffers (P0)
+    ID3D11Buffer *SelfCollisionParticleHashesBuffer;      // Hash per particle
+    ID3D11Buffer *SelfCollisionCellCountsBuffer;          // Cell counts (for counting sort)
+    ID3D11Buffer *SelfCollisionCellPrefixSumBuffer;       // Prefix sum of cell counts
+    ID3D11Buffer *SelfCollisionSortedIndicesBuffer;       // Sorted particle indices
+    ID3D11Buffer *SelfCollisionCellStartsBuffer;          // Cell start indices
+    ID3D11Buffer *SelfCollisionCellEndsBuffer;            // Cell end indices
+    ID3D11Buffer *SelfCollisionNeighborListsBuffer;       // Pre-computed neighbor lists
+    ID3D11Buffer *SelfCollisionNeighborCountsBuffer;      // Neighbor counts per particle
+    ID3D11Buffer *SelfCollisionNeighborLambdasBuffer;     // XPBD lambda per neighbor pair
+    ID3D11Buffer *SelfCollisionAdjacencyBuffer;           // Topology adjacency data
+    ID3D11Buffer *SelfCollisionCollisionMasksBuffer;      // Collision masks per particle
     
     // NEW: GPU bounds computation buffers
     ID3D11Buffer *BoundsComputeBuffer;              // Intermediate bounds (one per thread group)
@@ -275,11 +296,32 @@ private:
     ID3D11ShaderResourceView *RenderNormalsSRV;      // For compute-based skinning (optional)
     ID3D11ShaderResourceView *RenderPositionsSRV;    // For compute-based skinning (optional)
     
-    // Self-collision UAVs and SRVs
+    // Self-collision UAVs and SRVs (OLD - will be replaced)
     ID3D11UnorderedAccessView *SelfCollisionCellCountersUAV;
     ID3D11UnorderedAccessView *SelfCollisionCellDataUAV;
     ID3D11ShaderResourceView *SelfCollisionCellCountersSRV;
     ID3D11ShaderResourceView *SelfCollisionCellDataSRV;
+    
+    // NEW: Improved self-collision UAVs/SRVs (P0)
+    ID3D11UnorderedAccessView *SelfCollisionParticleHashesUAV;
+    ID3D11ShaderResourceView *SelfCollisionParticleHashesSRV;
+    ID3D11UnorderedAccessView *SelfCollisionCellCountsUAV;
+    ID3D11ShaderResourceView *SelfCollisionCellCountsSRV;
+    ID3D11ShaderResourceView *SelfCollisionCellPrefixSumSRV;
+    ID3D11UnorderedAccessView *SelfCollisionSortedIndicesUAV;
+    ID3D11ShaderResourceView *SelfCollisionSortedIndicesSRV;
+    ID3D11UnorderedAccessView *SelfCollisionCellStartsUAV;
+    ID3D11ShaderResourceView *SelfCollisionCellStartsSRV;
+    ID3D11UnorderedAccessView *SelfCollisionCellEndsUAV;
+    ID3D11ShaderResourceView *SelfCollisionCellEndsSRV;
+    ID3D11UnorderedAccessView *SelfCollisionNeighborListsUAV;
+    ID3D11ShaderResourceView *SelfCollisionNeighborListsSRV;
+    ID3D11UnorderedAccessView *SelfCollisionNeighborCountsUAV;
+    ID3D11ShaderResourceView *SelfCollisionNeighborCountsSRV;
+    ID3D11UnorderedAccessView *SelfCollisionNeighborLambdasUAV;
+    ID3D11ShaderResourceView *SelfCollisionNeighborLambdasSRV;
+    ID3D11ShaderResourceView *SelfCollisionAdjacencySRV;
+    ID3D11ShaderResourceView *SelfCollisionCollisionMasksSRV;
 
     // Per-instance parameter buffer
     ID3D11Buffer *InstanceParameterBuffer;
@@ -324,6 +366,10 @@ private:
     FClothSelfCollisionParams SelfCollisionParams;
     uint32 AllocatedSelfCollisionCells;
     bool bSelfCollisionInitialized;
+    
+    // NEW: Improved self-collision state (P0)
+    uint32 AllocatedSelfCollisionMaxNeighbors;  // Max neighbors per particle (e.g., 16)
+    TArray<uint32> SelfCollisionCellPrefixSumCPU;  // CPU-side prefix sum (P0 fallback)
 
     static constexpr uint32 THREAD_GROUP_SIZE = 64;
 };

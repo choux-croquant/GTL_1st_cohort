@@ -503,7 +503,7 @@ UClothAsset* FClothAssetGenerator::PackageIntoAsset(
 
     //// Attach second endpoint
     //FClothAttachmentData attachment2;
-    //attachment2.ClothVertexIndex = 100;
+    //attachment2.ClothVertexIndex = 2;
     //attachment2.Type = EClothAttachmentType::WorldPosition;
     //attachment2.Stiffness = 1.0f;
     //attachment2.bIsKinematic = true;

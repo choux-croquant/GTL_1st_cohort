@@ -25,7 +25,7 @@ cbuffer ClothSimConstants : register(b0)
     float3 Wind;
     uint NumIterations;
     
-    uint CurrentIteration;
+    uint CurrentIterationGlobal;
     uint UseXPBD;
     float RelaxationFactor;        // NEW: Jacobi convergence control (Velvet-inspired)
     float MaxSpeed;                // NEW: Velocity clamping (Velvet-inspired)
@@ -33,7 +33,7 @@ cbuffer ClothSimConstants : register(b0)
     float LongRangeStretchiness;   // NEW: LRA slack multiplier (Velvet default: 1.2)
     uint NumColliders;             // NEW: Number of active colliders
     float CollisionThickness;      // NEW: Collision distance threshold
-    float CollisionFriction;       // NEW: Friction coefficient (0-1)
+    float CollisionFrictionGlobal;       // NEW: Friction coefficient (0-1)
     
     uint NumAreaConstraints;       // NEW: Number of area constraints
     float AreaStiffness;           // NEW: Global area constraint stiffness
@@ -58,8 +58,40 @@ cbuffer SelfCollisionParams : register(b1)
     
     float CollisionRadius;       // Particle radius
     float CollisionStiffness;    // Separation strength (0-1)
+    float CollisionFriction;     // Friction coefficient (0-1)
+    uint MaxNeighbors;           // Neighbor list capacity (e.g., 16)
+    
+    float Compliance;            // XPBD compliance (inverse stiffness)
+    uint CurrentIteration;       // Solver iteration index
     uint bEnableSelfCollision;   // Enable/disable flag
-    uint SelfCollisionPadding;   // Alignment padding
+    uint bEnableInterInstanceCollision;  // Allow different instances to collide
+    
+    uint bEnableIntraInstanceCollision;  // Allow same instance to collide
+    uint SelfCollisionPadding0;  // Alignment padding
+    uint SelfCollisionPadding1;  // Alignment padding
+    uint SelfCollisionPadding2;  // Alignment padding
+};
+
+/**
+ * Collision mask structure for instance-aware filtering
+ * Used to control which particles can collide with each other
+ */
+struct FCollisionMask
+{
+    uint InstanceID;        // Which cloth instance
+    uint ObjectType;        // 0=Cloth, 1=Softbody (future)
+    uint CollisionFlags;    // Bitfield for collision filtering
+    uint Padding;
+};
+
+/**
+ * Topology adjacency structure
+ * Stores connected vertices for each particle to filter out edge collisions
+ */
+struct FClothAdjacency
+{
+    uint ParticleIndex;             // Source particle
+    uint ConnectedParticles[8];     // Up to 8 connected vertices (0xFFFFFFFF = unused)
 };
 
 /**

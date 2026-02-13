@@ -236,9 +236,45 @@ struct FClothSelfCollisionParams
 	
 	float CollisionRadius;     // 4 bytes - Particle radius
 	float CollisionStiffness;  // 4 bytes - Separation strength
+	float CollisionFriction;   // 4 bytes - Friction coefficient
+	uint32 MaxNeighbors;       // 4 bytes - Neighbor list capacity
+	
+	float Compliance;          // 4 bytes - XPBD compliance
+	uint32 CurrentIteration;   // 4 bytes - Solver iteration index
 	uint32 bEnableSelfCollision; // 4 bytes
-	uint32 Padding;            // 4 bytes
-	// Total: 48 bytes (aligned)
+	uint32 bEnableInterInstanceCollision; // 4 bytes
+	
+	uint32 bEnableIntraInstanceCollision; // 4 bytes
+	uint32 Padding0;           // 4 bytes
+	uint32 Padding1;           // 4 bytes
+	uint32 Padding2;           // 4 bytes
+	// Total: 80 bytes (aligned)
+};
+
+/**
+ * Collision mask structure (16 bytes, aligned)
+ * Used for instance-aware collision filtering
+ * Must match FCollisionMask in ClothCommon.hlsli
+ */
+struct FClothCollisionMaskGPU
+{
+	uint32 InstanceID;        // 4 bytes - Which cloth instance
+	uint32 ObjectType;        // 4 bytes - 0=Cloth, 1=Softbody (future)
+	uint32 CollisionFlags;    // 4 bytes - Bitfield for collision filtering
+	uint32 Padding;           // 4 bytes
+	// Total: 16 bytes
+};
+
+/**
+ * Topology adjacency structure (36 bytes, aligned)
+ * Stores connected vertices for each particle to filter out edge collisions
+ * Must match FClothAdjacency in ClothCommon.hlsli
+ */
+struct FClothAdjacencyGPU
+{
+	uint32 ParticleIndex;             // 4 bytes - Source particle
+	uint32 ConnectedParticles[8];     // 32 bytes - Up to 8 connected vertices (0xFFFFFFFF = unused)
+	// Total: 36 bytes
 };
 
 /**
@@ -267,8 +303,10 @@ static_assert(sizeof(FClothCollisionSphereGPU) == 16, "FClothCollisionSphereGPU 
 static_assert(sizeof(FClothCollisionCapsuleGPU) == 32, "FClothCollisionCapsuleGPU must be 32 bytes");
 static_assert(sizeof(FClothColliderGPU) == 64, "FClothColliderGPU must be 64 bytes");
 static_assert(sizeof(FClothEdgeCollisionConstraintGPU) == 16, "FClothEdgeCollisionConstraintGPU must be 16 bytes");
-static_assert(sizeof(FClothSelfCollisionParams) == 48, "FClothSelfCollisionParams must be 48 bytes");
+static_assert(sizeof(FClothSelfCollisionParams) == 80, "FClothSelfCollisionParams must be 80 bytes");
 static_assert(sizeof(FClothBoundsGPU) == 32, "FClothBoundsGPU must be 32 bytes");
+static_assert(sizeof(FClothCollisionMaskGPU) == 16, "FClothCollisionMaskGPU must be 16 bytes");
+static_assert(sizeof(FClothAdjacencyGPU) == 36, "FClothAdjacencyGPU must be 36 bytes");
 
 // Verify alignment
 static_assert(alignof(FClothParticleGPU) == 4, "FClothParticleGPU alignment");

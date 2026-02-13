@@ -141,8 +141,21 @@ struct FClothInstanceMetadata
 	uint32 FramesSinceLastBoundsUpdate; // Frame counter for periodic updates
 	bool bNeedsBoundsUpdate;       // Flag to trigger bounds recomputation
 
+	// NEW: Topology adjacency buffer (for accurate edge filtering)
+	uint32 AdjacencyOffset;        // Offset into unified adjacency buffer
+	uint32 AdjacencyCount;         // Number of adjacency entries
+
+	// NEW: Collision filtering
+	uint32 CollisionGroup;         // Collision group ID (0-31)
+	uint32 CollisionMask;          // Bitfield: which groups to collide with
+
+	// NEW: Quality metrics (for debugging)
+	float AvgNeighborCount;        // Average neighbors per particle
+	float MaxNeighborCount;        // Peak neighbor count (overflow indicator)
+	uint32 DroppedCollisionCount;  // Particles that exceeded MaxNeighbors
+
 	FClothInstanceMetadata()
-		: ParticleOffset(0), ParticleCount(0), ConstraintOffset(0), ConstraintCount(0), BendConstraintOffset(0), BendConstraintCount(0), KinematicTargetOffset(0), KinematicTargetCount(0), TriangleOffset(0), TriangleCount(0), AreaConstraintOffset(0), AreaConstraintCount(0), EdgeCollisionOffset(0), EdgeCollisionCount(0), RenderVertexOffset(0), RenderVertexCount(0), RenderIndexOffset(0), RenderIndexCount(0), InstanceParameterIndex(0), bIsActive(true), CurrentLOD(EClothLODLevel::LOD_0), AvgEdgeLength(0.0f), MeshBoundsMin(FVector::ZeroVector), MeshBoundsMax(FVector::ZeroVector), PrevBoundsMin(FVector::ZeroVector), PrevBoundsMax(FVector::ZeroVector), AdaptiveCellSize(0.0f), AdaptiveCollisionRadius(0.0f), AdaptiveGridDimX(0), AdaptiveGridDimY(0), AdaptiveGridDimZ(0), AdaptiveMaxPerCell(0), AccumulatedMotion(0.0f), FramesSinceLastBoundsUpdate(0), bNeedsBoundsUpdate(false)
+		: ParticleOffset(0), ParticleCount(0), ConstraintOffset(0), ConstraintCount(0), BendConstraintOffset(0), BendConstraintCount(0), KinematicTargetOffset(0), KinematicTargetCount(0), TriangleOffset(0), TriangleCount(0), AreaConstraintOffset(0), AreaConstraintCount(0), EdgeCollisionOffset(0), EdgeCollisionCount(0), RenderVertexOffset(0), RenderVertexCount(0), RenderIndexOffset(0), RenderIndexCount(0), InstanceParameterIndex(0), bIsActive(true), CurrentLOD(EClothLODLevel::LOD_0), AvgEdgeLength(0.0f), MeshBoundsMin(FVector::ZeroVector), MeshBoundsMax(FVector::ZeroVector), PrevBoundsMin(FVector::ZeroVector), PrevBoundsMax(FVector::ZeroVector), AdaptiveCellSize(0.0f), AdaptiveCollisionRadius(0.0f), AdaptiveGridDimX(0), AdaptiveGridDimY(0), AdaptiveGridDimZ(0), AdaptiveMaxPerCell(0), AccumulatedMotion(0.0f), FramesSinceLastBoundsUpdate(0), bNeedsBoundsUpdate(false), AdjacencyOffset(0), AdjacencyCount(0), CollisionGroup(0), CollisionMask(0xFFFFFFFF), AvgNeighborCount(0.0f), MaxNeighborCount(0.0f), DroppedCollisionCount(0)
 	{
 	}
 };
