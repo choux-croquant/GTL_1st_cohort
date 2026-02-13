@@ -184,9 +184,10 @@ FClothInstanceHandle *FClothWorld::RegisterClothInstanceBatched(UClothComponent 
                Params.RenderRestPositions.Num(), Params.RestPositions.Num(), Params.TriangleSkinningWeights.Num());
     }
 
-    // CRITICAL FIX: Get component's world transform for converting local positions to world space
-    // This ensures each instance simulates at its correct location in the world
-    Params.WorldTransform = Component->GetComponentTransform();
+    // FIXED: Use identity transform to keep particles in local space
+    // The world transform will be applied during rendering in GetRenderData()
+    // This prevents double-transformation when regenerating assets
+    Params.WorldTransform = FTransform(FMatrix::Identity);
 
     // Add instance to batch
     FClothInstanceHandle *Handle = BatchMgr->AddInstance(Params);

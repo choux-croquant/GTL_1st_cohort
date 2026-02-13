@@ -871,13 +871,20 @@ void FClothBatchManager::BuildKinematicAttachmentData()
                 attachmentData.Add(gpuAttachment);
             }
             else if (attachment.Type == EClothAttachmentType::WorldPosition) {
+                // FIXED: WorldPosition attachments are in absolute world space
+                // Since particles are now in local space, we need to transform the world position
+                // to local space so the shader can compare them correctly
+                FTransform componentTransform = owner->GetComponentTransform();
+                FTransform invComponentTransform = componentTransform.Inverse();
+                FVector localPosition = invComponentTransform.TransformPosition(attachment.WorldPosition);
+                
                 // Build GPU attachment data
                 FKinematicAttachmentGPU gpuAttachment;
                 gpuAttachment.Type = 0;
                 gpuAttachment.ParticleIndex = attachment.ClothVertexIndex + metadata.ParticleOffset;
                 gpuAttachment.Stiffness = attachment.Stiffness;
                 gpuAttachment.AttachDistance = attachment.AttachDistance;
-                gpuAttachment.TargetPosition = attachment.WorldPosition;
+                gpuAttachment.TargetPosition = localPosition;  // Transformed to local space
                 gpuAttachment.Padding = 0.0f;
 
                 attachmentData.Add(gpuAttachment);

@@ -107,16 +107,10 @@ void UClothMeshComponent::GetRenderData(FClothRenderData &OutData) const
         OutData.IndexOffset = metadata.TriangleOffset * 3; // Convert triangle offset to index offset
         OutData.NumTriangles = metadata.TriangleCount;
 
-        if (!bIsSimulationActive && bRegisteredWithWorld)
-        {
-            // Edit mode: Apply component's world transform
-            OutData.WorldTransform = GetWorldMatrix();
-        }
-        else
-        {
-            // Simulation mode: Particles already in world space
-            OutData.WorldTransform = FMatrix::Identity;
-        }
+        // FIXED: Always apply component's world transform
+        // Particles are stored in local space, so we need to transform them to world space for rendering
+        // This fixes the issue where cloth was rendered at double the offset position
+        OutData.WorldTransform = GetWorldMatrix();
 
         // Mark as batched mode
         OutData.bIsBatchedMode = true;
