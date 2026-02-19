@@ -118,21 +118,21 @@ void ATestClothAttachmentActor::PostSpawnInitialize()
         return;
     }
 
-    // Find vertices to attach (top 5% of vertices by Z coordinate)
+    // Find vertices to attach (top 5% of vertices by Y coordinate)
     TArray<uint32> TopVertices;
     float MaxY = -FLT_MAX;
     float MinY = FLT_MAX;
-    
-    // Find Z range
+
+    // Find Y range
     for (const FVector& Pos : ClothAsset->RestPositions)
     {
         MaxY = FMath::Max(MaxY, Pos.Y);
         MinY = FMath::Min(MinY, Pos.Y);
     }
-    
+
     float YRange = MaxY - MinY;
     float AttachThreshold = MaxY - (YRange * 0.05f);  // Top 5%
-    
+
     // Collect top vertices
     for (int32 i = 0; i < ClothAsset->RestPositions.Num(); ++i)
     {
@@ -141,24 +141,36 @@ void ATestClothAttachmentActor::PostSpawnInitialize()
             TopVertices.Add(i);
         }
     }
-    
-    UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Found %d vertices to attach (Z >= %.2f)"), 
-           TopVertices.Num(), AttachThreshold);
+
+    UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Found %d vertices to attach (Y >= %.2f)"),
+        TopVertices.Num(), AttachThreshold);
+
+    // Sort vertices by X coordinate (ascending order)
+    // Use descending order by reversing the comparison: return PosB.X < PosA.X;
+    TopVertices.Sort([&ClothAsset](const uint32& A, const uint32& B) {
+        const FVector& PosA = ClothAsset->RestPositions[A];
+        const FVector& PosB = ClothAsset->RestPositions[B];
+        return PosA.X < PosB.X;  // Ascending order by X
+        });
+
+    UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Sorted %d vertices by X coordinate (ascending)"),
+        TopVertices.Num());
 
     // Attach each top vertex to the pole component
+    float i = 0.0f;
+    float n = float(TopVertices.Num());
     for (uint32 VertexIndex : TopVertices)
     {
-        // Calculate local offset from pole center
-        FVector VertexWorldPos = ClothComponent->GetComponentLocation() + ClothAsset->RestPositions[VertexIndex];
-        FVector PoleWorldPos = PoleComponent->GetComponentLocation();
-        FVector LocalOffset = VertexWorldPos - PoleWorldPos;
-        
+        // Calculate local offset along Z axis based on sorted order
+        FVector LocalOffset = FVector(0.0f, 0.0f, -15.0f + (i / n) * 30.0f);
+        i += 1.0f;
+
         // Create attachment with local offset
         FTransform LocalTransform;
         LocalTransform.SetTranslation(LocalOffset);
         LocalTransform.SetRotation(FQuat::Identity);
         LocalTransform.SetScale3D(FVector::OneVector);
-        
+
         // Bind attachment
         ClothComponent->BindAttachmentToComponent(
             VertexIndex,
@@ -168,7 +180,11 @@ void ATestClothAttachmentActor::PostSpawnInitialize()
             0.0f    // AttachDistance (0.0 = kinematic, no stretch)
         );
     }
-    
+
+    UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Successfully attached %d vertices to pole component"),
+        TopVertices.Num());
+
+
     UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Attached %d vertices to pole component"), TopVertices.Num());
     UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Initialization complete!"));
     UE_LOG(ELogLevel::Display, TEXT("  - Pole will rotate continuously"));
@@ -191,15 +207,15 @@ void ATestClothAttachmentActor::Tick(float DeltaTime)
     float RotationSpeed = 30.0f;  // degrees per second
     float CurrentAngle = AnimationTime * RotationSpeed;
     
-    FRotator NewRotation(0.0f, CurrentAngle, 0.0f);  // Rotate around Z axis
-    PoleComponent->SetWorldRotation(NewRotation);
-    
+    //FRotator NewRotation(0.0f, CurrentAngle, 0.0f);  // Rotate around Z axis
+    //PoleComponent->SetWorldRotation(NewRotation);
+    //
     // Optional: Also move the pole up and down
-    float BobSpeed = 1.0f;  // Hz
-    float BobAmount = 1.0f;  // cm
-    float BobOffset = FMath::Sin(AnimationTime * BobSpeed * 2.0f * PI) * BobAmount;
-    
-    FVector BaseLocation = GetActorLocation();
-    FVector NewLocation = BaseLocation + FVector(0.0f, 0.0f, BobOffset);
-    PoleComponent->SetWorldLocation(NewLocation);
+    //float BobSpeed = 1.0f;  // Hz
+    //float BobAmount = 1.0f;  // cm
+    //float BobOffset = FMath::Sin(AnimationTime * BobSpeed * 2.0f * PI) * BobAmount;
+    //
+    //FVector BaseLocation = GetActorLocation();
+    //FVector NewLocation = BaseLocation + FVector(0.0f, 0.0f, BobOffset);
+    //PoleComponent->SetWorldLocation(NewLocation);
 }
