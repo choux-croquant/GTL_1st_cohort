@@ -1,7 +1,6 @@
 /**
  * Cloth Component - Base component for cloth simulation
  * Handles simulation updates and external forces
- * Now supports both Legacy and Batched cloth systems
  */
 
 #pragma once
@@ -33,6 +32,8 @@ public:
     virtual void BeginPlay() override;
     // virtual void EndPlay() override;
 
+    virtual UObject* Duplicate(UObject* InOuter) override;
+
     // Cloth asset management
     void SetClothAsset(UClothAsset *InAsset);
     UClothAsset *GetClothAsset() const { return ClothAsset; }
@@ -44,7 +45,6 @@ public:
     bool IsSimulating() const { return bIsSimulating; }
 
     // External forces
-    void AddForce(const FVector &Force);
     void AddImpulse(const FVector &Impulse);
     void SetWind(const FVector &WindVelocity);
     void SetGravity(const FVector &InGravity);
@@ -52,10 +52,6 @@ public:
     // Attachment
     void AttachToComponent(USceneComponent *Parent, FName SocketName);
     void AttachToSkeletalMesh(USkeletalMeshComponent *SkelMesh, const TArray<FName> &BoneNames);
-
-    // Debug
-    void SetDebugDrawEnabled(bool bEnabled) { bDebugDrawEnabled = bEnabled; }
-    bool GetDebugDrawEnabled() const { return bDebugDrawEnabled; }
 
 protected:
     // Cloth asset
@@ -68,13 +64,8 @@ protected:
     bool bIsSimulating;
     bool bUseBatchedMode;
 
-    bool bDebugDrawEnabled;
-
     // Cached attachment data
     TArray<FClothAttachmentData> Attachments;
-
-    // External force accumulation
-    FVector AccumulatedForce;
 
 public:
     // Access to cloth instance handle (Batched mode)

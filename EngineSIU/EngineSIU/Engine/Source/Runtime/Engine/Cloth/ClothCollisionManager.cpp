@@ -309,6 +309,10 @@ void FClothCollisionManager::ExtractCollidersFromBodySetup(UBodySetup* BodySetup
 	FKAggregateGeom& AggGeom = BodySetup->AggGeom;
 	TArray<int32> NewColliderIndices;
 	
+	UE_LOG(ELogLevel::Display, TEXT("ClothCollisionManager: Extracting colliders from %s"), *Component->GetName());
+	UE_LOG(ELogLevel::Display, TEXT("  - Spheres: %d, Capsules: %d, Boxes: %d"),
+		AggGeom.SphereElems.Num(), AggGeom.CapsuleElems.Num(), AggGeom.BoxElems.Num());
+	
 	// Extract spheres from PhysX shapes
 	for (int32 i = 0; i < AggGeom.SphereElems.Num(); ++i)
 	{
@@ -319,8 +323,17 @@ void FClothCollisionManager::ExtractCollidersFromBodySetup(UBodySetup* BodySetup
 	// Extract capsules from PhysX shapes
 	for (int32 i = 0; i < AggGeom.CapsuleElems.Num(); ++i)
 	{
+		int32 BeforeCount = ColliderSources.Num();
 		ExtractCapsuleFromShape(AggGeom.CapsuleElems[i], Component, i);
-		NewColliderIndices.Add(ColliderSources.Num() - 1);
+		if (ColliderSources.Num() > BeforeCount)
+		{
+			NewColliderIndices.Add(ColliderSources.Num() - 1);
+			UE_LOG(ELogLevel::Display, TEXT("  - Capsule %d extracted successfully"), i);
+		}
+		else
+		{
+			UE_LOG(ELogLevel::Warning, TEXT("  - Capsule %d extraction FAILED"), i);
+		}
 	}
 	
 	// Extract boxes from PhysX shapes
@@ -366,15 +379,33 @@ void FClothCollisionManager::ExtractSphereFromShape(physx::PxShape* Shape, UPrim
 void FClothCollisionManager::ExtractCapsuleFromShape(physx::PxShape* Shape, UPrimitiveComponent* Component, int32 ElementIndex)
 {
 	if (!Shape)
+	{
+		UE_LOG(ELogLevel::Warning, TEXT("ClothCollisionManager: ExtractCapsuleFromShape - Shape is null"));
 		return;
+	}
+	
+	// Verify shape type first
+	physx::PxGeometryType::Enum geomType = Shape->getGeometryType();
+	if (geomType != physx::PxGeometryType::eCAPSULE)
+	{
+		UE_LOG(ELogLevel::Warning, TEXT("ClothCollisionManager: Shape is not a capsule (type=%d)"), (int)geomType);
+		return;
+	}
 	
 	// Get capsule geometry from PhysX shape
 	physx::PxCapsuleGeometry capsuleGeom;
 	if (!Shape->getCapsuleGeometry(capsuleGeom))
+	{
+		UE_LOG(ELogLevel::Error, TEXT("ClothCollisionManager: Failed to get capsule geometry from shape"));
 		return;
+	}
 	
 	// Get local pose from shape
 	physx::PxTransform localPose = Shape->getLocalPose();
+	
+	UE_LOG(ELogLevel::Display, TEXT("ClothCollisionManager: Extracting capsule - Radius=%.2f, HalfHeight=%.2f, Pos=(%.2f,%.2f,%.2f)"),
+		capsuleGeom.radius, capsuleGeom.halfHeight,
+		localPose.p.x, localPose.p.y, localPose.p.z);
 	
 	FClothColliderSource Source;
 	Source.Type = EClothColliderType::Capsule;
@@ -382,6 +413,7 @@ void FClothCollisionManager::ExtractCapsuleFromShape(physx::PxShape* Shape, UPri
 	Source.ElementIndex = ElementIndex;
 	Source.CachedTransform = Component->GetComponentTransform();
 	Source.CachedLocalCenter = FVector(localPose.p.x, localPose.p.y, localPose.p.z);
+	Source.CachedLocalRotation = FQuat(localPose.q.x, localPose.q.y, localPose.q.z, localPose.q.w);  // Store local rotation!
 	
 	// PhysX capsule axis is along X by default
 	physx::PxQuat quat = localPose.q;
@@ -395,6 +427,8 @@ void FClothCollisionManager::ExtractCapsuleFromShape(physx::PxShape* Shape, UPri
 	Source.GPUBufferIndex = ColliderSources.Num();
 	
 	ColliderSources.Add(Source);
+	
+	UE_LOG(ELogLevel::Display, TEXT("ClothCollisionManager: Capsule added to ColliderSources (index=%d)"), Source.GPUBufferIndex);
 }
 
 void FClothCollisionManager::ExtractBoxFromShape(physx::PxShape* Shape, UPrimitiveComponent* Component, int32 ElementIndex)

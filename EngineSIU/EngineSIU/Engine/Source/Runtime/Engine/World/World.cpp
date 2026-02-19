@@ -70,50 +70,17 @@ void UWorld::Tick(float DeltaTime)
         }
         PendingBeginPlayActors.Empty();
     }
-
-    // Update cloth simulation (centralized, after animation/pose updates)
-    if (ClothWorld && ClothWorld->IsInitialized())
-    {
-        ClothWorld->Update(DeltaTime);
-    }
 }
 
 void UWorld::BeginPlay()
 {
-    // ===== LEGACY TEST - COMMENTED OUT =====
-    // Previous TestClothActor grid spawn (Legacy mode)
-    /*
-    const int32 GridX = 4;
-    const int32 GridY = 4;
-    const float SpacingX = 150.0f;
-    const float SpacingY = 150.0f;
-    const FVector BaseLocation(0.0f, 0.0f, 0.0f);
-
-    for (int32 ix = 0; ix < GridX; ++ix)
-    {
-        for (int32 iy = 0; iy < GridY; ++iy)
-        {
-            ATestClothActor* ClothActor = this->SpawnActor<ATestClothActor>();
-            if (!ClothActor)
-                continue;
-
-            const float OffsetX = ix * SpacingX;
-            const float OffsetY = iy * SpacingY;
-
-            ClothActor->DriverInitialPosition = BaseLocation + FVector(OffsetX, OffsetY, 0.0f);
-        }
-    }
-    */
-
     // ===== NEW BATCHED TEST =====
-    // Spawn TestBatchedClothActor to test batched cloth simulation system
-    // This creates 8 cloth instances across 3 LOD levels
-    ATestBatchedClothActor *BatchedClothTest = this->SpawnActor<ATestBatchedClothActor>();
+    /*ATestBatchedClothActor *BatchedClothTest = this->SpawnActor<ATestBatchedClothActor>();
     if (BatchedClothTest)
     {
         BatchedClothTest->SetActorLocation(FVector(0.0f, -300.0f, 0.0f));
         UE_LOG(ELogLevel::Display, TEXT("World: Spawned TestBatchedClothActor for batched simulation testing"));
-    }
+    }*/
 
     if (!GameMode && this->WorldType == EWorldType::PIE)
     {

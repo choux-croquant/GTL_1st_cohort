@@ -15,6 +15,7 @@
 #include "ClothGPUStructs.h"
 #include "ClothBatchTypes.h"
 #include "ShaderConstants.h"
+#include "Cloth/ClothAssetGenerator.h"
 
 // Forward declarations
 class FGraphicsDevice;
@@ -48,9 +49,12 @@ public:
                          uint32 MaxInstances,
                          uint32 MaxAreaConstraints = 0,
                          uint32 MaxEdgeCollisions = 0);
+    
+    // NEW: Production rendering buffer allocation (called on-demand)
+    bool AllocateRenderBuffers(uint32 MaxRenderVertices, uint32 MaxRenderIndices);
 
     // Simulation
-    void Simulate(float DeltaTime);
+    void Simulate(float DeltaTime, TArray<FClothInstanceMetadata>& InstanceMetadata);
 
     // Data upload
     void UploadParticleData(const TArray<FVector> &Positions,
@@ -70,9 +74,6 @@ public:
     void UploadEdgeCollisionData(const TArray<FClothEdgeCollisionConstraintGPU> &EdgeCollisions,
                                  uint32 DestOffset);
 
-    void UploadKinematicTargets(const TArray<FClothKinematicTargetGPU> &Targets,
-                                uint32 DestOffset);
-
     void UploadInstanceParameters(const TArray<FClothInstanceParameters> &Parameters);
 
     void UploadIndexData(const TArray<uint32> &Indices, uint32 DestOffset);
@@ -81,8 +82,32 @@ public:
     void UploadAttachmentData(const TArray<FKinematicAttachmentGPU> &Attachments);
     void UploadComponentTransforms(const TArray<FMatrix> &Transforms);
 
+    // NEW: Production rendering - render mesh data upload
+    void UploadRenderMeshData(
+        const TArray<FVector>& RenderPositions,
+        const TArray<FVector>& RenderNormals,
+        const TArray<FVector2D>& RenderUVs,
+        const TArray<uint32>& RenderIndices,
+        uint32 RenderVertexOffset,
+        uint32 RenderIndexOffset);
+    
+    void UploadSkinningWeights(
+        const TArray<struct FClothSkinningWeight>& Weights,
+        uint32 RenderVertexOffset);
+    
+    // NEW: Upload triangle-based skinning weights (fixes edge curling and UV distortion)
+    void UploadTriangleSkinningWeights(
+        const TArray<struct FClothSkinningWeightTriangle>& Weights,
+        uint32 RenderVertexOffset);
+
     // Index buffer access
     ID3D11Buffer *GetUnifiedIndexBuffer() const { return UnifiedIndexBuffer; }
+    ID3D11Buffer *GetUnifiedRenderIndexBuffer() const { return UnifiedRenderIndexBuffer; }
+    
+    // NEW: Production rendering - buffer access for rendering
+    ID3D11ShaderResourceView* GetSkinningWeightBufferSRV() const { return SkinningWeightsSRV; }
+    ID3D11ShaderResourceView* GetTriangleSkinningWeightBufferSRV() const { return TriangleSkinningWeightsSRV; }  // NEW: Triangle-based weights
+    ID3D11Buffer* GetUnifiedRenderVertexBuffer() const { return UnifiedRenderVertexBuffer; }
 
     // Configuration
     void SetConfig(const FClothConfig &InConfig);
@@ -105,10 +130,8 @@ public:
 
     // Update tracking counts
     void SetUsedCounts(uint32 Particles, uint32 Constraints, uint32 BendConstraints,
-                       uint32 KinematicTargets, uint32 Triangles, uint32 Instances,
-                       uint32 AreaConstraints = 0, uint32 EdgeCollisions = 0);
+        uint32 Attachments, uint32 Triangles, uint32 Instances, uint32 AreaConstraints = 0, uint32 EdgeCollisions = 0);
 
-    // NEW: Set attachment count for GPU-based kinematic targets (P1)
     void SetAttachmentCount(uint32 AttachmentCount) { UsedAttachmentCount = AttachmentCount; }
 
     FClothCollisionManager *GetCollisionManager() { return CollisionManager; }
@@ -123,22 +146,26 @@ private:
     void DispatchBendConstraintSolver(uint32 BendConstraintCount);
     void DispatchAreaConstraintSolver(uint32 AreaConstraintCount);
     void DispatchApplyDeltas(uint32 ParticleCount);
-    void DispatchApplyKinematicTargets(uint32 TargetCount);
-    void DispatchComputeKinematicTargets(uint32 AttachmentCount); // NEW: GPU-based kinematic (P1)
-    void DispatchFinalize(uint32 ParticleCount);                  // NEW: Velocity finalization
-    void DispatchClearNormals(uint32 ParticleCount);
+    void DispatchComputeKinematicTargets(uint32 AttachmentCount);
+    void DispatchFinalize(uint32 ParticleCount);
     void DispatchUpdateNormals(uint32 TriangleCount);
-    void DispatchNormalizeNormals(uint32 ParticleCount);
-    void DispatchCollisionSDF(uint32 ParticleCount);         // NEW: SDF collision solver
-    void DispatchEdgeCollisionSDF(uint32 EdgeCollisionCount); // NEW: Edge-based SDF collision
+    void DispatchCollisionSDF(uint32 ParticleCount);
+    void DispatchEdgeCollisionSDF(uint32 EdgeCollisionCount);
+    void DispatchSelfCollision(uint32 ParticleCount);
 
-    void ClearAccumulationBuffers(uint32 ParticleCount);
-    // void UpdateConstantBuffers(float DeltaTime);
-    void UpdateFrameConstants(float DeltaTime);            // NEW: P2 optimization
-    void UpdateIterationConstants(int32 CurrentIteration); // NEW: P2 optimization
-
+    void UpdateFrameConstants(float DeltaTime);
+    void UpdateSelfCollisionParams(const TArray<FClothInstanceMetadata>& InstanceMetadata);
+    void UpdateIterationConstants(int32 CurrentIteration);
+    
+    // NEW: Dynamic bounds tracking methods
+    void UpdateDynamicBounds(TArray<FClothInstanceMetadata>& InstanceMetadata);
+    void DispatchComputeBounds(uint32 ParticleCount);
+    void ReadbackBounds(FVector& OutMin, FVector& OutMax);
+   
     bool CreateGPUResources();
     bool LoadComputeShaders();
+    bool AllocateSelfCollisionBuffers();
+    bool AllocateBoundsComputeBuffers();
 
     uint32 GetDispatchCount(uint32 ElementCount, uint32 ThreadGroupSize = 64) const;
 
@@ -154,14 +181,21 @@ private:
     ID3D11ComputeShader *BendConstraintSolverCS;
     ID3D11ComputeShader *AreaConstraintSolverCS; // NEW: Area constraint solver
     ID3D11ComputeShader *ApplyDeltasCS;
-    ID3D11ComputeShader *ApplyKinematicTargetsCS;
     ID3D11ComputeShader *ComputeKinematicTargetsCS; // NEW: GPU-based kinematic (P1)
     ID3D11ComputeShader *FinalizeCS;                // NEW: Velocity finalization shader
-    ID3D11ComputeShader *ClearNormalsCS;
-    ID3D11ComputeShader *UpdateNormalsCS;
-    ID3D11ComputeShader *NormalizeNormalsCS;
-    ID3D11ComputeShader *CollisionSolverCS;     // NEW: SDF collision shader
-    ID3D11ComputeShader *EdgeCollisionSolverCS; // NEW: Edge-based SDF collision shader
+    ID3D11ComputeShader *UpdateNormalsCS;           // Legacy single-pass normal update
+    ID3D11ComputeShader *ComputeTriangleNormalsCS;  // NEW: Pass 1 - Triangle normal accumulation
+    ID3D11ComputeShader *NormalizeVertexNormalsCS;  // NEW: Pass 2 - Vertex normal normalization
+    ID3D11ComputeShader *CollisionSolverCS;        // NEW: SDF collision shader
+    ID3D11ComputeShader *EdgeCollisionSolverCS;    // NEW: Edge-based SDF collision shader
+    
+    // Self-collision compute shaders
+    ID3D11ComputeShader *SelfCollisionBuildGridCS;  // NEW: Build spatial hash grid
+    ID3D11ComputeShader *SelfCollisionSolverCS;     // NEW: Solve self-collisions
+    
+    // NEW: GPU bounds computation shaders
+    ID3D11ComputeShader *ComputeBoundsPass1CS;      // Pass 1: Per-group reduction
+    ID3D11ComputeShader *ComputeBoundsPass2CS;      // Pass 2: Final reduction
 
     // Collision manager (NEW)
     FClothCollisionManager *CollisionManager;
@@ -178,18 +212,38 @@ private:
     ID3D11Buffer *UnifiedKinematicTargetBuffer;
     ID3D11Buffer *UnifiedIndexBuffer;
     ID3D11Buffer *UnifiedNormalBuffer;
+    ID3D11Buffer *UnifiedNormalAccumulationBuffer;  // NEW: Integer accumulation buffer for atomic normal updates
     ID3D11Buffer *UnifiedPositionDeltaBuffer;
     ID3D11Buffer *UnifiedPositionWeightBuffer;
 
     // NEW: GPU-based kinematic target buffers (P1 optimization)
     ID3D11Buffer *AttachmentDataBuffer;     // Static attachment data
     ID3D11Buffer *ComponentTransformBuffer; // Dynamic component transforms
+    
+    // NEW: Production rendering buffers (for high-res render mesh with GPU skinning)
+    ID3D11Buffer *UnifiedRenderVertexBuffer;        // Unified render vertex buffer (position, normal, UV)
+    ID3D11Buffer *UnifiedRenderIndexBuffer;         // Unified render index buffer
+    ID3D11Buffer *UnifiedSkinningWeightBuffer;      // Unified legacy K-nearest neighbor skinning weight buffer
+    ID3D11Buffer *UnifiedTriangleSkinningWeightBuffer;  // NEW: Unified triangle-based skinning weight buffer
+    ID3D11Buffer *RenderNormalsBuffer;              // Interpolated render mesh normals (optional, for compute-based skinning)
+    ID3D11Buffer *RenderPositionsBuffer;            // Skinned render mesh positions (optional, for compute-based skinning)
+    
+    // Self-collision buffers
+    ID3D11Buffer *SelfCollisionCellCountersBuffer;  // Per-cell particle counters
+    ID3D11Buffer *SelfCollisionCellDataBuffer;      // Flat array of particle indices per cell
+    ID3D11Buffer *SelfCollisionParamsBuffer;        // Constant buffer for self-collision parameters
+    
+    // NEW: GPU bounds computation buffers
+    ID3D11Buffer *BoundsComputeBuffer;              // Intermediate bounds (one per thread group)
+    ID3D11Buffer *BoundsReadbackBuffer;             // Staging buffer for CPU readback
+    ID3D11UnorderedAccessView *BoundsComputeUAV;    // UAV for bounds computation
 
     // UAVs and SRVs
     ID3D11UnorderedAccessView *UnifiedPositionUAV;
     ID3D11UnorderedAccessView *UnifiedPredictedUAV;
     ID3D11UnorderedAccessView *UnifiedVelocityUAV;
     ID3D11UnorderedAccessView *UnifiedNormalUAV;
+    ID3D11UnorderedAccessView *UnifiedNormalAccumulationUAV;  // NEW: UAV for integer accumulation buffer
     ID3D11UnorderedAccessView *UnifiedPositionDeltaUAV;
     ID3D11UnorderedAccessView *UnifiedPositionWeightUAV;
     ID3D11UnorderedAccessView *UnifiedConstraintUAV;     // NEW: For XPBD lambda write-back (distance constraints)
@@ -211,6 +265,21 @@ private:
     // NEW: GPU-based kinematic target SRVs (P1 optimization)
     ID3D11ShaderResourceView *AttachmentDataSRV;
     ID3D11ShaderResourceView *ComponentTransformSRV;
+    
+    // NEW: Production rendering UAVs/SRVs
+    ID3D11ShaderResourceView *UnifiedRenderVertexSRV;
+    ID3D11ShaderResourceView *UnifiedRenderIndexSRV;
+    ID3D11ShaderResourceView *SkinningWeightsSRV;           // Legacy K-nearest neighbor weights
+    ID3D11ShaderResourceView *TriangleSkinningWeightsSRV;   // NEW: Triangle-based weights
+    ID3D11UnorderedAccessView *RenderNormalsUAV;     // For compute-based skinning (optional)
+    ID3D11ShaderResourceView *RenderNormalsSRV;      // For compute-based skinning (optional)
+    ID3D11ShaderResourceView *RenderPositionsSRV;    // For compute-based skinning (optional)
+    
+    // Self-collision UAVs and SRVs
+    ID3D11UnorderedAccessView *SelfCollisionCellCountersUAV;
+    ID3D11UnorderedAccessView *SelfCollisionCellDataUAV;
+    ID3D11ShaderResourceView *SelfCollisionCellCountersSRV;
+    ID3D11ShaderResourceView *SelfCollisionCellDataSRV;
 
     // Per-instance parameter buffer
     ID3D11Buffer *InstanceParameterBuffer;
@@ -229,16 +298,19 @@ private:
     uint32 AllocatedInstanceCapacity;
     uint32 AllocatedAreaConstraintCapacity;      // NEW: Area constraint capacity
     uint32 AllocatedEdgeCollisionCapacity;       // NEW: Edge collision capacity
+    uint32 AllocatedRenderVertexCapacity;        // NEW: Render vertex capacity (for production rendering)
+    uint32 AllocatedRenderIndexCapacity;         // NEW: Render index capacity (for production rendering)
 
     uint32 UsedParticleCount;
     uint32 UsedConstraintCount;
     uint32 UsedBendConstraintCount;
-    uint32 UsedKinematicTargetCount;
     uint32 UsedTriangleCount;
     uint32 UsedInstanceCount;
     uint32 UsedAttachmentCount;                  // NEW: For GPU-based kinematic targets (P1)
     uint32 UsedAreaConstraintCount;              // NEW: Area constraint count
     uint32 UsedEdgeCollisionCount;               // NEW: Edge collision count
+    uint32 UsedRenderVertexCount;                // NEW: Render vertex count (for production rendering)
+    uint32 UsedRenderIndexCount;                 // NEW: Render index count (for production rendering)
 
     bool bInitialized;
 
@@ -247,6 +319,11 @@ private:
 
     // NEW: P2 optimization - cached constants to avoid repeated full buffer uploads
     FClothSimConstants CachedConstants;
+    
+    // Self-collision state
+    FClothSelfCollisionParams SelfCollisionParams;
+    uint32 AllocatedSelfCollisionCells;
+    bool bSelfCollisionInitialized;
 
     static constexpr uint32 THREAD_GROUP_SIZE = 64;
 };

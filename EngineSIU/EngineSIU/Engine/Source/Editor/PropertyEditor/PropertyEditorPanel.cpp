@@ -46,6 +46,9 @@
 #include "Particles/ParticleSystem.h"
 #include "Particles/ParticleSystemComponent.h"
 #include "Classes/Components/ClothMeshComponent.h"
+#include "Classes/Engine/ClothMaterial.h"
+#include "Classes/Engine/ClothAsset.h"
+#include "tinyfiledialogs.h"
 
 PropertyEditorPanel::PropertyEditorPanel()
 {
@@ -421,7 +424,9 @@ void PropertyEditorPanel::RenderForStaticMesh(UStaticMeshComponent* StaticMeshCo
 void PropertyEditorPanel::RenderForClothMesh(UClothMeshComponent* ClothMeshComp) const
 {
     ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
-    if (ImGui::TreeNodeEx("Static Mesh", ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen)) // 트리 노드 생성
+    
+    // === Static Mesh Selection ===
+    if (ImGui::TreeNodeEx("Static Mesh", ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::Text("StaticMesh");
         ImGui::SameLine();
@@ -464,8 +469,178 @@ void PropertyEditorPanel::RenderForClothMesh(UClothMeshComponent* ClothMeshComp)
             ImGui::EndCombo();
         }
 
+        if (ImGui::Button("Create Cloth Asset"))
+        {
+            ClothMeshComp->GenerateClothAsset();
+        }
+
         ImGui::TreePop();
     }
+    
+    // === NEW: ClothMaterial Section ===
+    if (ImGui::TreeNodeEx("Cloth Material", ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Text("Current Material:");
+        ImGui::SameLine();
+        
+        FString MaterialName = ClothMeshComp->ClothMaterial
+            ? ClothMeshComp->ClothMaterial->MaterialName
+            : FString("None");
+        ImGui::Text(*MaterialName);
+        
+        ImGui::Spacing();
+        
+        // Save/Load buttons
+        if (ImGui::Button("Save ClothMaterial", ImVec2(ImGui::GetContentRegionAvail().x * 0.48f, 0)))
+        {
+            const char* filters[] = { "*.clothmat" };
+            const char* filePath = tinyfd_saveFileDialog(
+                "Save ClothMaterial",
+                "ClothMaterial.clothmat",
+                1,
+                filters,
+                "Cloth Material Files"
+            );
+            
+            if (filePath)
+            {
+                UClothMaterial* Material = ClothMeshComp->CreateClothMaterialFromSettings();
+                if (Material && UAssetManager::Get().SaveClothMaterial(FString(filePath), Material))
+                {
+                    UE_LOG(ELogLevel::Display, TEXT("ClothMaterial saved: %s"), filePath);
+                }
+            }
+        }
+        
+        ImGui::SameLine();
+        
+        if (ImGui::Button("Load ClothMaterial", ImVec2(ImGui::GetContentRegionAvail().x, 0)))
+        {
+            const char* filters[] = { "*.clothmat" };
+            const char* filePath = tinyfd_openFileDialog(
+                "Load ClothMaterial",
+                "",
+                1,
+                filters,
+                "Cloth Material Files",
+                0
+            );
+            
+            if (filePath)
+            {
+                UClothMaterial* Material = UAssetManager::Get().LoadClothMaterial(FString(filePath));
+                if (Material)
+                {
+                    ClothMeshComp->ApplyClothMaterial(Material);
+                    UE_LOG(ELogLevel::Display, TEXT("ClothMaterial loaded: %s"), filePath);
+                }
+            }
+        }
+        
+        ImGui::TreePop();
+    }
+    
+    // === NEW: ClothAsset Section ===
+    if (ImGui::TreeNodeEx("Cloth Asset", ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Text("Generated Asset:");
+        ImGui::SameLine();
+        ImGui::Text(ClothMeshComp->GeneratedClothAsset ? "Yes" : "No");
+        
+        ImGui::Spacing();
+        
+        if (ImGui::Button("Save ClothAsset", ImVec2(ImGui::GetContentRegionAvail().x * 0.48f, 0)))
+        {
+            if (ClothMeshComp->GeneratedClothAsset)
+            {
+                const char* filters[] = { "*.clothasset" };
+                const char* filePath = tinyfd_saveFileDialog(
+                    "Save ClothAsset",
+                    "ClothAsset.clothasset",
+                    1,
+                    filters,
+                    "Cloth Asset Files"
+                );
+                
+                if (filePath)
+                {
+                    if (UAssetManager::Get().SaveClothAsset(FString(filePath), ClothMeshComp->GeneratedClothAsset))
+                    {
+                        UE_LOG(ELogLevel::Display, TEXT("ClothAsset saved: %s"), filePath);
+                    }
+                }
+            }
+            else
+            {
+                UE_LOG(ELogLevel::Warning, TEXT("No ClothAsset to save. Generate one first."));
+            }
+        }
+        
+        ImGui::SameLine();
+        
+        if (ImGui::Button("Load ClothAsset", ImVec2(ImGui::GetContentRegionAvail().x, 0)))
+        {
+            const char* filters[] = { "*.clothasset" };
+            const char* filePath = tinyfd_openFileDialog(
+                "Load ClothAsset",
+                "",
+                1,
+                filters,
+                "Cloth Asset Files",
+                0
+            );
+            
+            if (filePath)
+            {
+                UClothAsset* Asset = UAssetManager::Get().LoadClothAsset(FString(filePath));
+                if (Asset)
+                {
+                    ClothMeshComp->GeneratedClothAsset = Asset;
+                    ClothMeshComp->SetClothAsset(Asset);
+
+                    FString MeshName = Asset->SourceMeshName;
+                    UStaticMesh* StaticMesh = FObjManager::GetStaticMesh(MeshName.ToWideString());
+
+                    if (!StaticMesh)
+                    {
+                        StaticMesh = UAssetManager::Get().GetStaticMesh(MeshName);
+                    }
+
+                    if (StaticMesh)
+                    {
+                        ClothMeshComp->SetStaticMesh(StaticMesh);
+                    }
+
+                    if (StaticMesh)
+                    {
+                        const TArray<FStaticMaterial*>& sourceMaterials = StaticMesh->GetMaterials();
+                        uint32 idx = 0;
+
+                        ClothMeshComp->ClearMaterial();
+
+                        for (FStaticMaterial* staticMat : sourceMaterials)
+                        {
+                            if (staticMat && staticMat->Material)
+                            {
+                                ClothMeshComp->SetMaterial(idx, staticMat->Material);
+                            }
+                            else
+                            {
+                                ClothMeshComp->SetMaterial(idx, nullptr);
+                            }
+                            idx++;
+                        }
+                    }
+                    ClothMeshComp->UnregisterFromClothWorld();
+                    ClothMeshComp->RegisterWithClothWorld();
+                    UE_LOG(ELogLevel::Display, TEXT("ClothAsset loaded: %s"), filePath);
+                }
+            }
+        }
+        
+        ImGui::TreePop();
+    }
+    
     ImGui::PopStyleColor();
 }
 

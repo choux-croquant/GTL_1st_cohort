@@ -1,6 +1,7 @@
 /**
- * Cloth Render Pass
- * Renders simulated cloth meshes using dynamic GPU buffers
+ * Cloth Production Render Pass
+ * Production-quality cloth rendering with GPU skinning and full material support
+ * Renders high-resolution render mesh driven by low-resolution simulation mesh
  */
 
 #pragma once
@@ -9,30 +10,20 @@
 #include "EngineBaseTypes.h"
 #include "Container/Set.h"
 #include "Define.h"
+#include "Cloth/ClothGPURenderStructs.h"
 
 #include <d3d11.h>
 
 // Forward declarations
 class UClothMeshComponent;
+class UMaterial;
 class FDXDShaderManager;
 class FGraphicsDevice;
 class FDXDBufferManager;
 
 /**
- * Constant buffer for cloth mesh rendering
- * Updated to support batched mode with particle/index offsets
- */
-struct FClothMeshConstants
-{
-    alignas(16) FMatrix ClothWorldMatrix;
-    uint32 ClothNumVertices;
-    uint32 ClothParticleOffset; // NEW: For batched mode
-    uint32 ClothIndexOffset;    // NEW: For batched mode
-    uint32 ClothPadding;
-};
-
-/**
- * Render pass for cloth simulation visualization
+ * Production cloth render pass
+ * Renders cloth with full materials, textures, and GPU skinning
  */
 class FClothRenderPass : public FRenderPassBase
 {
@@ -56,27 +47,27 @@ protected:
 
 private:
     void RenderClothComponent(UClothMeshComponent *ClothComponent, const std::shared_ptr<FEditorViewportClient> &Viewport);
-    void UpdateClothMeshConstantBuffer(const FMatrix &WorldTransform, uint32 NumVertices,
-                                       uint32 ParticleOffset = 0, uint32 IndexOffset = 0);
-    ID3D11Buffer *CreateIndexBufferFromIndices(const TArray<uint32> &Indices);
+    void UpdateClothInstanceConstantBuffer(const FClothInstanceConstants &Constants);
+    void BindMaterial(UMaterial *Material);
 
 private:
     // Cloth components to render
     TArray<UClothMeshComponent *> ClothComponents;
 
-    // Shaders
-    ID3D11VertexShader *ClothVertexShader;
-    ID3D11PixelShader *ClothPixelShader;
-    ID3D11InputLayout *ClothInputLayout;
+    // Production shaders
+    ID3D11VertexShader *ProductionVertexShader;
+    ID3D11PixelShader *ProductionPixelShader;
+    ID3D11InputLayout *ProductionInputLayout;
 
-    // Constant buffer
-    ID3D11Buffer *ClothMeshConstantBuffer;
+    // Constant buffer for per-instance cloth data
+    ID3D11Buffer *ClothInstanceConstantBuffer;
 
     // Rasterizer state (two-sided rendering for cloth)
     ID3D11RasterizerState *ClothRasterizerState;
 
-    FVertexInfo ClothVertexInfo;
-
-    // Temp index buffer cache (consider better management)
-    ID3D11Buffer *TempIndexBuffer;
+    // Dummy vertex buffer (for vertex ID generation)
+    FVertexInfo DummyVertexInfo;
+    
+    // Material binding cache (for optimization)
+    UMaterial *LastBoundMaterial;
 };

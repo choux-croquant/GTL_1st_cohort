@@ -50,7 +50,26 @@ struct FClothConfig
     // Collision
     float CollisionThickness = 0.01f;
     float CollisionFriction = 0.1f;
-    bool bEnableSelfCollision = false;
+    bool bEnableSelfCollision = true;
+    
+    // Self-collision parameters (REFACTORED: Now use multipliers for adaptive computation)
+    // MULTIPLIERS (applied to adaptive base values computed from mesh topology)
+    float SelfCollisionRadiusMultiplier = 1.0f;      // × (AvgEdgeLength × 0.5)
+    float SelfCollisionStiffnessMultiplier = 0.3f;   // × adaptive base stiffness
+    float SelfCollisionCellSizeMultiplier = 1.0f;    // × (AvgEdgeLength × 1.5)
+    
+    // Grid capacity (still absolute, but computed adaptively per instance)
+    uint32 SelfCollisionMaxPerCell = 32;   // Max particles per cell (safety limit)
+    
+    // NEW: Dynamic bounds tracking parameters
+    float BoundsUpdateMotionThreshold = 0.15f;  // Trigger update when motion exceeds 15% of bounds size
+    uint32 BoundsUpdateMaxFrames = 60;          // Force update every N frames regardless of motion
+    bool bEnableDynamicBoundsUpdate = true;     // Enable/disable dynamic bounds tracking
+    
+    // DEPRECATED (kept for backwards compatibility, but ignored in favor of multipliers)
+    float SelfCollisionRadius = 0.01f;      // DEPRECATED: Use SelfCollisionRadiusMultiplier instead
+    float SelfCollisionStiffness = 1.0f;   // DEPRECATED: Use SelfCollisionStiffnessMultiplier instead
+    uint32 SelfCollisionGridDim = 32;       // DEPRECATED: Computed adaptively from mesh bounds
     
     // Edge-based collision (NEW: Prevents edge penetration in low-resolution meshes)
     bool bEnableEdgeCollision = true;      // Enable edge-based SDF collision
@@ -81,7 +100,6 @@ struct FClothDistanceConstraint
     {
     }
 
-    // 선택: XPBD 파라미터를 직접 지정하는 생성자
     FClothDistanceConstraint(uint32 InA, uint32 InB, float InRestLength, float InStiffness, float InCompliance)
         : ParticleA(InA), ParticleB(InB), RestLength(InRestLength), Stiffness(InStiffness), Compliance(InCompliance), Lambda(0.0f) // 누적값은 항상 0으로 시작
     {
@@ -189,34 +207,6 @@ struct FClothVertexPaintData
 };
 
 /**
- * Runtime simulation state data
- */
-struct FClothSimulationData
-{
-    uint32 NumParticles = 0;
-    uint32 NumConstraints = 0;
-    uint32 NumBendConstraints = 0;
-
-    // CPU-side copies (for debugging and readback)
-    TArray<FVector> CurrentPositions;
-    TArray<FVector> CurrentVelocities;
-
-    // External forces
-    FVector Gravity = FVector(0.0f, 0.0f, 0.0f); // cm/s^2
-    FVector Wind = FVector(0.0f, 0.0f, 0.0f);
-    FVector ExternalForce = FVector(0.0f, 0.0f, 0.0f);
-
-    // Timing
-    float CurrentTime = 0.0f;
-    float AccumulatedTime = 0.0f;
-
-    FClothSimulationData()
-        : NumParticles(0), NumConstraints(0), NumBendConstraints(0), Gravity(0.0f, 0.0f, 0.0f), Wind(0.0f, 0.0f, 0.0f), ExternalForce(0.0f, 0.0f, 0.0f), CurrentTime(0.0f), AccumulatedTime(0.0f)
-    {
-    }
-};
-
-/**
  * LOD-specific mesh data for rendering and simulation
  */
 struct FClothLODData
@@ -285,11 +275,6 @@ struct FClothAttachmentData
         : ClothVertexIndex(0), Type(EClothAttachmentType::WorldPosition), DriverComponent(nullptr), DriverActor(nullptr), BoneName(FName()), BoneIndex(-1), LocalOffset(FTransform::Identity), WorldPosition(FVector::ZeroVector), Stiffness(1.0f), bIsKinematic(true), AttachDistance(0.0f)
     {
     }
-
-    // NOTE: World position calculation is performed by the simulation system
-    // in ClothBatchManager::UpdateKinematicTargets() where all types are fully defined.
-    // The simulation system reads DriverComponent/DriverActor/LocalOffset and resolves
-    // the world position automatically each frame.
 };
 
 /**
@@ -401,6 +386,22 @@ inline FArchive &operator<<(FArchive &Ar, FClothConfig &Cfg)
     Ar << Cfg.CollisionFriction;
     Ar << Cfg.bEnableSelfCollision;
     
+    // Self-collision parameters (NEW: Multipliers for adaptive computation)
+    Ar << Cfg.SelfCollisionRadiusMultiplier;
+    Ar << Cfg.SelfCollisionStiffnessMultiplier;
+    Ar << Cfg.SelfCollisionCellSizeMultiplier;
+    Ar << Cfg.SelfCollisionMaxPerCell;
+    
+    // Dynamic bounds tracking parameters
+    Ar << Cfg.BoundsUpdateMotionThreshold;
+    Ar << Cfg.BoundsUpdateMaxFrames;
+    Ar << Cfg.bEnableDynamicBoundsUpdate;
+    
+    // DEPRECATED: Old absolute values (kept for backwards compatibility)
+    Ar << Cfg.SelfCollisionRadius;
+    Ar << Cfg.SelfCollisionStiffness;
+    Ar << Cfg.SelfCollisionGridDim;
+    
     // NEW: Edge collision parameters
     Ar << Cfg.bEnableEdgeCollision;
     Ar << Cfg.EdgeSamplesPerEdge;
@@ -449,6 +450,15 @@ inline FArchive &operator<<(FArchive &Ar, FClothAreaConstraint &C)
     return Ar;
 }
 
+inline FArchive &operator<<(FArchive &Ar, FClothEdgeCollisionConstraint &C)
+{
+    Ar << C.ParticleA;
+    Ar << C.ParticleB;
+    Ar << C.RestLength;
+    Ar << C.Padding;
+    return Ar;
+}
+
 inline FArchive &operator<<(FArchive &Ar, FClothVertexPaintData &V)
 {
     Ar << V.MaxDistance;
@@ -456,25 +466,6 @@ inline FArchive &operator<<(FArchive &Ar, FClothVertexPaintData &V)
     Ar << V.BackstopRadius;
     Ar << V.Stiffness;
     Ar << V.bFixed;
-    return Ar;
-}
-
-inline FArchive &operator<<(FArchive &Ar, FClothSimulationData &Sim)
-{
-    Ar << Sim.NumParticles;
-    Ar << Sim.NumConstraints;
-    Ar << Sim.NumBendConstraints;
-
-    Ar << Sim.CurrentPositions;
-    Ar << Sim.CurrentVelocities;
-
-    Ar << Sim.Gravity;
-    Ar << Sim.Wind;
-    Ar << Sim.ExternalForce;
-
-    Ar << Sim.CurrentTime;
-    Ar << Sim.AccumulatedTime;
-
     return Ar;
 }
 

@@ -631,7 +631,7 @@ void UPrimitiveComponent::CreatePhysXGameObject()
         case EGeomType::ECapsule:
         {
             PxShape* PxCapsule = GEngine->PhysicsManager->CreateCapsuleShape(Offset, GeomPQuat, Extent.x, Extent.z);
-            BodySetup->AggGeom.SphereElems.Add(PxCapsule);
+            BodySetup->AggGeom.CapsuleElems.Add(PxCapsule);
             break;
         }
         }

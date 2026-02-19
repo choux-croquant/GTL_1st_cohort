@@ -29,25 +29,24 @@ public:
     virtual void Tick(float DeltaTime) override;
 
     // Multiple cloth instances for batching test
-    static constexpr int32 NumClothInstances = 1;
-    UClothMeshComponent *ClothMeshes[NumClothInstances];
-    UClothAsset *ClothAssets[NumClothInstances];
-    FClothInstanceHandle *ClothHandles[NumClothInstances];
+    // Target: ~200 instances with ~400 particles each = ~80,000 total particles
+    static constexpr int32 NumClothInstances = 200;
+    TArray<UClothMeshComponent*> ClothMeshes;
 
-    // Attachment drivers
-    AStaticMeshActor *AttachmentDrivers[NumClothInstances];
-    FVector DriverInitialPositions[NumClothInstances];
+    // Shared cloth asset (generated once, reused by all instances)
+    UClothAsset* SharedClothAsset;
 
-    // Create test cloth grid
-    void CreateTestCloth(int32 Index, int32 GridSize, int32 Spacing, EClothLODLevel LOD);
+    // Create shared cloth asset (called once)
+    void CreateSharedClothAsset();
+    
+    // Create test cloth instance using shared asset
+    void CreateTestClothMesh(int32 Index, const FVector& Position);
 
 private:
     // Animation time
     float AnimationTime;
 
-    // Driver spawn tracking
-    bool bDriversSpawned;
-
     // CRITICAL: Prevent double initialization
     bool bClothInitialized;
+    bool bDriversSpawned;  // Kept for compatibility
 };

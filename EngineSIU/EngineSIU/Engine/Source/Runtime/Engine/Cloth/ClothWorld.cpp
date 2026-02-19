@@ -15,12 +15,10 @@
 #include "Engine/UserInterface/Console.h"
 
 // Global configuration for cloth system mode
-// Set to Batched to enable new batched simulation system
-// Change to Legacy for backward compatibility if needed
 static EClothSystemMode GClothSystemMode = EClothSystemMode::Batched;
 
 FClothWorld::FClothWorld()
-    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), SystemMode(GClothSystemMode), SharedCollisionManager(nullptr), bIsInitialized(false), TotalParticleCount(0), TotalConstraintCount(0)
+    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), SystemMode(GClothSystemMode), SharedCollisionManager(nullptr), bIsInitialized(false)
 {
     // Initialize batch manager array to nullptr
     for (int32 i = 0; i < static_cast<int32>(EClothLODLevel::Max); ++i)
@@ -103,16 +101,6 @@ void FClothWorld::Update(float DeltaTime)
     QUICK_SCOPE_CYCLE_COUNTER(ClothSimulate_Tick)
     QUICK_GPU_SCOPE_CYCLE_COUNTER(ClothSimulate_Tick_GPU, *FEngineLoop::Renderer.GPUTimingManager)
 
-    // Update transient explosion forces
-    for (int32 i = GlobalForces.Explosions.Num() - 1; i >= 0; --i)
-    {
-        GlobalForces.Explosions[i].TimeRemaining -= DeltaTime;
-        if (GlobalForces.Explosions[i].TimeRemaining <= 0.0f)
-        {
-            GlobalForces.Explosions.RemoveAt(i);
-        }
-    }
-
     {
         // Process LOD transitions first
         ProcessLODTransitions();
@@ -140,25 +128,6 @@ void FClothWorld::SimulateAllBatches(float DeltaTime)
             LODBatches[i]->Update(DeltaTime);
         }
     }
-}
-
-void FClothWorld::SetGlobalGravity(const FVector &InGravity)
-{
-    GlobalForces.GlobalGravity = InGravity;
-}
-
-void FClothWorld::SetGlobalWind(const FVector &InWind)
-{
-    GlobalForces.GlobalWind = InWind;
-}
-
-void FClothWorld::AddExplosionForce(const FVector &Position, float Strength, float Radius, float Duration)
-{
-    FClothExplosionForce explosion(Position, Strength, Radius, Duration);
-    GlobalForces.Explosions.Add(explosion);
-
-    UE_LOG(ELogLevel::Display, TEXT("ClothWorld: Added explosion force at (%f, %f, %f) with strength %f, radius %f"),
-           Position.X, Position.Y, Position.Z, Strength, Radius);
 }
 
 // ==================== BATCHED MODE METHODS ====================
@@ -190,19 +159,35 @@ FClothInstanceHandle *FClothWorld::RegisterClothInstanceBatched(UClothComponent 
     Params.OwnerComponent = Component;
     Params.InitialLOD = InitialLOD;
 
-    // Get rest positions and other data from asset (in LOCAL space)
+    // Get simulation mesh data from asset (in LOCAL space)
     Params.RestPositions = Asset->GetRestPositions();
     Params.InvMasses = Asset->GetInvMasses();
     Params.Indices = Asset->GetIndices();
     Params.Constraints = Asset->GetDistanceConstraints();
     Params.BendConstraints = Asset->GetBendConstraints();
-    Params.AreaConstraints = Asset->GetAreaConstraints();  // NEW: Area constraints
-    Params.EdgeCollisions = Asset->GetEdgeCollisions();    // NEW: Edge collision constraints
+    Params.AreaConstraints = Asset->GetAreaConstraints();  // Area constraints
+    Params.EdgeCollisions = Asset->GetEdgeCollisions();    // Edge collision constraints
     Params.Attachments = Asset->GetAttachmentData();
 
-    // CRITICAL FIX: Get component's world transform for converting local positions to world space
-    // This ensures each instance simulates at its correct location in the world
-    Params.WorldTransform = Component->GetComponentTransform();
+    // NEW: Get render mesh data from asset if available (for production rendering)
+    if (Asset->bUseRenderMesh)
+    {
+        Params.bUseRenderMesh = true;
+        Params.RenderRestPositions = Asset->RenderRestPositions;
+        Params.RenderNormals = Asset->RenderNormals;
+        Params.RenderUVs = Asset->RenderUVs;
+        Params.RenderIndices = Asset->RenderIndices;
+        Params.SkinningWeights = Asset->SkinningWeights;  // Legacy K-nearest neighbor weights
+        Params.TriangleSkinningWeights = Asset->TriangleSkinningWeights;  // NEW: Triangle-based weights
+        
+        UE_LOG(ELogLevel::Display, TEXT("ClothWorld: Registering cloth with production rendering - RenderVerts: %d, SimVerts: %d, TriangleWeights: %d"),
+               Params.RenderRestPositions.Num(), Params.RestPositions.Num(), Params.TriangleSkinningWeights.Num());
+    }
+
+    // FIXED: Use identity transform to keep particles in local space
+    // The world transform will be applied during rendering in GetRenderData()
+    // This prevents double-transformation when regenerating assets
+    Params.WorldTransform = FTransform(FMatrix::Identity);
 
     // Add instance to batch
     FClothInstanceHandle *Handle = BatchMgr->AddInstance(Params);

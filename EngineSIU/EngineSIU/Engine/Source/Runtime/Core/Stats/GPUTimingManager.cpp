@@ -1,18 +1,4 @@
 #include "GpuTimingManager.h"
-// #include "Core/Log.h" // Include your engine's logging header (optional)
-
-// @todo Discard Unsed Method
-namespace FThreadStats
-{
-    void AddGpuTime(const TStatId& StatId, double TimeMs)
-    {
-        // Example: Log the result
-        // LOG_INFO("GPU Time [%s]: %.3f ms", StatId.GetName().ToString().c_str(), TimeMs);
-
-        // Or, submit to your actual stats system:
-        // YourStatsSystem::RecordGpuTiming(StatId.GetName(), TimeMs);
-    }
-}
 
 
 FGPUTimingManager::FGPUTimingManager() = default;
@@ -201,10 +187,6 @@ void FGPUTimingManager::RetrieveResults()
             if (statId.GetName() != NAME_None) // Check if StatId is valid
             {
                 LatestResults[statId.GetName()] = { ResultMS, FrameCounter };
-                //if (ResultMS >= 0.0) // Only submit valid timings
-                //{
-                //    FThreadStats::AddGpuTime(statId, ResultMS);
-                //}
             }
 
             // Reset the query slot for reuse

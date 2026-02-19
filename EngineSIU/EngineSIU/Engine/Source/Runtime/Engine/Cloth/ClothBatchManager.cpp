@@ -6,6 +6,8 @@
 #include "ClothBatchManager.h"
 #include "ClothBatchedSolver.h"
 #include "ClothInstanceHandle.h"
+#include "ClothSkinningWeightGenerator.h"
+#include "ClothMeshAnalysis.h"
 #include "Classes/Engine/ClothAsset.h"
 #include "Classes/Components/ClothComponent.h"
 #include "Classes/Components/SceneComponent.h"
@@ -18,7 +20,7 @@
 #include "ClothGPUStructs.h"
 
 FClothBatchManager::FClothBatchManager(EClothLODLevel InLODLevel)
-    : LODLevel(InLODLevel), BatchedSolver(nullptr), TotalParticleCount(0), TotalConstraintCount(0), TotalBendConstraintCount(0), TotalKinematicTargetCount(0), TotalTriangleCount(0), TotalAreaConstraintCount(0), TotalEdgeCollisionCount(0), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), AllocatedAreaConstraintCapacity(0), AllocatedEdgeCollisionCapacity(0), bNeedsReallocation(false), bNeedsCompaction(false), GrowthFactor(1.5f), TotalAttachmentCount(0), bAttachmentDataDirty(true), Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), bIsInitialized(false)
+    : LODLevel(InLODLevel), BatchedSolver(nullptr), TotalParticleCount(0), TotalConstraintCount(0), TotalBendConstraintCount(0), TotalAttachmentCount(0), TotalTriangleCount(0), TotalAreaConstraintCount(0), TotalEdgeCollisionCount(0), TotalRenderVertexCount(0), TotalRenderIndexCount(0), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), AllocatedAreaConstraintCapacity(0), AllocatedEdgeCollisionCapacity(0), AllocatedRenderVertexCapacity(0), AllocatedRenderIndexCapacity(0), bNeedsReallocation(false), bNeedsCompaction(false), GrowthFactor(1.5f), bAttachmentDataDirty(true), Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), bIsInitialized(false)
 {
 }
 
@@ -138,7 +140,7 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
     uint32 particleCount = Params.RestPositions.Num();
     uint32 constraintCount = Params.Constraints.Num();
     uint32 bendConstraintCount = Params.BendConstraints.Num();
-    uint32 kinematicTargetCount = Params.Attachments.Num();
+    uint32 attachmentCount = Params.Attachments.Num();
     uint32 triangleCount = Params.Indices.Num() / 3;
     uint32 areaConstraintCount = Params.AreaConstraints.Num();
     uint32 edgeCollisionCount = Params.EdgeCollisions.Num();
@@ -160,8 +162,8 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
     metadata.ConstraintCount = constraintCount;
     metadata.BendConstraintOffset = TotalBendConstraintCount;
     metadata.BendConstraintCount = bendConstraintCount;
-    metadata.KinematicTargetOffset = TotalKinematicTargetCount;
-    metadata.KinematicTargetCount = kinematicTargetCount;
+    metadata.KinematicTargetOffset = TotalAttachmentCount;
+    metadata.KinematicTargetCount = attachmentCount;
     metadata.TriangleOffset = TotalTriangleCount;
     metadata.TriangleCount = triangleCount;
     metadata.AreaConstraintOffset = TotalAreaConstraintCount;     // NEW
@@ -171,6 +173,48 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
     metadata.InstanceParameterIndex = Instances.Num();
     metadata.bIsActive = Params.bStartActive;
     metadata.CurrentLOD = Params.InitialLOD;
+   
+    // NEW: Compute adaptive self-collision parameters from mesh topology
+    metadata.AvgEdgeLength = FClothMeshAnalysis::ComputeAverageEdgeLength(
+    	Params.RestPositions, Params.Indices);
+    
+    // Compute AABB from rest positions (will be updated dynamically at runtime)
+    FClothMeshAnalysis::ComputeAABB(
+    	Params.RestPositions,
+    	metadata.MeshBoundsMin,
+    	metadata.MeshBoundsMax);
+    
+    // Initialize previous bounds
+    metadata.PrevBoundsMin = metadata.MeshBoundsMin;
+    metadata.PrevBoundsMax = metadata.MeshBoundsMax;
+    
+    // Compute adaptive spatial hash parameters
+    FVector gridMin, gridMax;
+    FClothMeshAnalysis::ComputeAdaptiveSpatialHashParams(
+    	metadata.AvgEdgeLength,
+    	metadata.MeshBoundsMin,
+    	metadata.MeshBoundsMax,
+    	metadata.ParticleCount,
+    	metadata.AdaptiveCellSize,
+    	metadata.AdaptiveCollisionRadius,
+    	gridMin,
+    	gridMax,
+    	metadata.AdaptiveGridDimX,
+    	metadata.AdaptiveGridDimY,
+    	metadata.AdaptiveGridDimZ,
+    	metadata.AdaptiveMaxPerCell);
+    
+    // Initialize motion tracking state
+    metadata.AccumulatedMotion = 0.0f;
+    metadata.FramesSinceLastBoundsUpdate = 0;
+    metadata.bNeedsBoundsUpdate = false;
+    
+    // Log computed adaptive parameters
+    UE_LOG(ELogLevel::Display,
+    	TEXT("ClothBatchManager[LOD%d]: Instance %d Adaptive Params - AvgEdge=%.3f, CellSize=%.3f, Radius=%.3f, Grid=%ux%ux%u"),
+    	static_cast<int32>(LODLevel), Instances.Num(),
+    	metadata.AvgEdgeLength, metadata.AdaptiveCellSize, metadata.AdaptiveCollisionRadius,
+    	metadata.AdaptiveGridDimX, metadata.AdaptiveGridDimY, metadata.AdaptiveGridDimZ);
 
     // ENHANCED VALIDATION LOGGING
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: ===== Instance %d Metadata ====="),
@@ -198,15 +242,14 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
     TotalParticleCount += particleCount;
     TotalConstraintCount += constraintCount;
     TotalBendConstraintCount += bendConstraintCount;
-    TotalKinematicTargetCount += kinematicTargetCount;
+    TotalAttachmentCount += attachmentCount;
     TotalTriangleCount += triangleCount;
     TotalAreaConstraintCount += areaConstraintCount;       // NEW
     TotalEdgeCollisionCount += edgeCollisionCount;         // NEW
 
     // Update solver counts
-    BatchedSolver->SetUsedCounts(TotalParticleCount, TotalConstraintCount, TotalBendConstraintCount,
-                                 TotalKinematicTargetCount, TotalTriangleCount, Instances.Num(),
-                                 TotalAreaConstraintCount, TotalEdgeCollisionCount); // NEW
+    BatchedSolver->SetUsedCounts(TotalParticleCount, TotalConstraintCount, TotalBendConstraintCount, TotalAttachmentCount,
+                                 TotalTriangleCount, Instances.Num(), TotalAreaConstraintCount, TotalEdgeCollisionCount); // NEW
 
     // ===== UPLOAD INSTANCE DATA TO GPU BUFFERS =====
 
@@ -438,13 +481,114 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         BatchedSolver->UploadIndexData(globalIndices, indexOffset);
     }
 
-    // 6. DON'T upload kinematic targets during AddInstance
-    // Kinematic targets are uploaded each frame in UpdateKinematicTargets()
-    // because they need to be updated with current driver positions.
-    // Initial upload with WRITE_DISCARD would overwrite previous instances' targets.
-    // The targets will be properly uploaded on the first Update() call.
+    // NEW: 7. Upload render mesh data if production rendering is enabled
+    if (Params.bUseRenderMesh && Params.RenderRestPositions.Num() > 0)
+    {
+        uint32 renderVertexCount = Params.RenderRestPositions.Num();
+        uint32 renderIndexCount = Params.RenderIndices.Num();
+        
+        // Update metadata with render mesh offsets
+        metadata.RenderVertexOffset = TotalRenderVertexCount;
+        metadata.RenderVertexCount = renderVertexCount;
+        metadata.RenderIndexOffset = TotalRenderIndexCount;
+        metadata.RenderIndexCount = renderIndexCount;
+        
+        // Update instance metadata in array (it was already added earlier)
+        InstanceMetadata[metadataIndex] = metadata;
+        
+        // Transform render mesh positions to world space
+        TArray<FVector> worldSpaceRenderPositions;
+        worldSpaceRenderPositions.Reserve(renderVertexCount);
+        
+        for (uint32 i = 0; i < renderVertexCount; ++i)
+        {
+            FVector localPos = Params.RenderRestPositions[i];
+            FVector worldPos = Params.WorldTransform.TransformPosition(localPos);
+            worldSpaceRenderPositions.Add(worldPos);
+        }
+        
+        // Transform render mesh normals to world space
+        TArray<FVector> worldSpaceRenderNormals;
+        worldSpaceRenderNormals.Reserve(renderVertexCount);
+        
+        for (uint32 i = 0; i < static_cast<uint32>(Params.RenderNormals.Num()); ++i)
+        {
+            FVector localNormal = Params.RenderNormals[i];
+            FVector worldNormal = Params.WorldTransform.TransformVector(localNormal);
+            worldNormal.Normalize();
+            worldSpaceRenderNormals.Add(worldNormal);
+        }
+        
+        // Upload render mesh data
+        BatchedSolver->UploadRenderMeshData(
+            worldSpaceRenderPositions,
+            worldSpaceRenderNormals,
+            Params.RenderUVs,
+            Params.RenderIndices,
+            metadata.RenderVertexOffset,
+            metadata.RenderIndexOffset
+        );
+        
+        // Convert skinning weights to use global simulation vertex indices
+        TArray<FClothSkinningWeight> globalSkinningWeights;
+        globalSkinningWeights.Reserve(Params.SkinningWeights.Num());
+        
+        for (const FClothSkinningWeight& localWeight : Params.SkinningWeights)
+        {
+            FClothSkinningWeight globalWeight = localWeight;
+            
+            // Convert local sim vertex indices to global indices
+            for (int i = 0; i < 4; ++i)
+            {
+                if (globalWeight.Weights[i] > 0.0f)
+                {
+                    globalWeight.SimVertexIndices[i] += metadata.ParticleOffset;
+                }
+            }
+            
+            globalSkinningWeights.Add(globalWeight);
+        }
+        
+        // Upload legacy K-nearest neighbor skinning weights
+        BatchedSolver->UploadSkinningWeights(globalSkinningWeights, metadata.RenderVertexOffset);
+        
+        // NEW: Upload triangle-based skinning weights (fixes edge curling and UV distortion)
+        if (Params.TriangleSkinningWeights.Num() > 0)
+        {
+            // Convert triangle skinning weights to use global simulation vertex indices
+            TArray<FClothSkinningWeightTriangle> globalTriangleWeights;
+            globalTriangleWeights.Reserve(Params.TriangleSkinningWeights.Num());
+            
+            for (const FClothSkinningWeightTriangle& localWeight : Params.TriangleSkinningWeights)
+            {
+                FClothSkinningWeightTriangle globalWeight = localWeight;
+                
+                // Convert local sim vertex indices to global indices
+                globalWeight.SimTriangleIndices[0] += metadata.ParticleOffset;
+                globalWeight.SimTriangleIndices[1] += metadata.ParticleOffset;
+                globalWeight.SimTriangleIndices[2] += metadata.ParticleOffset;
+                
+                // Barycentric coords and tangent-space offset remain unchanged
+                
+                globalTriangleWeights.Add(globalWeight);
+            }
+            
+            // Upload triangle skinning weights
+            BatchedSolver->UploadTriangleSkinningWeights(globalTriangleWeights, metadata.RenderVertexOffset);
+            
+            UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Uploaded triangle skinning weights - Count: %u"),
+                   static_cast<int32>(LODLevel), globalTriangleWeights.Num());
+        }
+        
+        // Update totals
+        TotalRenderVertexCount += renderVertexCount;
+        TotalRenderIndexCount += renderIndexCount;
+        
+        UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Uploaded render mesh - Vertices: %u, Indices: %u"),
+               static_cast<int32>(LODLevel), renderVertexCount, renderIndexCount);
+    }
 
-    // 7. Update instance parameters
+    // 8. Update instance parameters
     UpdateInstanceParameterBuffer();
 
     // NEW: Mark attachment data dirty so GPU-based kinematic targets are rebuilt
@@ -476,7 +620,7 @@ void FClothBatchManager::RemoveInstance(FClothInstanceHandle *Instance)
     TotalParticleCount -= metadata.ParticleCount;
     TotalConstraintCount -= metadata.ConstraintCount;
     TotalBendConstraintCount -= metadata.BendConstraintCount;
-    TotalKinematicTargetCount -= metadata.KinematicTargetCount;
+    TotalAttachmentCount -= metadata.KinematicTargetCount;
     TotalTriangleCount -= metadata.TriangleCount;
     TotalAreaConstraintCount -= metadata.AreaConstraintCount;     // NEW
     TotalEdgeCollisionCount -= metadata.EdgeCollisionCount;       // NEW
@@ -489,9 +633,8 @@ void FClothBatchManager::RemoveInstance(FClothInstanceHandle *Instance)
     bNeedsCompaction = true;
 
     // Update solver counts
-    BatchedSolver->SetUsedCounts(TotalParticleCount, TotalConstraintCount, TotalBendConstraintCount,
-                                 TotalKinematicTargetCount, TotalTriangleCount, Instances.Num(),
-                                 TotalAreaConstraintCount, TotalEdgeCollisionCount); // NEW
+    BatchedSolver->SetUsedCounts(TotalParticleCount, TotalConstraintCount, TotalBendConstraintCount, TotalAttachmentCount,
+                                 TotalTriangleCount, Instances.Num(), TotalAreaConstraintCount, TotalEdgeCollisionCount);
 
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Removed instance - Remaining: %d instances, %d particles"),
            static_cast<int32>(LODLevel), Instances.Num(), TotalParticleCount);
@@ -511,20 +654,14 @@ void FClothBatchManager::UpdateInstanceParameters(FClothInstanceHandle *Instance
 
 void FClothBatchManager::Update(float DeltaTime)
 {
-    QUICK_SCOPE_CYCLE_COUNTER(ClothBatch_Update);
-
     if (!bIsInitialized || Instances.Num() == 0)
         return;
 
-    // Update kinematic targets (NEW: GPU-based - P1 optimization)
     {
-        QUICK_SCOPE_CYCLE_COUNTER(ClothBatch_UpdateKinematicTargets_GPU);
         UpdateKinematicTargetsGPU(DeltaTime);
     }
 
-    // Simulate using fixed or variable timestep
     {
-        QUICK_SCOPE_CYCLE_COUNTER(ClothBatch_Simulate);
         if (FixedTimestepState.bUseFixedTimestep)
         {
             SimulateFixedTimestep(DeltaTime);
@@ -538,52 +675,52 @@ void FClothBatchManager::Update(float DeltaTime)
 
 void FClothBatchManager::Simulate(float DeltaTime)
 {
-    if (!bIsInitialized || !BatchedSolver)
-        return;
+	if (!bIsInitialized || !BatchedSolver)
+		return;
 
-    if (TotalParticleCount == 0)
-        return;
+	if (TotalParticleCount == 0)
+		return;
 
-    // Delegate to batched solver
-    BatchedSolver->Simulate(DeltaTime);
+	// Delegate to batched solver with instance metadata
+	BatchedSolver->Simulate(DeltaTime, InstanceMetadata);
 }
 
 void FClothBatchManager::SimulateFixedTimestep(float DeltaTime)
 {
-    if (!FixedTimestepState.bUseFixedTimestep)
-    {
-        // Variable timestep mode
-        BatchedSolver->Simulate(DeltaTime);
-        return;
-    }
+	if (!FixedTimestepState.bUseFixedTimestep)
+	{
+		// Variable timestep mode
+		BatchedSolver->Simulate(DeltaTime, InstanceMetadata);
+		return;
+	}
 
-    // Clamp maximum DeltaTime to prevent spiral of death
-    float clampedDT = FMath::Min(DeltaTime, 0.1f); // Max 100ms
+	// Clamp maximum DeltaTime to prevent spiral of death
+	float clampedDT = FMath::Min(DeltaTime, 0.1f); // Max 100ms
 
-    // Accumulate time
-    FixedTimestepState.AccumulatedTime += clampedDT;
+	// Accumulate time
+	FixedTimestepState.AccumulatedTime += clampedDT;
 
-    // If we're falling too far behind, reset accumulator
-    if (FixedTimestepState.AccumulatedTime > FixedTimestepState.FixedTimestep * 10.0f)
-    {
-        UE_LOG(ELogLevel::Warning, TEXT("ClothBatchManager[LOD%d]: Simulation falling behind - resetting accumulator"),
-               static_cast<int32>(LODLevel));
-        FixedTimestepState.AccumulatedTime = FixedTimestepState.FixedTimestep;
-    }
+	// If we're falling too far behind, reset accumulator
+	if (FixedTimestepState.AccumulatedTime > FixedTimestepState.FixedTimestep * 10.0f)
+	{
+		UE_LOG(ELogLevel::Warning, TEXT("ClothBatchManager[LOD%d]: Simulation falling behind - resetting accumulator"),
+			   static_cast<int32>(LODLevel));
+		FixedTimestepState.AccumulatedTime = FixedTimestepState.FixedTimestep;
+	}
 
-    // Fixed timestep loop
-    int32 substepCount = 0;
-    float fixedDT = FixedTimestepState.FixedTimestep;
+	// Fixed timestep loop
+	int32 substepCount = 0;
+	float fixedDT = FixedTimestepState.FixedTimestep;
 
-    while (FixedTimestepState.AccumulatedTime >= fixedDT &&
-           substepCount < FixedTimestepState.MaxSubsteps)
-    {
-        // Simulate one fixed timestep
-        BatchedSolver->Simulate(fixedDT);
+	while (FixedTimestepState.AccumulatedTime >= fixedDT &&
+		   substepCount < FixedTimestepState.MaxSubsteps)
+	{
+		// Simulate one fixed timestep with instance metadata
+		BatchedSolver->Simulate(fixedDT, InstanceMetadata);
 
-        FixedTimestepState.AccumulatedTime -= fixedDT;
-        substepCount++;
-    }
+		FixedTimestepState.AccumulatedTime -= fixedDT;
+		substepCount++;
+	}
 }
 
 bool FClothBatchManager::CanAcceptInstance(uint32 ParticleCount) const
@@ -684,81 +821,6 @@ void FClothBatchManager::UpdateInstanceParameterBuffer()
     }
 }
 
-void FClothBatchManager::UpdateKinematicTargets(float DeltaTime)
-{
-    if (!BatchedSolver || TotalKinematicTargetCount == 0)
-        return;
-
-    // SOLVER-DRIVEN ATTACHMENT UPDATE FLOW
-    // This method is called by the simulation system each frame.
-    // It reads attachment definitions from cloth assets, resolves world positions,
-    // and uploads kinematic targets to the GPU.
-    // Actors no longer need to manually update attachments.
-
-    TArray<FClothKinematicTargetGPU> allTargets;
-    allTargets.Reserve(TotalKinematicTargetCount);
-
-    for (FClothInstanceHandle *Handle : Instances)
-    {
-        if (!Handle || !Handle->IsActive())
-            continue;
-
-        const FClothInstanceMetadata &metadata = Handle->GetMetadata();
-        UClothComponent *owner = Handle->GetOwnerComponent();
-
-        if (!owner || !owner->GetClothAsset())
-            continue;
-
-        // Read attachment data directly from the cloth asset
-        // This is the single source of truth for attachment configuration
-        const TArray<FClothAttachmentData> &attachments = owner->GetClothAsset()->AttachmentsData;
-
-        if (attachments.Num() == 0)
-            continue;
-
-        // For each attachment, resolve world position and create GPU target
-        for (const FClothAttachmentData &attachment : attachments)
-        {
-            FClothKinematicTargetGPU target;
-
-            // Convert local particle index to global batch index
-            target.ParticleIndex = attachment.ClothVertexIndex + metadata.ParticleOffset;
-
-            // AUTOMATIC WORLD POSITION RESOLUTION
-            // Resolve world position based on driver component reference
-            FVector worldPosition = FVector::ZeroVector;
-
-            // Component-based attachment (preferred and most reliable)
-            if (attachment.DriverComponent != nullptr)
-            {
-                FTransform driverTransform = attachment.DriverComponent->GetComponentTransform();
-                FTransform attachmentWorldTransform = driverTransform * attachment.LocalOffset;
-                worldPosition = attachmentWorldTransform.GetTranslation();
-            }
-            else
-            {
-                // Fallback to manually-set WorldPosition (for static attachments or backward compatibility)
-                // Actor-based attachments should set DriverComponent instead
-                worldPosition = attachment.WorldPosition;
-            }
-
-            target.TargetPosition = worldPosition;
-            target.Stiffness = attachment.Stiffness;
-            target.AttachDistance = attachment.AttachDistance; // CRITICAL FIX: Initialize AttachDistance field
-            target.Padding0 = 0.0f;
-            target.Padding1 = 0.0f;
-
-            allTargets.Add(target);
-        }
-    }
-
-    // Upload all kinematic targets to GPU in one batch
-    if (allTargets.Num() > 0)
-    {
-        BatchedSolver->UploadKinematicTargets(allTargets, 0);
-    }
-}
-
 // NEW: GPU-based kinematic target computation (P1 optimization - saves ~2ms)
 void FClothBatchManager::BuildKinematicAttachmentData()
 {
@@ -778,34 +840,55 @@ void FClothBatchManager::BuildKinematicAttachmentData()
 
         for (const FClothAttachmentData &attachment : attachments)
         {
-            if (!attachment.DriverComponent)
-                continue;
+            if (attachment.Type == EClothAttachmentType::ActorTransform) {
+                if (!attachment.DriverComponent)
+                    continue;
+                // Get or create component index (deduplication!)
+                uint32 *ComponentIndexPtr = ComponentIndexMap.Find(attachment.DriverComponent);
+                uint32 ComponentIndex;
 
-            // Get or create component index (deduplication!)
-            uint32 *ComponentIndexPtr = ComponentIndexMap.Find(attachment.DriverComponent);
-            uint32 ComponentIndex;
+                if (!ComponentIndexPtr)
+                {
+                    ComponentIndex = UniqueComponents.Num();
+                    ComponentIndexMap.Add(attachment.DriverComponent, ComponentIndex);
+                    UniqueComponents.Add(attachment.DriverComponent);
+                }
+                else
+                {
+                    ComponentIndex = *ComponentIndexPtr;
+                }
 
-            if (!ComponentIndexPtr)
-            {
-                ComponentIndex = UniqueComponents.Num();
-                ComponentIndexMap.Add(attachment.DriverComponent, ComponentIndex);
-                UniqueComponents.Add(attachment.DriverComponent);
+                // Build GPU attachment data
+                FKinematicAttachmentGPU gpuAttachment;
+                gpuAttachment.Type = 1;
+                gpuAttachment.ComponentIndex = ComponentIndex;
+                gpuAttachment.ParticleIndex = attachment.ClothVertexIndex + metadata.ParticleOffset;
+                gpuAttachment.Stiffness = attachment.Stiffness;
+                gpuAttachment.AttachDistance = attachment.AttachDistance;
+                gpuAttachment.LocalOffset = attachment.LocalOffset.GetTranslation();
+                gpuAttachment.Padding = 0.0f;
+
+                attachmentData.Add(gpuAttachment);
             }
-            else
-            {
-                ComponentIndex = *ComponentIndexPtr;
+            else if (attachment.Type == EClothAttachmentType::WorldPosition) {
+                // FIXED: WorldPosition attachments are in absolute world space
+                // Since particles are now in local space, we need to transform the world position
+                // to local space so the shader can compare them correctly
+                FTransform componentTransform = owner->GetComponentTransform();
+                FTransform invComponentTransform = componentTransform.Inverse();
+                FVector localPosition = invComponentTransform.TransformPosition(attachment.WorldPosition);
+                
+                // Build GPU attachment data
+                FKinematicAttachmentGPU gpuAttachment;
+                gpuAttachment.Type = 0;
+                gpuAttachment.ParticleIndex = attachment.ClothVertexIndex + metadata.ParticleOffset;
+                gpuAttachment.Stiffness = attachment.Stiffness;
+                gpuAttachment.AttachDistance = attachment.AttachDistance;
+                gpuAttachment.TargetPosition = localPosition;  // Transformed to local space
+                gpuAttachment.Padding = 0.0f;
+
+                attachmentData.Add(gpuAttachment);
             }
-
-            // Build GPU attachment data
-            FKinematicAttachmentGPU gpuAttachment;
-            gpuAttachment.ComponentIndex = ComponentIndex;
-            gpuAttachment.ParticleIndex = attachment.ClothVertexIndex + metadata.ParticleOffset;
-            gpuAttachment.Stiffness = attachment.Stiffness;
-            gpuAttachment.AttachDistance = attachment.AttachDistance;
-            gpuAttachment.LocalOffset = attachment.LocalOffset.GetTranslation();
-            gpuAttachment.Padding = 0.0f;
-
-            attachmentData.Add(gpuAttachment);
         }
     }
 
@@ -834,7 +917,7 @@ void FClothBatchManager::UpdateKinematicTargetsGPU(float DeltaTime)
 {
     QUICK_SCOPE_CYCLE_COUNTER(UpdateKinematicTargets_GPU);
 
-    if (!BatchedSolver || TotalKinematicTargetCount == 0)
+    if (!BatchedSolver || TotalAttachmentCount == 0)
         return;
 
     // Rebuild attachment data if needed (rare - only when attachments change)
@@ -863,14 +946,11 @@ void FClothBatchManager::UpdateKinematicTargetsGPU(float DeltaTime)
         }
     }
 
-    // Upload component transforms (SMALL: 50 × 64 bytes = 3.2KB vs 80KB before!)
     if (componentTransforms.Num() > 0)
     {
         QUICK_SCOPE_CYCLE_COUNTER(UpdateKinematicTargets_UploadTransforms);
         BatchedSolver->UploadComponentTransforms(componentTransforms);
     }
-
-    // GPU will compute final positions in compute shader
 }
 
 bool FClothBatchManager::NeedsReallocation(uint32 RequiredParticles, uint32 RequiredConstraints) const

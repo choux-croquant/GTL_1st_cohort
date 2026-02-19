@@ -19,7 +19,6 @@ uint64 FScopeCycleCounter::Finish()
     const uint64 EndCycles = FPlatformTime::Cycles64();
     const uint64 CycleDiff = EndCycles - StartCycles;
 
-    // FThreadStats::AddMessage(UsedStatId, EStatOperation::Add, CycleDiff);
     FProfilerStatsManager::AddCpuStat(UsedStatId, FPlatformTime::ToMilliseconds(CycleDiff));
 
     return CycleDiff;

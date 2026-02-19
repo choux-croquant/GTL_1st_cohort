@@ -218,6 +218,9 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Engine\Source\Runtime\Core\Serialization\ArchiveFileReader.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Core\Serialization\ArchiveFileWriter.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\ClothActor.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\BehellaGameMode.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\BehellaScreenUI.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\Camera.cpp" />
@@ -340,6 +343,7 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Components\SocketComponent.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Distribution\DistributionFloat.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Distribution\DistributionVector.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Engine\ClothMaterial.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Engine\StaticMesh.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Components\ParticleSubUVComponent.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Components\PrimitiveComponent.cpp" />
@@ -399,10 +403,16 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\PhysicsEngine\BodyInstance.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\PhysicsEngine\ConstraintInstance.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\PhysicsEngine\PhysicsAsset.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothAssetGenerator.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchedSolver.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchManager.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothCollisionManager.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothGPURenderStructs.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothInstanceHandle.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshAnalysis.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshDecimator.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshDecimator_Voronoi.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothSkinningWeightGenerator.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothWorld.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Engine\ClothAsset.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Components\ClothComponent.cpp" />
@@ -429,6 +439,7 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClCompile Include="Engine\Source\Runtime\Physics\CollisionManager.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Physics\PhysicsManager.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Renderer\BillboardRenderPass.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Renderer\ClothRenderPass.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Renderer\CompositingPass.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Renderer\DepthPrePass.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Renderer\EditorBillboardRenderPass.cpp" />
@@ -449,7 +460,7 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClCompile Include="Engine\Source\Runtime\Renderer\SlateRenderPass.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Renderer\OpaqueRenderPass.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Renderer\TileLightCullingPass.cpp" />
-    <ClCompile Include="Engine\Source\Runtime\Renderer\ClothRenderPass.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Renderer\ClothDebugRenderPass.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Renderer\TranslucentRenderPass.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Renderer\UpdateLightBufferPass.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Renderer\WorldBillboardRenderPass.cpp" />
@@ -475,7 +486,6 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClCompile Include="Engine\Source\ThirdParty\ImGui\include\ImGui\imgui_tables.cpp" />
     <ClCompile Include="Engine\Source\ThirdParty\ImGui\include\ImGui\imgui_widgets.cpp" />
     <ClCompile Include="Engine\Source\ThirdParty\tinyfiledialogs\include\tinyfiledialogs.cpp" />
-    <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\TestClothActor.cpp" />
     <None Include="Shaders\ParticleSpriteVertexShader.hlsl" />
     <None Include="Shaders\ParticleSpritePixelShader.hlsl" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Particles\Velocity\ParticleModuleVelocity.cpp" />
@@ -588,6 +598,9 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     </None>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Engine\Source\Runtime\Core\Serialization\ArchiveFileReader.h" />
+    <ClInclude Include="Engine\Source\Runtime\Core\Serialization\ArchiveFileWriter.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\ClothActor.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\BehellaGameMode.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\BehellaScreenUI.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\Camera.h" />
@@ -747,6 +760,7 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Components\SocketComponent.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Distribution\DistributionFloat.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Distribution\DistributionVector.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Engine\ClothMaterial.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Engine\StaticMesh.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Components\ParticleSubUVComponent.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Components\PrimitiveComponent.h" />
@@ -817,13 +831,18 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\PhysicsEngine\BodyInstance.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\PhysicsEngine\ConstraintInstance.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\PhysicsEngine\PhysicsAsset.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothAssetGenerator.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchedSolver.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchManager.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothBatchTypes.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothCollisionManager.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothGPURenderStructs.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothInstanceHandle.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshAnalysis.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshDecimator.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothSimulationData.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothGPUStructs.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothSkinningWeightGenerator.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothWorld.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Engine\ClothAsset.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Components\ClothComponent.h" />
@@ -854,6 +873,7 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClInclude Include="Engine\Source\Runtime\Physics\CollisionManager.h" />
     <ClInclude Include="Engine\Source\Runtime\Physics\PhysicsManager.h" />
     <ClInclude Include="Engine\Source\Runtime\Renderer\BillboardRenderPass.h" />
+    <ClInclude Include="Engine\Source\Runtime\Renderer\ClothRenderPass.h" />
     <ClInclude Include="Engine\Source\Runtime\Renderer\CompositingPass.h" />
     <ClInclude Include="Engine\Source\Runtime\Renderer\DepthPrePass.h" />
     <ClInclude Include="Engine\Source\Runtime\Renderer\EditorBillboardRenderPass.h" />
@@ -878,7 +898,7 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClInclude Include="Engine\Source\Runtime\Renderer\SlateRenderPass.h" />
     <ClInclude Include="Engine\Source\Runtime\Renderer\OpaqueRenderPass.h" />
     <ClInclude Include="Engine\Source\Runtime\Renderer\TileLightCullingPass.h" />
-    <ClInclude Include="Engine\Source\Runtime\Renderer\ClothRenderPass.h" />
+    <ClInclude Include="Engine\Source\Runtime\Renderer\ClothDebugRenderPass.h" />
     <ClInclude Include="Engine\Source\Runtime\Renderer\TranslucentRenderPass.h" />
     <ClInclude Include="Engine\Source\Runtime\Renderer\UpdateLightBufferPass.h" />
     <ClInclude Include="Engine\Source\Runtime\Renderer\WorldBillboardRenderPass.h" />
@@ -964,7 +984,6 @@ xcopy /y /d "$(SolutionDir)$(ProjectName)\Engine\Source\ThirdParty\FBX\lib\x64\$
     <ClInclude Include="LuaScripts\LuaUIBind.h" />
     <ClInclude Include="LuaScripts\LuaUIManager.h" />
     <ClInclude Include="SoundManager.h" />
-    <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\TestClothActor.h" />
     <None Include="Shaders\EditorShaderConstants.hlsli">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>

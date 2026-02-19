@@ -46,10 +46,6 @@ struct FClothVelocityGPU
  *
  * Supports both PBD and XPBD formulations:
  *
- * PBD (legacy):
- *   - Uses Stiffness directly to scale constraint violation
- *   - Simple but time-step and iteration-count dependent
- *
  * XPBD (recommended):
  *   - Uses Compliance for time-step independent stiffness
  *   - Uses Lambda to accumulate constraint force (warm starting)
@@ -150,9 +146,12 @@ struct FClothKinematicTargetGPU
  */
 struct FKinematicAttachmentGPU
 {
+    uint32 Type;
     uint32 ComponentIndex; // 4 bytes - Index into ComponentTransforms buffer
     uint32 ParticleIndex;  // 4 bytes - Target particle index in batch
     float Stiffness;       // 4 bytes - Attachment strength (0-1)
+
+    FVector TargetPosition;
     float AttachDistance;  // 4 bytes - Max distance for LRA (0 = hard kinematic)
 
     FVector LocalOffset; // 12 bytes - Local space offset from component
@@ -220,6 +219,42 @@ struct FClothEdgeCollisionConstraintGPU
                        // Total: 16 bytes
 };
 
+/**
+ * Self-collision grid parameters (GPU constant buffer)
+ * Must match shader constant buffer layout in ClothCommon.hlsli
+ * Used for spatial hash grid-based self-collision detection
+ */
+struct FClothSelfCollisionParams
+{
+	FVector GridMin;           // 12 bytes - AABB min
+	float CellSize;            // 4 bytes
+	
+	uint32 GridDimX;           // 4 bytes
+	uint32 GridDimY;           // 4 bytes
+	uint32 GridDimZ;           // 4 bytes
+	uint32 MaxParticlesPerCell; // 4 bytes
+	
+	float CollisionRadius;     // 4 bytes - Particle radius
+	float CollisionStiffness;  // 4 bytes - Separation strength
+	uint32 bEnableSelfCollision; // 4 bytes
+	uint32 Padding;            // 4 bytes
+	// Total: 48 bytes (aligned)
+};
+
+/**
+ * GPU bounds buffer for parallel reduction
+ * Stores min/max bounds computed from particle positions
+ * Used for dynamic AABB computation on GPU
+ */
+struct FClothBoundsGPU
+{
+	FVector BoundsMin;  // 12 bytes
+	float Padding0;     // 4 bytes
+	FVector BoundsMax;  // 12 bytes
+	float Padding1;     // 4 bytes
+	// Total: 32 bytes
+};
+
 // Static assertions to verify structure sizes (C++ only)
 static_assert(sizeof(FClothParticleGPU) == 16, "FClothParticleGPU must be 16 bytes");
 static_assert(sizeof(FClothVelocityGPU) == 16, "FClothVelocityGPU must be 16 bytes");
@@ -227,11 +262,13 @@ static_assert(sizeof(FClothDistanceConstraintGPU) == 32, "FClothConstraintGPU mu
 static_assert(sizeof(FClothBendConstraintGPU) == 32, "FClothBendConstraintGPU must be 32 bytes");
 static_assert(sizeof(FClothAreaConstraintGPU) == 48, "FClothAreaConstraintGPU must be 48 bytes");
 static_assert(sizeof(FClothKinematicTargetGPU) == 32, "FClothKinematicTargetGPU must be 32 bytes");
-static_assert(sizeof(FKinematicAttachmentGPU) == 32, "FKinematicAttachmentGPU must be 32 bytes");
+static_assert(sizeof(FKinematicAttachmentGPU) == 48, "FKinematicAttachmentGPU must be 32 bytes");
 static_assert(sizeof(FClothCollisionSphereGPU) == 16, "FClothCollisionSphereGPU must be 16 bytes");
 static_assert(sizeof(FClothCollisionCapsuleGPU) == 32, "FClothCollisionCapsuleGPU must be 32 bytes");
 static_assert(sizeof(FClothColliderGPU) == 64, "FClothColliderGPU must be 64 bytes");
 static_assert(sizeof(FClothEdgeCollisionConstraintGPU) == 16, "FClothEdgeCollisionConstraintGPU must be 16 bytes");
+static_assert(sizeof(FClothSelfCollisionParams) == 48, "FClothSelfCollisionParams must be 48 bytes");
+static_assert(sizeof(FClothBoundsGPU) == 32, "FClothBoundsGPU must be 32 bytes");
 
 // Verify alignment
 static_assert(alignof(FClothParticleGPU) == 4, "FClothParticleGPU alignment");

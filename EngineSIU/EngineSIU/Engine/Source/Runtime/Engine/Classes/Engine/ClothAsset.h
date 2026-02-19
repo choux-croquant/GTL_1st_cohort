@@ -10,6 +10,7 @@
 #include "UObject/ObjectMacros.h"
 #include "Cloth/ClothSimulationData.h"
 #include "Cloth/ClothSkinningWeightGenerator.h"
+#include "Cloth/ClothAssetGenerator.h"
 
 class UStaticMesh;
 
@@ -23,7 +24,7 @@ class UClothAsset : public UObject
 
 public:
     UClothAsset();
-    virtual ~UClothAsset() override;
+    ~UClothAsset();
 
     // Asset initialization
     void InitializeFromMesh(UStaticMesh *InSourceMesh);
@@ -55,6 +56,13 @@ public:
     // Serialization
     virtual void SerializeAsset(FArchive &Ar) override;
 
+    // Save/Load to binary file
+    bool SaveToFile(const FString& FilePath);
+    bool LoadFromFile(const FString& FilePath);
+    
+    // Get file size estimate
+    uint64 GetEstimatedFileSize() const;
+
     // Validation
     bool IsValid() const;
 
@@ -64,6 +72,7 @@ public:
 
     // Source mesh reference (optional)
     UStaticMesh *SourceMesh;
+    FString SourceMeshName;
 
     // Simulation mesh data (low-res, used for physics)
     TArray<FVector> RestPositions;  // Simulation mesh positions
@@ -71,12 +80,16 @@ public:
     TArray<float> InvMasses;
 
     // NEW: Render mesh data (high-res, used for rendering)
-    bool bUseRenderMesh = false;                        // Flag: use render/sim separation
+    bool bUseRenderMesh = true;                        // Flag: use render/sim separation
     TArray<FVector> RenderRestPositions;                // High-detail render positions
     TArray<FVector> RenderNormals;                      // Render mesh normals
     TArray<FVector2D> RenderUVs;                        // Render mesh UVs
     TArray<uint32> RenderIndices;                       // Render mesh indices
-    TArray<FClothSkinningWeight> SkinningWeights;       // Render → Sim mapping
+    TArray<FClothSkinningWeight> SkinningWeights;       // Render → Sim mapping (K-nearest neighbor, legacy)
+    
+    // NEW: Triangle-based skinning weights (fixes edge curling and UV distortion)
+    bool bUseTriangleSkinning = true;                   // Flag: use triangle-based skinning (recommended)
+    TArray<FClothSkinningWeightTriangle> TriangleSkinningWeights;  // Render → Sim triangle mapping with tangent-space offsets
     
     // Generation metadata
     float QEMReductionRatio = 0.1f;                     // How much was the sim mesh reduced

@@ -17,6 +17,8 @@
 #include "Serialization/MemoryArchive.h"
 #include "UObject/ObjectFactory.h"
 #include "Classes/PhysicsEngine/PhysicsAsset.h"
+#include "Classes/Engine/ClothMaterial.h"
+#include "Classes/Engine/ClothAsset.h"
 
 bool UAssetManager::IsInitialized()
 {
@@ -302,6 +304,14 @@ EAssetType UAssetManager::GetAssetType(const UObject* AssetObject) const
     else if (AssetObject->IsA<UPhysicsAsset>())
     {
         AssetType = EAssetType::PhysicsAsset;
+    }
+    else if (AssetObject->IsA<UClothMaterial>())
+    {
+        AssetType = EAssetType::ClothMaterial;
+    }
+    else if (AssetObject->IsA<UClothAsset>())
+    {
+        AssetType = EAssetType::ClothAsset;
     }
 
     return AssetType;
@@ -1084,4 +1094,106 @@ bool UAssetManager::SerializeAssetLoadResult(FArchive& Ar, FAssetLoadResult& Res
     }
 
     return true;
+}
+
+// ClothMaterial management
+UClothMaterial* UAssetManager::GetClothMaterial(const FName& Name) const
+{
+    return Cast<UClothMaterial>(GetAsset(EAssetType::ClothMaterial, Name));
+}
+
+void UAssetManager::AddClothMaterial(const FName& Key, UClothMaterial* Material)
+{
+    if (Material)
+    {
+        AssetMap[EAssetType::ClothMaterial].Add(Key, Material);
+        
+        FAssetInfo Info;
+        Info.AssetName = Key;
+        Info.AssetType = EAssetType::ClothMaterial;
+        Info.AssetObject = Material;
+        AddAssetInfo(Info);
+    }
+}
+
+bool UAssetManager::SaveClothMaterial(const FString& FilePath, UClothMaterial* Material)
+{
+    if (!Material)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("Cannot save null ClothMaterial"));
+        return false;
+    }
+    
+    return Material->SaveToFile(FilePath);
+}
+
+UClothMaterial* UAssetManager::LoadClothMaterial(const FString& FilePath)
+{
+    UClothMaterial* material = FObjectFactory::ConstructObject<UClothMaterial>(nullptr);
+    
+    if (material && material->LoadFromFile(FilePath))
+    {
+        // Add to asset registry
+        FName key = FName(*material->MaterialName);
+        AddClothMaterial(key, material);
+        
+        return material;
+    }
+    
+    return nullptr;
+}
+
+// ClothAsset management
+UClothAsset* UAssetManager::GetClothAsset(const FName& Name) const
+{
+    return Cast<UClothAsset>(GetAsset(EAssetType::ClothAsset, Name));
+}
+
+void UAssetManager::AddClothAsset(const FName& Key, UClothAsset* Asset)
+{
+    if (Asset)
+    {
+        AssetMap[EAssetType::ClothAsset].Add(Key, Asset);
+        
+        FAssetInfo Info;
+        Info.AssetName = Key;
+        Info.AssetType = EAssetType::ClothAsset;
+        Info.AssetObject = Asset;
+        AddAssetInfo(Info);
+    }
+}
+
+bool UAssetManager::SaveClothAsset(const FString& FilePath, UClothAsset* Asset)
+{
+    if (!Asset)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("Cannot save null ClothAsset"));
+        return false;
+    }
+    
+    return Asset->SaveToFile(FilePath);
+}
+
+UClothAsset* UAssetManager::LoadClothAsset(const FString& FilePath)
+{
+    UClothAsset* asset = FObjectFactory::ConstructObject<UClothAsset>(nullptr);
+    
+    if (asset && asset->LoadFromFile(FilePath))
+    {
+        // Extract filename for key
+        std::filesystem::path path = FilePath.ToWideString();
+        FString filename = path.filename().generic_string();
+        int32 dotIdx = filename.FindChar('.', ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+        if (dotIdx != INDEX_NONE)
+        {
+            filename = filename.Left(dotIdx);
+        }
+        
+        FName key = FName(*filename);
+        AddClothAsset(key, asset);
+        
+        return asset;
+    }
+    
+    return nullptr;
 }

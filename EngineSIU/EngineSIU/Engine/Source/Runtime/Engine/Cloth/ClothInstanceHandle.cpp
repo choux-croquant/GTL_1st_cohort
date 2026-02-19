@@ -19,8 +19,7 @@ void FClothInstanceHandle::SetParameters(const FClothInstanceParameters &Params)
 {
     Parameters = Params;
 
-    // Sync metadata offsets/counts from parameters
-    // These should match what was set during instance creation
+    // Sync metadata offsets/counts from parameters. These should match what was set during instance creation
     if (BatchManager)
     {
         FClothInstanceMetadata &batchMetadata = const_cast<FClothInstanceMetadata &>(BatchManager->GetInstanceMetadata(MetadataIndex));

@@ -1,5 +1,6 @@
 /**
- * Cloth Render Pass Implementation
+ * Cloth Production Render Pass Implementation
+ * Production-quality cloth rendering with GPU skinning and materials
  */
 
 #include "ClothRenderPass.h"
@@ -16,6 +17,8 @@
 #include "Cloth/ClothBatchManager.h"
 #include "Cloth/ClothBatchedSolver.h"
 #include "Cloth/ClothInstanceHandle.h"
+#include "Components/Material/Material.h"
+#include "Classes/Engine/ClothAsset.h"
 
 #define SAFE_RELEASE(p) \
     if (p)              \
@@ -27,21 +30,41 @@
 void FClothRenderPass::Initialize(FDXDBufferManager *InBufferManager, FGraphicsDevice *InGraphics, FDXDShaderManager *InShaderManager)
 {
     FRenderPassBase::Initialize(InBufferManager, InGraphics, InShaderManager);
-    TempIndexBuffer = nullptr;
+    
+    /*ProductionVertexShader = nullptr;
+    ProductionPixelShader = nullptr;
+    ProductionInputLayout = nullptr;
+    ClothInstanceConstantBuffer = nullptr;
+    ClothRasterizerState = nullptr;*/
+    LastBoundMaterial = nullptr;
 }
 
 void FClothRenderPass::PrepareRenderArr()
 {
     ClothComponents.Empty();
 
-    // Collect all cloth mesh components in the active world
+    // Collect all cloth mesh components in the active world that use production rendering
     for (const auto Iter : TObjectRange<UClothMeshComponent>())
     {
         if (Iter->GetWorld() == GEngine->ActiveWorld && Iter->IsVisible())
         {
-            ClothComponents.Add(Iter);
+            // Only add components that have render mesh data (production rendering)
+            if (Iter->GetClothAsset() && Iter->GetClothAsset()->bUseRenderMesh)
+            {
+                ClothComponents.Add(Iter);
+            }
         }
     }
+    
+    // Phase 6 Optimization: Sort by material to reduce state changes
+    //ClothComponents.Sort([](const UClothMeshComponent& A, const UClothMeshComponent& B)
+    //{
+    //    UMaterial* MatA = A.GetMaterial(0);
+    //    UMaterial* MatB = B.GetMaterial(0);
+    //    
+    //    // Sort by material pointer (groups same materials together)
+    //    return MatA < MatB;
+    //});
 }
 
 void FClothRenderPass::ClearRenderArr()
@@ -51,9 +74,11 @@ void FClothRenderPass::ClearRenderArr()
 
 void FClothRenderPass::Render(const std::shared_ptr<FEditorViewportClient> &Viewport)
 {
-    // if (ClothComponents.Num() == 0 || !ClothVertexShader || !ClothPixelShader) return;
     if (ClothComponents.Num() == 0)
         return;
+
+    /*if (!ProductionVertexShader || !ProductionPixelShader)
+        return;*/
 
     PrepareRender(Viewport);
 
@@ -73,13 +98,12 @@ void FClothRenderPass::Release()
 {
     FRenderPassBase::Release();
 
-    ClothVertexShader = nullptr;
-    ClothPixelShader = nullptr;
+    ProductionVertexShader = nullptr;
+    ProductionPixelShader = nullptr;
 
-    SAFE_RELEASE(ClothInputLayout);
-    SAFE_RELEASE(ClothMeshConstantBuffer);
+    SAFE_RELEASE(ProductionInputLayout);
+    SAFE_RELEASE(ClothInstanceConstantBuffer);
     SAFE_RELEASE(ClothRasterizerState);
-    SAFE_RELEASE(TempIndexBuffer);
 }
 
 void FClothRenderPass::PrepareRender(const std::shared_ptr<FEditorViewportClient> &Viewport)
@@ -92,24 +116,44 @@ void FClothRenderPass::PrepareRender(const std::shared_ptr<FEditorViewportClient
     Graphics->DeviceContext->OMSetRenderTargets(1, &RenderTargetRHI->RTV, DepthStencilRHI->DSV);
     Graphics->DeviceContext->OMSetDepthStencilState(Graphics->DepthStencilState_Default, 0);
 
-    // Set shaders
-    Graphics->DeviceContext->VSSetShader(ClothVertexShader, nullptr, 0);
-    Graphics->DeviceContext->PSSetShader(ClothPixelShader, nullptr, 0);
+    // CRITICAL FIX: Unbind all compute shader UAVs to prevent resource hazards
+    // Cloth simulation uses position/normal buffers as UAVs in compute shaders
+    // but needs them as SRVs in vertex shader for rendering
+    ID3D11UnorderedAccessView *nullUAVs[8] = {nullptr};
+    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 8, nullUAVs, nullptr);
+
+    // Set production shaders
+    Graphics->DeviceContext->VSSetShader(ProductionVertexShader, nullptr, 0);
+    Graphics->DeviceContext->PSSetShader(ProductionPixelShader, nullptr, 0);
 
     // Set input layout
-    Graphics->DeviceContext->IASetInputLayout(ClothInputLayout);
+    Graphics->DeviceContext->IASetInputLayout(ProductionInputLayout);
 
     // Set primitive topology
     Graphics->DeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    UINT stride = sizeof(float) * 2; // float2 UV
-    UINT offset = 0;
-    Graphics->DeviceContext->IASetVertexBuffers(0, 1, &ClothVertexInfo.VertexBuffer, &stride, &offset);
+    TArray<FString> PSBufferKeys = {
+        TEXT("FLightInfoBuffer"),
+        TEXT("FMaterialConstants"),
+        TEXT("FLitUnlitConstants"),
+        TEXT("FSubMeshConstants"),
+        TEXT("FTextureConstants"),
+        TEXT("FIsShadowConstants"),
+    };
+
+    BufferManager->BindConstantBuffers(PSBufferKeys, 0, EShaderStage::Pixel);
+
+    BufferManager->BindConstantBuffer(TEXT("FLightInfoBuffer"), 0, EShaderStage::Vertex);
+    BufferManager->BindConstantBuffer(TEXT("FMaterialConstants"), 1, EShaderStage::Vertex);
+    BufferManager->BindConstantBuffer(TEXT("FObjectConstantBuffer"), 12, EShaderStage::Vertex);
+
+    // NOTE: Vertex buffer is bound per-component in RenderClothComponent()
+    // Each cloth instance uses the unified render vertex buffer from its solver
 
     // Bind common constant buffers (Camera and Object buffers)
-    // These are required by the cloth shaders for view/projection transforms
     ID3D11Buffer *CameraConstantBuffer = BufferManager->GetConstantBuffer(TEXT("FCameraConstantBuffer"));
     ID3D11Buffer *ObjectConstantBuffer = BufferManager->GetConstantBuffer(TEXT("FObjectConstantBuffer"));
+    ID3D11Buffer *LightConstantBuffer = BufferManager->GetConstantBuffer(TEXT("FLightInfoBuffer"));
 
     if (CameraConstantBuffer)
     {
@@ -122,84 +166,94 @@ void FClothRenderPass::PrepareRender(const std::shared_ptr<FEditorViewportClient
         Graphics->DeviceContext->VSSetConstantBuffers(12, 1, &ObjectConstantBuffer);
         Graphics->DeviceContext->PSSetConstantBuffers(12, 1, &ObjectConstantBuffer);
     }
+    
+    if (LightConstantBuffer)
+    {
+        Graphics->DeviceContext->VSSetConstantBuffers(0, 1, &LightConstantBuffer);
+        Graphics->DeviceContext->PSSetConstantBuffers(0, 1, &LightConstantBuffer);
+    }
 
-    // Set rasterizer state (two-sided rendering for cloth)
+    // Set rasterizer state (two-sided solid rendering for cloth)
     if (ClothRasterizerState)
     {
         Graphics->DeviceContext->RSSetState(ClothRasterizerState);
     }
-    else
-    {
-        // Graphics->DeviceContext->RSSetState(Graphics->RasterizerSolidBack);
-        Graphics->DeviceContext->RSSetState(Graphics->RasterizerWireframeBack);
-    }
+    
+    // Reset material cache
+    LastBoundMaterial = nullptr;
 }
 
 void FClothRenderPass::CleanUpRender(const std::shared_ptr<FEditorViewportClient> &Viewport)
 {
-    // Unbind cloth-specific resources
-    ID3D11ShaderResourceView *nullSRVs[2] = {nullptr, nullptr};
-    Graphics->DeviceContext->VSSetShaderResources(9, 2, nullSRVs);
-
-    // Reset rasterizer state
-    // Graphics->DeviceContext->RSSetState(nullptr);
+    // Unbind cloth simulation buffers (t14-t17)
+    ID3D11ShaderResourceView *nullSimSRVs[4] = {nullptr};
+    Graphics->DeviceContext->VSSetShaderResources(14, 4, nullSimSRVs);
+    
+    // Unbind material textures (t0-t8)
+    ID3D11ShaderResourceView *nullMatSRVs[9] = {nullptr};
+    Graphics->DeviceContext->PSSetShaderResources(0, 9, nullMatSRVs);
 }
 
 void FClothRenderPass::CreateResource()
 {
-    const int32 MaxClothVerts = 65536;
-    TArray<FVector2D> DummyUVs;
-    DummyUVs.SetNum(MaxClothVerts);
-    for (int32 i = 0; i < MaxClothVerts; ++i)
-    {
-        DummyUVs[i] = FVector2D(0.0f, 0.0f);
-    }
+    // NOTE: Vertex buffer is now the unified render vertex buffer from ClothBatchedSolver
+    // No dummy buffer needed - actual render mesh data is uploaded to solver's unified buffer
+    // The unified buffer will be bound per-component in RenderClothComponent()
 
-    // BufferManager는 FRenderPassBase::Initialize에서 이미 세팅되어 있음
-    BufferManager->CreateVertexBuffer(TEXT("ClothDummyVB"), DummyUVs, ClothVertexInfo);
-
-    // Create input layout for cloth (vertex ID + UV)
+    // Create input layout for production cloth rendering
     D3D11_INPUT_ELEMENT_DESC layout[] = {
-        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0}};
+        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0}
+    };
 
-    // Load cloth vertex shader with input layout
-    HRESULT hr = ShaderManager->AddVertexShaderAndInputLayout(L"ClothVertexShader", L"Shaders/ClothVertexShader.hlsl", "main", layout, ARRAYSIZE(layout));
+    // Load production vertex shader with input layout
+    HRESULT hr = ShaderManager->AddVertexShaderAndInputLayout(
+        L"ClothProductionVertexShader",
+        L"Shaders/Cloth/ClothProductionVertexShader.hlsl",
+        "main",
+        layout,
+        ARRAYSIZE(layout));
+    
     if (FAILED(hr))
     {
-        UE_LOG(ELogLevel::Error, TEXT("Failed to compile Cloth Vertex Shader"));
+        UE_LOG(ELogLevel::Error, TEXT("Failed to compile Cloth Production Vertex Shader"));
         return;
     }
 
-    // Load cloth pixel shader
-    hr = ShaderManager->AddPixelShader(L"ClothPixelShader", L"Shaders/ClothPixelShader.hlsl", "mainPS");
+    // Load production pixel shader
+    hr = ShaderManager->AddPixelShader(
+        L"ClothProductionPixelShader",
+        L"Shaders/Cloth/ClothProductionPixelShader.hlsl",
+        "main");
+    
     if (FAILED(hr))
     {
-        UE_LOG(ELogLevel::Error, TEXT("Failed to compile Cloth Pixel Shader"));
+        UE_LOG(ELogLevel::Error, TEXT("Failed to compile Cloth Production Pixel Shader"));
         return;
     }
 
-    ClothVertexShader = ShaderManager->GetVertexShaderByKey(L"ClothVertexShader");
-    ClothInputLayout = ShaderManager->GetInputLayoutByKey(L"ClothVertexShader");
-    ClothPixelShader = ShaderManager->GetPixelShaderByKey(L"ClothPixelShader");
+    ProductionVertexShader = ShaderManager->GetVertexShaderByKey(L"ClothProductionVertexShader");
+    ProductionInputLayout = ShaderManager->GetInputLayoutByKey(L"ClothProductionVertexShader");
+    ProductionPixelShader = ShaderManager->GetPixelShaderByKey(L"ClothProductionPixelShader");
 
-    // Create constant buffer for cloth mesh
+    // Create constant buffer for per-instance cloth data
     D3D11_BUFFER_DESC cbDesc = {};
     cbDesc.Usage = D3D11_USAGE_DYNAMIC;
     cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-    cbDesc.ByteWidth = (sizeof(FClothMeshConstants) + 0xf) & 0xfffffff0;
+    cbDesc.ByteWidth = (sizeof(FClothInstanceConstants) + 0xf) & 0xfffffff0; // 16-byte aligned
 
-    hr = Graphics->Device->CreateBuffer(&cbDesc, nullptr, &ClothMeshConstantBuffer);
+    hr = Graphics->Device->CreateBuffer(&cbDesc, nullptr, &ClothInstanceConstantBuffer);
     if (FAILED(hr))
     {
-        UE_LOG(ELogLevel::Error, TEXT("Failed to create Cloth Mesh Constant Buffer"));
+        UE_LOG(ELogLevel::Error, TEXT("Failed to create Cloth Instance Constant Buffer"));
     }
 
-    // Create rasterizer state for two-sided rendering
+    // Create rasterizer state for two-sided solid rendering
     D3D11_RASTERIZER_DESC rastDesc = {};
-    // rastDesc.FillMode = D3D11_FILL_SOLID;
-    rastDesc.FillMode = D3D11_FILL_WIREFRAME;
-    rastDesc.CullMode = D3D11_CULL_NONE; // Two-sided rendering
+    rastDesc.FillMode = D3D11_FILL_SOLID;  // Solid fill for production
+    rastDesc.CullMode = D3D11_CULL_NONE;   // Two-sided rendering
     rastDesc.FrontCounterClockwise = FALSE;
     rastDesc.DepthClipEnable = TRUE;
     rastDesc.MultisampleEnable = FALSE;
@@ -208,7 +262,7 @@ void FClothRenderPass::CreateResource()
     hr = Graphics->Device->CreateRasterizerState(&rastDesc, &ClothRasterizerState);
     if (FAILED(hr))
     {
-        UE_LOG(ELogLevel::Error, TEXT("Failed to create Cloth Rasterizer State"));
+        UE_LOG(ELogLevel::Error, TEXT("Failed to create Cloth Production Rasterizer State"));
     }
 }
 
@@ -221,140 +275,92 @@ void FClothRenderPass::RenderClothComponent(UClothMeshComponent *ClothComponent,
     FClothRenderData renderData;
     ClothComponent->GetRenderData(renderData);
 
-    // DIAGNOSTIC: Log render data for each component
-    static int renderCallCount = 0;
-    if (renderCallCount++ < 10) // Log first 10 calls
-    {
-        UE_LOG(ELogLevel::Display, TEXT("ClothRenderPass: Component render - ParticleOffset=%d, NumVertices=%d, IndexOffset=%d, NumTriangles=%d, BatchedMode=%d"),
-               renderData.ParticleOffset, renderData.NumVertices, renderData.IndexOffset, renderData.NumTriangles, renderData.bIsBatchedMode);
-    }
+    // Validate production rendering data
+    if (!renderData.bUseProductionRendering)
+        return; // Fall back to debug rendering
 
-    // Validate required data
-    if (!renderData.PositionBufferSRV || !renderData.NormalBufferSRV)
+    if (!renderData.UnifiedRenderVertexBuffer || !renderData.UnifiedRenderIndexBuffer)
         return;
-    if (renderData.NumTriangles == 0)
+    
+    // Require at least one skinning weight buffer (triangle or legacy)
+    if (!renderData.TriangleSkinningWeightBufferSRV && !renderData.SkinningWeightBufferSRV)
         return;
 
-    // Bind simulation buffers as SRVs (shared for both legacy and batched)
-    ID3D11ShaderResourceView *clothSRVs[] = {
-        renderData.PositionBufferSRV,
-        renderData.NormalBufferSRV};
-    Graphics->DeviceContext->VSSetShaderResources(9, 2, clothSRVs);
+    if (renderData.RenderIndexCount == 0)
+        return;
 
-    // Update cloth mesh constant buffer with offsets for batched mode
-    UpdateClothMeshConstantBuffer(renderData.WorldTransform, renderData.NumVertices,
-                                  renderData.ParticleOffset, renderData.IndexOffset);
-    Graphics->DeviceContext->VSSetConstantBuffers(10, 1, &ClothMeshConstantBuffer);
+    // CRITICAL FIX: Bind actual unified render vertex buffer (contains rest positions, normals, UVs)
+    UINT stride = sizeof(FClothRenderVertex);  // 32 bytes: position(12) + normal(12) + UV(8)
+    UINT offset = 0;  // Always 0 - vertex offset handled via baseVertexLocation in DrawIndexed
+    Graphics->DeviceContext->IASetVertexBuffers(0, 1, &renderData.UnifiedRenderVertexBuffer, &stride, &offset);
 
-    // Handle index buffer based on mode
-    if (renderData.bIsBatchedMode)
+    // CRITICAL FIX: Bind simulation buffers to slots that don't conflict with light buffers
+    // Light buffers use t10-t13, so use t14-t17 for cloth simulation data
+    ID3D11ShaderResourceView *simSRVs[] = {
+        renderData.PositionBufferSRV,                   // t14: Simulation positions
+        renderData.NormalBufferSRV,                     // t15: Simulation normals
+        renderData.SkinningWeightBufferSRV,             // t16: Legacy K-nearest neighbor skinning weights
+        renderData.TriangleSkinningWeightBufferSRV      // t17: NEW: Triangle-based skinning weights
+    };
+    Graphics->DeviceContext->VSSetShaderResources(14, 4, simSRVs);
+
+    // Update per-instance constant buffer
+    FClothInstanceConstants constants;
+    constants.SetWorldMatrix(renderData.WorldTransform);
+    constants.ClothRenderVertexOffset = renderData.RenderVertexOffset;
+    constants.ClothRenderIndexOffset = renderData.RenderIndexOffset;
+    constants.ClothSimParticleOffset = renderData.ParticleOffset;
+    constants.ClothNumRenderVertices = renderData.RenderVertexCount;
+    constants.ClothNumSimParticles = renderData.NumVertices;
+
+    UpdateClothInstanceConstantBuffer(constants);
+    Graphics->DeviceContext->VSSetConstantBuffers(10, 1, &ClothInstanceConstantBuffer);
+
+    // Bind material
+    UMaterial *Material = ClothComponent->GetMaterial(0);
+    if (Material)
     {
-        // Batched mode: Use unified index buffer with DrawIndexed at offset
-        if (!renderData.UnifiedIndexBuffer)
-            return;
-
-        // Validate rendering parameters to prevent D3D11 errors
-        uint32 indexCount = renderData.NumTriangles * 3;
-        uint32 startIndexLocation = renderData.IndexOffset; // Already in index units (not triangles)
-        int32 baseVertexLocation = 0;                       // Vertex offset handled in shader via ClothParticleOffset
-
-        // Calculate the last index that will be accessed
-        uint32 lastIndexAccessed = startIndexLocation + indexCount;
-
-        // Get buffer description to verify size
-        D3D11_BUFFER_DESC bufferDesc;
-        renderData.UnifiedIndexBuffer->GetDesc(&bufferDesc);
-        uint32 bufferIndexCapacity = bufferDesc.ByteWidth / sizeof(uint32);
-
-        // Validate bounds
-        if (lastIndexAccessed > bufferIndexCapacity)
-        {
-            UE_LOG(ELogLevel::Error, TEXT("ClothRenderPass: Index buffer out of bounds! StartIndex: %u, Count: %u, Last: %u, Capacity: %u"),
-                   startIndexLocation, indexCount, lastIndexAccessed, bufferIndexCapacity);
-            return; // Skip rendering to avoid D3D11 error
-        }
-
-        if (indexCount == 0 || renderData.NumTriangles == 0)
-        {
-            return; // Nothing to render
-        }
-
-        // Bind unified index buffer directly
-        Graphics->DeviceContext->IASetIndexBuffer(renderData.UnifiedIndexBuffer, DXGI_FORMAT_R32_UINT, 0);
-
-        // Draw with offset and count
-        // StartIndexLocation is in indices (not bytes)
-        // BaseVertexLocation is 0 because we handle vertex offset in shader via ClothParticleOffset
-        Graphics->DeviceContext->DrawIndexed(indexCount, startIndexLocation, baseVertexLocation);
+        BindMaterial(Material);
     }
-    else
-    {
-        // Legacy mode: Create temp index buffer from per-instance indices
-        if (!renderData.Indices || renderData.Indices->Num() == 0)
-            return;
 
-        SAFE_RELEASE(TempIndexBuffer);
-        TempIndexBuffer = CreateIndexBufferFromIndices(*renderData.Indices);
-        if (TempIndexBuffer)
-        {
-            Graphics->DeviceContext->IASetIndexBuffer(TempIndexBuffer, DXGI_FORMAT_R32_UINT, 0);
-        }
-        else
-        {
-            return;
-        }
+    // Bind render index buffer
+    Graphics->DeviceContext->IASetIndexBuffer(renderData.UnifiedRenderIndexBuffer, DXGI_FORMAT_R32_UINT, 0);
 
-        // Set material (if available)
-        // TODO: Bind material textures and constants
+    // Draw the render mesh
+    // CRITICAL FIX: Use baseVertexLocation to offset into unified vertex buffer
+    uint32 indexCount = renderData.RenderIndexCount;
+    uint32 startIndexLocation = renderData.RenderIndexOffset;
+    int32 baseVertexLocation = renderData.RenderVertexOffset;  // Vertex offset for this instance
 
-        // Draw cloth mesh using indexed rendering
-        Graphics->DeviceContext->DrawIndexed(renderData.NumTriangles * 3, 0, 0);
-    }
+    Graphics->DeviceContext->DrawIndexed(indexCount, startIndexLocation, baseVertexLocation);
 }
 
-void FClothRenderPass::UpdateClothMeshConstantBuffer(const FMatrix &WorldTransform, uint32 NumVertices,
-                                                     uint32 ParticleOffset, uint32 IndexOffset)
+void FClothRenderPass::UpdateClothInstanceConstantBuffer(const FClothInstanceConstants &Constants)
 {
-    if (!ClothMeshConstantBuffer)
+    if (!ClothInstanceConstantBuffer)
         return;
-
-    FClothMeshConstants constants;
-    constants.ClothWorldMatrix = WorldTransform;
-    constants.ClothNumVertices = NumVertices;
-    constants.ClothParticleOffset = ParticleOffset;
-    constants.ClothIndexOffset = IndexOffset;
-    constants.ClothPadding = 0;
 
     D3D11_MAPPED_SUBRESOURCE msr;
-    HRESULT hr = Graphics->DeviceContext->Map(ClothMeshConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &msr);
+    HRESULT hr = Graphics->DeviceContext->Map(ClothInstanceConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &msr);
     if (SUCCEEDED(hr))
     {
-        memcpy(msr.pData, &constants, sizeof(FClothMeshConstants));
-        Graphics->DeviceContext->Unmap(ClothMeshConstantBuffer, 0);
+        memcpy(msr.pData, &Constants, sizeof(FClothInstanceConstants));
+        Graphics->DeviceContext->Unmap(ClothInstanceConstantBuffer, 0);
     }
 }
 
-ID3D11Buffer *FClothRenderPass::CreateIndexBufferFromIndices(const TArray<uint32> &Indices)
+void FClothRenderPass::BindMaterial(UMaterial *Material)
 {
-    if (Indices.Num() == 0 || !Graphics || !Graphics->Device)
-        return nullptr;
+    if (!Material)
+        return;
 
-    ID3D11Buffer *indexBuffer = nullptr;
+    // Optimization: Skip rebinding if same material
+    if (Material == LastBoundMaterial)
+        return;
 
-    D3D11_BUFFER_DESC ibDesc = {};
-    ibDesc.Usage = D3D11_USAGE_DEFAULT;
-    ibDesc.ByteWidth = static_cast<UINT>(sizeof(uint32) * Indices.Num());
-    ibDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-    ibDesc.CPUAccessFlags = 0;
+    LastBoundMaterial = Material;
 
-    D3D11_SUBRESOURCE_DATA ibData = {};
-    ibData.pSysMem = Indices.GetData();
-
-    HRESULT hr = Graphics->Device->CreateBuffer(&ibDesc, &ibData, &indexBuffer);
-    if (FAILED(hr))
-    {
-        return nullptr;
-    }
-
-    return indexBuffer;
+    // Use MaterialUtils to update material (matches engine pattern)
+    FMaterialInfo materialInfo = Material->GetMaterialInfo();
+    MaterialUtils::UpdateMaterial(BufferManager, Graphics, materialInfo);
 }

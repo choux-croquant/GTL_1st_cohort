@@ -5,6 +5,9 @@
 
 #include "ClothBatchedSolver.h"
 #include "ClothCollisionManager.h"
+#include "ClothGPURenderStructs.h"
+#include "ClothSkinningWeightGenerator.h"
+#include "ClothMeshAnalysis.h"
 #include "Windows/D3D11RHI/GraphicDevice.h"
 #include "Windows/D3D11RHI/DXDBufferManager.h"
 #include "Windows/D3D11RHI/DXDShaderManager.h"
@@ -20,55 +23,93 @@
     }
 
 FClothBatchedSolver::FClothBatchedSolver()
-    : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), IntegrateCS(nullptr), ConstraintSolverCS(nullptr), BendConstraintSolverCS(nullptr), AreaConstraintSolverCS(nullptr), ApplyDeltasCS(nullptr), ApplyKinematicTargetsCS(nullptr), ComputeKinematicTargetsCS(nullptr), FinalizeCS(nullptr), ClearNormalsCS(nullptr), UpdateNormalsCS(nullptr), NormalizeNormalsCS(nullptr), CollisionSolverCS(nullptr), EdgeCollisionSolverCS(nullptr), CollisionManager(nullptr), BatchSimConstantBuffer(nullptr), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), AllocatedAreaConstraintCapacity(0), AllocatedEdgeCollisionCapacity(0), UsedParticleCount(0), UsedConstraintCount(0), UsedBendConstraintCount(0), UsedKinematicTargetCount(0), UsedTriangleCount(0), UsedInstanceCount(0), UsedAttachmentCount(0), UsedAreaConstraintCount(0), UsedEdgeCollisionCount(0), bInitialized(false), AccumulatedTime(0.0f)
+	: Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), IntegrateCS(nullptr), ConstraintSolverCS(nullptr), BendConstraintSolverCS(nullptr), AreaConstraintSolverCS(nullptr), ApplyDeltasCS(nullptr), ComputeKinematicTargetsCS(nullptr), FinalizeCS(nullptr), UpdateNormalsCS(nullptr), ComputeTriangleNormalsCS(nullptr), NormalizeVertexNormalsCS(nullptr), CollisionSolverCS(nullptr), EdgeCollisionSolverCS(nullptr), CollisionManager(nullptr), BatchSimConstantBuffer(nullptr), AllocatedParticleCapacity(0), AllocatedConstraintCapacity(0), AllocatedBendConstraintCapacity(0), AllocatedKinematicTargetCapacity(0), AllocatedTriangleCapacity(0), AllocatedInstanceCapacity(0), AllocatedAreaConstraintCapacity(0), AllocatedEdgeCollisionCapacity(0), AllocatedRenderVertexCapacity(0), AllocatedRenderIndexCapacity(0), UsedParticleCount(0), UsedConstraintCount(0), UsedBendConstraintCount(0), UsedTriangleCount(0), UsedInstanceCount(0), UsedAttachmentCount(0), UsedAreaConstraintCount(0), UsedEdgeCollisionCount(0), UsedRenderVertexCount(0), UsedRenderIndexCount(0), bInitialized(false), AccumulatedTime(0.0f)
 {
-    // Initialize all buffer pointers to nullptr (Velvet pattern - single working buffer)
-    UnifiedPositionBuffer = nullptr;
-    UnifiedPositionUAV = nullptr;
-    UnifiedPositionSRV = nullptr;
+	// Initialize all buffer pointers to nullptr (Velvet pattern - single working buffer)
+	UnifiedPositionBuffer = nullptr;
+	UnifiedPositionUAV = nullptr;
+	UnifiedPositionSRV = nullptr;
 
-    UnifiedPredictedBuffer = nullptr;
-    UnifiedPredictedUAV = nullptr;
-    UnifiedPredictedSRV = nullptr;
+	UnifiedPredictedBuffer = nullptr;
+	UnifiedPredictedUAV = nullptr;
+	UnifiedPredictedSRV = nullptr;
 
-    UnifiedVelocityBuffer = nullptr;
-    UnifiedInvMassBuffer = nullptr;
-    UnifiedConstraintBuffer = nullptr;
-    UnifiedBendConstraintBuffer = nullptr;
-    UnifiedAreaConstraintBuffer = nullptr;    // NEW: Area constraint buffer
-    UnifiedEdgeCollisionBuffer = nullptr;     // NEW: Edge collision buffer
-    UnifiedKinematicTargetBuffer = nullptr;
-    UnifiedIndexBuffer = nullptr;
-    UnifiedNormalBuffer = nullptr;
-    UnifiedPositionDeltaBuffer = nullptr;
-    UnifiedPositionWeightBuffer = nullptr;
+	UnifiedVelocityBuffer = nullptr;
+	UnifiedInvMassBuffer = nullptr;
+	UnifiedConstraintBuffer = nullptr;
+	UnifiedBendConstraintBuffer = nullptr;
+	UnifiedAreaConstraintBuffer = nullptr;    // NEW: Area constraint buffer
+	UnifiedEdgeCollisionBuffer = nullptr;     // NEW: Edge collision buffer
+	UnifiedKinematicTargetBuffer = nullptr;
+	UnifiedIndexBuffer = nullptr;
+	UnifiedNormalBuffer = nullptr;
+	UnifiedNormalAccumulationBuffer = nullptr; // NEW: Integer accumulation buffer
+	UnifiedPositionDeltaBuffer = nullptr;
+	UnifiedPositionWeightBuffer = nullptr;
 
-    UnifiedVelocityUAV = nullptr;
-    UnifiedNormalUAV = nullptr;
-    UnifiedPositionDeltaUAV = nullptr;
-    UnifiedPositionWeightUAV = nullptr;
-    UnifiedConstraintUAV = nullptr;     // NEW: XPBD lambda write-back (distance constraints)
-    UnifiedBendConstraintUAV = nullptr; // NEW: XPBD lambda write-back (bend constraints)
-    UnifiedAreaConstraintUAV = nullptr; // NEW: XPBD lambda write-back (area constraints)
+	UnifiedVelocityUAV = nullptr;
+	UnifiedNormalUAV = nullptr;
+	UnifiedNormalAccumulationUAV = nullptr; // NEW: Integer accumulation UAV
+	UnifiedPositionDeltaUAV = nullptr;
+	UnifiedPositionWeightUAV = nullptr;
+	UnifiedConstraintUAV = nullptr;     // NEW: XPBD lambda write-back (distance constraints)
+	UnifiedBendConstraintUAV = nullptr; // NEW: XPBD lambda write-back (bend constraints)
+	UnifiedAreaConstraintUAV = nullptr; // NEW: XPBD lambda write-back (area constraints)
 
-    UnifiedVelocitySRV = nullptr;
-    UnifiedInvMassSRV = nullptr;
-    UnifiedConstraintSRV = nullptr;
-    UnifiedBendConstraintSRV = nullptr;
-    UnifiedAreaConstraintSRV = nullptr;      // NEW: Area constraint SRV
-    UnifiedEdgeCollisionSRV = nullptr;       // NEW: Edge collision SRV
-    UnifiedKinematicTargetSRV = nullptr;
-    UnifiedIndexSRV = nullptr;
-    UnifiedNormalSRV = nullptr;
+	UnifiedVelocitySRV = nullptr;
+	UnifiedInvMassSRV = nullptr;
+	UnifiedConstraintSRV = nullptr;
+	UnifiedBendConstraintSRV = nullptr;
+	UnifiedAreaConstraintSRV = nullptr;      // NEW: Area constraint SRV
+	UnifiedEdgeCollisionSRV = nullptr;       // NEW: Edge collision SRV
+	UnifiedKinematicTargetSRV = nullptr;
+	UnifiedIndexSRV = nullptr;
+	UnifiedNormalSRV = nullptr;
 
-    InstanceParameterBuffer = nullptr;
-    InstanceParameterSRV = nullptr;
+	InstanceParameterBuffer = nullptr;
+	InstanceParameterSRV = nullptr;
 
-    // NEW: GPU-based kinematic target buffers (P1 optimization)
-    AttachmentDataBuffer = nullptr;
-    AttachmentDataSRV = nullptr;
-    ComponentTransformBuffer = nullptr;
-    ComponentTransformSRV = nullptr;
+	// NEW: GPU-based kinematic target buffers (P1 optimization)
+	AttachmentDataBuffer = nullptr;
+	AttachmentDataSRV = nullptr;
+	ComponentTransformBuffer = nullptr;
+	ComponentTransformSRV = nullptr;
+	
+	// NEW: Production rendering buffers
+	UnifiedRenderVertexBuffer = nullptr;
+	UnifiedRenderIndexBuffer = nullptr;
+	UnifiedSkinningWeightBuffer = nullptr;
+	UnifiedTriangleSkinningWeightBuffer = nullptr;  // NEW: Triangle-based skinning weights
+	RenderNormalsBuffer = nullptr;
+	RenderPositionsBuffer = nullptr;
+	
+	UnifiedRenderVertexSRV = nullptr;
+	UnifiedRenderIndexSRV = nullptr;
+	SkinningWeightsSRV = nullptr;
+	TriangleSkinningWeightsSRV = nullptr;  // NEW: Triangle-based skinning weights SRV
+	RenderNormalsUAV = nullptr;
+	RenderNormalsSRV = nullptr;
+	RenderPositionsSRV = nullptr;
+	
+	// Self-collision buffers
+	SelfCollisionCellCountersBuffer = nullptr;
+	SelfCollisionCellDataBuffer = nullptr;
+	SelfCollisionParamsBuffer = nullptr;
+	SelfCollisionCellCountersUAV = nullptr;
+	SelfCollisionCellDataUAV = nullptr;
+	SelfCollisionCellCountersSRV = nullptr;
+	SelfCollisionCellDataSRV = nullptr;
+	SelfCollisionBuildGridCS = nullptr;
+	SelfCollisionSolverCS = nullptr;
+	AllocatedSelfCollisionCells = 0;
+	bSelfCollisionInitialized = false;
+	
+	// NEW: GPU bounds computation buffers
+	BoundsComputeBuffer = nullptr;
+	BoundsReadbackBuffer = nullptr;
+	BoundsComputeUAV = nullptr;
+	ComputeBoundsPass1CS = nullptr;
+	ComputeBoundsPass2CS = nullptr;
 }
 
 FClothBatchedSolver::~FClothBatchedSolver()
@@ -116,14 +157,15 @@ void FClothBatchedSolver::Release()
     BendConstraintSolverCS = nullptr;
     AreaConstraintSolverCS = nullptr;    // NEW: Area constraint solver
     ApplyDeltasCS = nullptr;
-    ApplyKinematicTargetsCS = nullptr;
     ComputeKinematicTargetsCS = nullptr; // NEW: P1 optimization
     FinalizeCS = nullptr;                // NEW
-    ClearNormalsCS = nullptr;
-    UpdateNormalsCS = nullptr;
-    NormalizeNormalsCS = nullptr;
+    UpdateNormalsCS = nullptr;           // Legacy
+    ComputeTriangleNormalsCS = nullptr;  // NEW: Pass 1
+    NormalizeVertexNormalsCS = nullptr;  // NEW: Pass 2
     CollisionSolverCS = nullptr;
     EdgeCollisionSolverCS = nullptr;     // NEW: Edge collision solver
+    SelfCollisionBuildGridCS = nullptr;  // NEW: Self-collision shaders
+    SelfCollisionSolverCS = nullptr;
 
     // Do NOT release collision manager - it's shared and owned by ClothWorld
     CollisionManager = nullptr;
@@ -175,6 +217,9 @@ void FClothBatchedSolver::Release()
     SAFE_RELEASE(UnifiedNormalUAV);
     SAFE_RELEASE(UnifiedNormalSRV);
 
+    SAFE_RELEASE(UnifiedNormalAccumulationBuffer);  // NEW: Integer accumulation buffer
+    SAFE_RELEASE(UnifiedNormalAccumulationUAV);     // NEW: Integer accumulation UAV
+
     SAFE_RELEASE(UnifiedPositionDeltaBuffer);
     SAFE_RELEASE(UnifiedPositionDeltaUAV);
 
@@ -185,8 +230,39 @@ void FClothBatchedSolver::Release()
     SAFE_RELEASE(InstanceParameterSRV);
 
     SAFE_RELEASE(BatchSimConstantBuffer);
-
+    
+    // NEW: Release production rendering buffers
+    SAFE_RELEASE(UnifiedRenderVertexBuffer);
+    SAFE_RELEASE(UnifiedRenderIndexBuffer);
+    SAFE_RELEASE(UnifiedSkinningWeightBuffer);
+    SAFE_RELEASE(UnifiedTriangleSkinningWeightBuffer);  // NEW: Triangle-based skinning weights
+    SAFE_RELEASE(RenderNormalsBuffer);
+    SAFE_RELEASE(RenderPositionsBuffer);
+    
+    SAFE_RELEASE(UnifiedRenderVertexSRV);
+    SAFE_RELEASE(UnifiedRenderIndexSRV);
+    SAFE_RELEASE(SkinningWeightsSRV);
+    SAFE_RELEASE(TriangleSkinningWeightsSRV);  // NEW: Triangle-based skinning weights SRV
+    SAFE_RELEASE(RenderNormalsUAV);
+    SAFE_RELEASE(RenderNormalsSRV);
+    SAFE_RELEASE(RenderPositionsSRV);
+    
+    // Release self-collision buffers
+    SAFE_RELEASE(SelfCollisionCellCountersBuffer);
+    SAFE_RELEASE(SelfCollisionCellDataBuffer);
+    SAFE_RELEASE(SelfCollisionParamsBuffer);
+    SAFE_RELEASE(SelfCollisionCellCountersUAV);
+    SAFE_RELEASE(SelfCollisionCellDataUAV);
+    SAFE_RELEASE(SelfCollisionCellCountersSRV);
+    SAFE_RELEASE(SelfCollisionCellDataSRV);
+    
+    // NEW: Release GPU bounds computation buffers
+    SAFE_RELEASE(BoundsComputeBuffer);
+    SAFE_RELEASE(BoundsReadbackBuffer);
+    SAFE_RELEASE(BoundsComputeUAV);
+   
     bInitialized = false;
+    bSelfCollisionInitialized = false;
 
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Released resources"));
 }
@@ -572,11 +648,11 @@ bool FClothBatchedSolver::AllocateBuffers(uint32 MaxParticles, uint32 MaxConstra
         }
     }
 
-    // Create normal buffer
+    // Create normal buffer (final float3 normals)
     bufferDesc.Usage = D3D11_USAGE_DEFAULT;
-    bufferDesc.ByteWidth = sizeof(FVector) * MaxParticles;
+    bufferDesc.ByteWidth = sizeof(float) * MaxParticles * 3;
     bufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
-    bufferDesc.StructureByteStride = sizeof(FVector);
+    bufferDesc.StructureByteStride = sizeof(float) * 3;
     bufferDesc.CPUAccessFlags = 0;
     bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
 
@@ -602,6 +678,31 @@ bool FClothBatchedSolver::AllocateBuffers(uint32 MaxParticles, uint32 MaxConstra
         UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create normal SRV"));
         return false;
     }
+
+    // Create integer accumulation buffer for atomic normal updates (int3 format)
+    bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+    bufferDesc.ByteWidth = sizeof(int32) * MaxParticles * 3;
+    bufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
+    bufferDesc.StructureByteStride = sizeof(int32) * 3;
+    bufferDesc.CPUAccessFlags = 0;
+    bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+
+    hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &UnifiedNormalAccumulationBuffer);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create normal accumulation buffer"));
+        return false;
+    }
+
+    uavDesc.Buffer.NumElements = MaxParticles;
+    hr = Graphics->Device->CreateUnorderedAccessView(UnifiedNormalAccumulationBuffer, &uavDesc, &UnifiedNormalAccumulationUAV);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create normal accumulation UAV"));
+        return false;
+    }
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Created normal buffers (float3 + int3 accumulation) for %u particles"), MaxParticles);
 
     // Create position delta buffer (for constraint solving)
     bufferDesc.ByteWidth = sizeof(int32) * 3 * MaxParticles;
@@ -678,6 +779,27 @@ bool FClothBatchedSolver::AllocateBuffers(uint32 MaxParticles, uint32 MaxConstra
         return false;
     }
 
+    // NEW: Allocate production rendering buffers (optional - only if render mesh capacity specified)
+    // These will be allocated on-demand when first render mesh is added
+    AllocatedRenderVertexCapacity = 0;
+    AllocatedRenderIndexCapacity = 0;
+    UsedRenderVertexCount = 0;
+    UsedRenderIndexCount = 0;
+
+    // Allocate self-collision buffers if enabled
+    if (!AllocateSelfCollisionBuffers())
+    {
+    	UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to allocate self-collision buffers, disabling self-collision"));
+    	Config.bEnableSelfCollision = false;
+    }
+    
+    // NEW: Allocate GPU bounds computation buffers
+    if (!AllocateBoundsComputeBuffers())
+    {
+    	UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to allocate bounds compute buffers, dynamic bounds disabled"));
+    	Config.bEnableDynamicBoundsUpdate = false;
+    }
+   
     // Mark as fully initialized now that both shaders and buffers are ready
     bInitialized = true;
 
@@ -687,59 +809,318 @@ bool FClothBatchedSolver::AllocateBuffers(uint32 MaxParticles, uint32 MaxConstra
     return true;
 }
 
-void FClothBatchedSolver::Simulate(float DeltaTime)
+// NEW: Allocate render mesh buffers on-demand
+bool FClothBatchedSolver::AllocateRenderBuffers(uint32 MaxRenderVertices, uint32 MaxRenderIndices)
 {
-    QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_Simulate);
+    if (!Graphics || !Graphics->Device)
+        return false;
 
-    if (!bInitialized || !Graphics || !Graphics->DeviceContext)
-        return;
+    // Store capacities
+    AllocatedRenderVertexCapacity = MaxRenderVertices;
+    AllocatedRenderIndexCapacity = MaxRenderIndices;
 
-    if (UsedParticleCount == 0)
-        return;
+    HRESULT hr;
+    D3D11_BUFFER_DESC bufferDesc = {};
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 
-    // Clamp delta time for stability
-    float clampedDT = FMath::Clamp(DeltaTime, 0.0001f, 0.033f);
-
-    // Use fixed substep time from config
-    float SubstepTime = Config.TimeStep / Config.NumSubsteps;
-
-    // === P2 OPTIMIZATION: Move per-frame work OUTSIDE substep loop ===
-
-    // Update collision ONCE per frame (not per substep)
-    if (CollisionManager && CollisionManager->GetColliderCount() > 0)
+    // Create unified render vertex buffer (position, normal, UV)
+    // CRITICAL FIX: Cannot use D3D11_RESOURCE_MISC_BUFFER_STRUCTURED with D3D11_BIND_VERTEX_BUFFER
+    // Use regular vertex buffer instead
+    if (MaxRenderVertices > 0)
     {
-        QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_UpdateCollision);
-        CollisionManager->UpdateTransforms();
-        CollisionManager->UploadToGPU(Graphics->Device, Graphics->DeviceContext);
-    }
+        bufferDesc = {};
+        bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+        bufferDesc.ByteWidth = sizeof(FClothRenderVertex) * MaxRenderVertices;
+        bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;  // Only vertex buffer, no SRV needed for now
+        bufferDesc.StructureByteStride = 0;  // Not a structured buffer
+        bufferDesc.MiscFlags = 0;  // No structured buffer flag
 
-    // Update frame-constant data ONCE
-    {
-        QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_UpdateFrameConstants);
-        UpdateFrameConstants(SubstepTime);
-    }
-
-    // === Substep loop ===
-    for (int substep = 0; substep < Config.NumSubsteps; substep++)
-    {
-        QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_Substep);
-
-        // Update ONLY iteration-varying constants (minimal overhead)
+        hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &UnifiedRenderVertexBuffer);
+        if (FAILED(hr))
         {
-            QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_UpdateIterationConstants);
-            UpdateIterationConstants(substep);
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create render vertex buffer (HRESULT: 0x%08X)"), hr);
+            return false;
         }
 
-        SimulateSubstep(SubstepTime);
+        // Note: No SRV created for vertex buffer - accessed via Input Assembler stage
+        UnifiedRenderVertexSRV = nullptr;
+        
+        UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Created render vertex buffer - Vertices: %u, Size: %u bytes"),
+               MaxRenderVertices, bufferDesc.ByteWidth);
     }
 
-    // Final normal update (once per frame, not per substep)
-    if (UsedTriangleCount > 0)
+    // Create unified render index buffer
+    if (MaxRenderIndices > 0)
     {
-        // DispatchClearNormals(UsedParticleCount);
-        // DispatchUpdateNormals(UsedTriangleCount);
-        // DispatchNormalizeNormals(UsedParticleCount);
+        bufferDesc = {};
+        bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+        bufferDesc.ByteWidth = sizeof(uint32) * MaxRenderIndices;
+        bufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER | D3D11_BIND_SHADER_RESOURCE;
+        bufferDesc.StructureByteStride = 0; // Not a structured buffer
+        bufferDesc.MiscFlags = 0;
+
+        hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &UnifiedRenderIndexBuffer);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create render index buffer"));
+            return false;
+        }
+
+        // Create SRV as typed buffer
+        D3D11_SHADER_RESOURCE_VIEW_DESC indexSrvDesc = {};
+        indexSrvDesc.Format = DXGI_FORMAT_R32_UINT;
+        indexSrvDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+        indexSrvDesc.Buffer.FirstElement = 0;
+        indexSrvDesc.Buffer.NumElements = MaxRenderIndices;
+
+        hr = Graphics->Device->CreateShaderResourceView(UnifiedRenderIndexBuffer, &indexSrvDesc, &UnifiedRenderIndexSRV);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create render index SRV"));
+            return false;
+        }
     }
+
+    // Create unified legacy K-nearest neighbor skinning weight buffer
+    if (MaxRenderVertices > 0)
+    {
+        bufferDesc = {};
+        bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+        bufferDesc.ByteWidth = sizeof(FClothSkinningWeightGPU) * MaxRenderVertices;
+        bufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        bufferDesc.StructureByteStride = sizeof(FClothSkinningWeightGPU);
+        bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+
+        hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &UnifiedSkinningWeightBuffer);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create legacy skinning weight buffer"));
+            return false;
+        }
+
+        srvDesc = {};
+        srvDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+        srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+        srvDesc.Buffer.NumElements = MaxRenderVertices;
+
+        hr = Graphics->Device->CreateShaderResourceView(UnifiedSkinningWeightBuffer, &srvDesc, &SkinningWeightsSRV);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create legacy skinning weight SRV"));
+            return false;
+        }
+    }
+    
+    // NEW: Create unified triangle-based skinning weight buffer
+    if (MaxRenderVertices > 0)
+    {
+        bufferDesc = {};
+        bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+        bufferDesc.ByteWidth = sizeof(FClothSkinningWeightTriangleGPU) * MaxRenderVertices;
+        bufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        bufferDesc.StructureByteStride = sizeof(FClothSkinningWeightTriangleGPU);
+        bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+
+        hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &UnifiedTriangleSkinningWeightBuffer);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create triangle skinning weight buffer"));
+            return false;
+        }
+
+        srvDesc = {};
+        srvDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+        srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+        srvDesc.Buffer.NumElements = MaxRenderVertices;
+
+        hr = Graphics->Device->CreateShaderResourceView(UnifiedTriangleSkinningWeightBuffer, &srvDesc, &TriangleSkinningWeightsSRV);
+        if (FAILED(hr))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create triangle skinning weight SRV"));
+            return false;
+        }
+    }
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Allocated render buffers - Vertices: %u, Indices: %u (Legacy + Triangle skinning)"),
+           MaxRenderVertices, MaxRenderIndices);
+
+    return true;
+}
+
+bool FClothBatchedSolver::AllocateSelfCollisionBuffers()
+{
+    if (!Graphics || !Graphics->Device)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Invalid graphics device for self-collision"));
+        return false;
+    }
+
+    uint32 gridDim = Config.SelfCollisionGridDim;
+    uint32 totalCells = gridDim * gridDim * gridDim;
+    uint32 maxPerCell = Config.SelfCollisionMaxPerCell;
+
+    AllocatedSelfCollisionCells = totalCells;
+
+    HRESULT hr;
+    D3D11_BUFFER_DESC bufferDesc = {};
+    D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+
+    // Create cell counters buffer (atomic counters)
+    bufferDesc = {};
+    bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+    bufferDesc.ByteWidth = sizeof(uint32) * totalCells;
+    bufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
+    bufferDesc.StructureByteStride = sizeof(uint32);
+    bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+
+    hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &SelfCollisionCellCountersBuffer);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create self-collision cell counters buffer"));
+        return false;
+    }
+
+    // Create UAV for cell counters
+    uavDesc = {};
+    uavDesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+    uavDesc.Format = DXGI_FORMAT_UNKNOWN;
+    uavDesc.Buffer.NumElements = totalCells;
+
+    hr = Graphics->Device->CreateUnorderedAccessView(SelfCollisionCellCountersBuffer, &uavDesc, &SelfCollisionCellCountersUAV);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create self-collision cell counters UAV"));
+        return false;
+    }
+
+    // Create SRV for cell counters
+    srvDesc = {};
+    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+    srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+    srvDesc.Buffer.NumElements = totalCells;
+
+    hr = Graphics->Device->CreateShaderResourceView(SelfCollisionCellCountersBuffer, &srvDesc, &SelfCollisionCellCountersSRV);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create self-collision cell counters SRV"));
+        return false;
+    }
+
+    // Create cell data buffer (flat array of particle indices)
+    bufferDesc = {};
+    bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+    bufferDesc.ByteWidth = sizeof(uint32) * totalCells * maxPerCell;
+    bufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
+    bufferDesc.StructureByteStride = sizeof(uint32);
+    bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+
+    hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &SelfCollisionCellDataBuffer);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create self-collision cell data buffer"));
+        return false;
+    }
+
+    // Create UAV for cell data
+    uavDesc.Buffer.NumElements = totalCells * maxPerCell;
+    hr = Graphics->Device->CreateUnorderedAccessView(SelfCollisionCellDataBuffer, &uavDesc, &SelfCollisionCellDataUAV);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create self-collision cell data UAV"));
+        return false;
+    }
+
+    // Create SRV for cell data
+    srvDesc.Buffer.NumElements = totalCells * maxPerCell;
+    hr = Graphics->Device->CreateShaderResourceView(SelfCollisionCellDataBuffer, &srvDesc, &SelfCollisionCellDataSRV);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create self-collision cell data SRV"));
+        return false;
+    }
+
+    // Create constant buffer for self-collision parameters
+    D3D11_BUFFER_DESC cbDesc = {};
+    cbDesc.Usage = D3D11_USAGE_DYNAMIC;
+    cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    cbDesc.ByteWidth = (sizeof(FClothSelfCollisionParams) + 0xf) & 0xfffffff0; // 16-byte aligned
+
+    hr = Graphics->Device->CreateBuffer(&cbDesc, nullptr, &SelfCollisionParamsBuffer);
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create self-collision params buffer"));
+        return false;
+    }
+
+    bSelfCollisionInitialized = true;
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Allocated self-collision buffers - Grid: %ux%ux%u (%u cells), MaxPerCell: %u, Memory: ~%.2f MB"),
+           gridDim, gridDim, gridDim, totalCells, maxPerCell,
+           (totalCells * sizeof(uint32) + totalCells * maxPerCell * sizeof(uint32)) / (1024.0f * 1024.0f));
+
+    return true;
+}
+
+void FClothBatchedSolver::Simulate(float DeltaTime, TArray<FClothInstanceMetadata>& InstanceMetadata)
+{
+	QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_Simulate);
+
+	if (!bInitialized || !Graphics || !Graphics->DeviceContext)
+		return;
+
+	if (UsedParticleCount == 0)
+		return;
+
+	// Clamp delta time for stability
+	float clampedDT = FMath::Clamp(DeltaTime, 0.0001f, 0.033f);
+
+	// Use fixed substep time from config
+	float SubstepTime = Config.TimeStep / Config.NumSubsteps;
+
+	// === P2 OPTIMIZATION: Move per-frame work OUTSIDE substep loop ===
+
+	// Update collision ONCE per frame (not per substep)
+	if (CollisionManager && CollisionManager->GetColliderCount() > 0)
+	{
+		QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_UpdateCollision);
+		CollisionManager->UpdateTransforms();
+		CollisionManager->UploadToGPU(Graphics->Device, Graphics->DeviceContext);
+	}
+
+	// NEW: Update dynamic bounds BEFORE self-collision (once per frame)
+	if (Config.bEnableSelfCollision && bSelfCollisionInitialized)
+	{
+		//UpdateDynamicBounds(InstanceMetadata);
+		UpdateSelfCollisionParams(InstanceMetadata);
+	}
+
+	// Update frame-constant data ONCE
+	{
+		QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_UpdateFrameConstants);
+		UpdateFrameConstants(SubstepTime);
+	}
+
+	// === Substep loop ===
+	for (int substep = 0; substep < Config.NumSubsteps; substep++)
+	{
+		QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_Substep);
+
+		// Update ONLY iteration-varying constants (minimal overhead)
+		{
+			QUICK_SCOPE_CYCLE_COUNTER(ClothSolver_UpdateIterationConstants);
+			UpdateIterationConstants(substep);
+		}
+
+		SimulateSubstep(SubstepTime);
+	}
+
+	// Final normal update (once per frame, not per substep)
+	if (UsedTriangleCount > 0)
+	{
+		DispatchUpdateNormals(UsedTriangleCount);
+	}
 }
 
 void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
@@ -750,6 +1131,11 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
     // Apply Force & Position prediction
     DispatchIntegration(UsedParticleCount);
 
+     // Self-collision (after constraint solving, before kinematic targets)
+    /*if (Config.bEnableSelfCollision && bSelfCollisionInitialized)
+    {
+        DispatchSelfCollision(UsedParticleCount);
+    }*/
     // Collision (collision data updated once per frame in Simulate, not here)
     DispatchCollisionSDF(UsedParticleCount);
     
@@ -769,7 +1155,7 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
 
         if (UsedBendConstraintCount > 0)
         {
-            DispatchBendConstraintSolver(UsedBendConstraintCount);
+            //DispatchBendConstraintSolver(UsedBendConstraintCount);
         }
 
         if (UsedAreaConstraintCount > 0)
@@ -777,20 +1163,23 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
             //DispatchAreaConstraintSolver(UsedAreaConstraintCount);
         }
 
+        if (Config.bEnableSelfCollision && bSelfCollisionInitialized)
+        {
+            DispatchSelfCollision(UsedParticleCount);
+        }
         DispatchApplyDeltas(UsedParticleCount);
     }
-
+    
+  /*  if (Config.bEnableSelfCollision && bSelfCollisionInitialized)
+    {
+        DispatchSelfCollision(UsedParticleCount);
+    }*/
     // Apply kinematic constraints (NEW: GPU-based computation - P1 optimization)
     // Use GPU-based kinematic target computation if available
-    if (ComputeKinematicTargetsCS && AttachmentDataSRV && ComponentTransformSRV && UsedAttachmentCount > 0)
+    if (ComputeKinematicTargetsCS && AttachmentDataSRV && UsedAttachmentCount > 0)
     {
         // GPU-based method - use attachment count from BuildKinematicAttachmentData
         DispatchComputeKinematicTargets(UsedAttachmentCount);
-    }
-    else if (UsedKinematicTargetCount > 0)
-    {
-        // Fallback to old method if GPU-based not available
-        DispatchApplyKinematicTargets(UsedKinematicTargetCount);
     }
 
     // Update Final Position and Velocity of particles
@@ -850,15 +1239,6 @@ bool FClothBatchedSolver::LoadComputeShaders()
     }
     ApplyDeltasCS = ShaderManager->GetComputeShaderByKey(L"ClothApplyConstraintDeltasCS");
 
-    // Load or get Apply Kinematic Targets shader
-    hr = ShaderManager->AddComputeShader(L"ClothApplyKinematicTargetsCS", L"Shaders/Cloth/ClothApplyKinematicTargets.hlsl", "ApplyKinematicTargetsCS");
-    if (FAILED(hr))
-    {
-        UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to compile ClothApplyKinematicTargets shader (optional)"));
-        // Not critical - kinematic targets are optional
-    }
-    ApplyKinematicTargetsCS = ShaderManager->GetComputeShaderByKey(L"ClothApplyKinematicTargetsCS");
-
     // Load or get Kinematic Targets  compute shader
     hr = ShaderManager->AddComputeShader(L"ComputeKinematicTargetsCS", L"Shaders/Cloth/ClothComputeKinematicTargets.hlsl", "ComputeKinematicTargetsCS");
     if (FAILED(hr))
@@ -877,30 +1257,31 @@ bool FClothBatchedSolver::LoadComputeShaders()
     }
     FinalizeCS = ShaderManager->GetComputeShaderByKey(L"ClothFinalizeCS");
 
-    // Load or get Normal Update shaders
-    hr = ShaderManager->AddComputeShader(L"ClothClearNormalsCS", L"Shaders/Cloth/ClothUpdateNormals.hlsl", "ClearNormalsCS");
-    if (FAILED(hr))
-    {
-        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to compile ClothClearNormals shader"));
-        bSuccess = false;
-    }
-    ClearNormalsCS = ShaderManager->GetComputeShaderByKey(L"ClothClearNormalsCS");
-
+    // Load normal update shaders (two-pass approach)
     hr = ShaderManager->AddComputeShader(L"ClothUpdateNormalsCS", L"Shaders/Cloth/ClothUpdateNormals.hlsl", "UpdateNormalsCS");
     if (FAILED(hr))
     {
-        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to compile ClothUpdateNormals shader"));
-        bSuccess = false;
+        UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to compile ClothUpdateNormals shader (legacy)"));
     }
     UpdateNormalsCS = ShaderManager->GetComputeShaderByKey(L"ClothUpdateNormalsCS");
-
-    hr = ShaderManager->AddComputeShader(L"ClothNormalizeNormalsCS", L"Shaders/Cloth/ClothUpdateNormals.hlsl", "NormalizeNormalsCS");
+    
+    // NEW: Pass 1 - Compute triangle normals and accumulate to vertices
+    hr = ShaderManager->AddComputeShader(L"ClothComputeTriangleNormalsCS", L"Shaders/Cloth/ClothUpdateNormals.hlsl", "ComputeTriangleNormalsCS");
     if (FAILED(hr))
     {
-        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to compile ClothNormalizeNormals shader"));
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to compile ClothComputeTriangleNormals shader"));
         bSuccess = false;
     }
-    NormalizeNormalsCS = ShaderManager->GetComputeShaderByKey(L"ClothNormalizeNormalsCS");
+    ComputeTriangleNormalsCS = ShaderManager->GetComputeShaderByKey(L"ClothComputeTriangleNormalsCS");
+    
+    // NEW: Pass 2 - Normalize vertex normals
+    hr = ShaderManager->AddComputeShader(L"ClothNormalizeVertexNormalsCS", L"Shaders/Cloth/ClothUpdateNormals.hlsl", "NormalizeVertexNormalsCS");
+    if (FAILED(hr))
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to compile ClothNormalizeVertexNormals shader"));
+        bSuccess = false;
+    }
+    NormalizeVertexNormalsCS = ShaderManager->GetComputeShaderByKey(L"ClothNormalizeVertexNormalsCS");
 
     // Load or get Collision SDF shader (NEW)
     hr = ShaderManager->AddComputeShader(L"ClothCollisionSDFCS",
@@ -934,6 +1315,44 @@ bool FClothBatchedSolver::LoadComputeShaders()
     }
     ComputeKinematicTargetsCS = ShaderManager->GetComputeShaderByKey(L"ClothComputeKinematicTargetsCS");
 
+    // Load self-collision shaders
+    hr = ShaderManager->AddComputeShader(L"ClothSelfCollisionBuildGridCS",
+    									 L"Shaders/Cloth/ClothSelfCollisionBuildGrid.hlsl",
+    									 "BuildSpatialHashGridCS");
+    if (FAILED(hr))
+    {
+    	UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to compile ClothSelfCollisionBuildGrid shader (optional)"));
+    }
+    SelfCollisionBuildGridCS = ShaderManager->GetComputeShaderByKey(L"ClothSelfCollisionBuildGridCS");
+   
+    hr = ShaderManager->AddComputeShader(L"ClothSelfCollisionSolverCS",
+    									 L"Shaders/Cloth/ClothSelfCollisionSolver.hlsl",
+    									 "SolveSelfCollisionsCS");
+    if (FAILED(hr))
+    {
+    	UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to compile ClothSelfCollisionSolver shader (optional)"));
+    }
+    SelfCollisionSolverCS = ShaderManager->GetComputeShaderByKey(L"ClothSelfCollisionSolverCS");
+    
+    // NEW: Load GPU bounds computation shaders
+    hr = ShaderManager->AddComputeShader(L"ClothComputeBoundsPass1CS",
+    									 L"Shaders/Cloth/ClothComputeBounds.hlsl",
+    									 "ComputeBoundsPass1CS");
+    if (FAILED(hr))
+    {
+    	UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to compile ClothComputeBoundsPass1 shader (optional)"));
+    }
+    ComputeBoundsPass1CS = ShaderManager->GetComputeShaderByKey(L"ClothComputeBoundsPass1CS");
+    
+    hr = ShaderManager->AddComputeShader(L"ClothComputeBoundsPass2CS",
+    									 L"Shaders/Cloth/ClothComputeBounds.hlsl",
+    									 "ComputeBoundsPass2CS");
+    if (FAILED(hr))
+    {
+    	UE_LOG(ELogLevel::Warning, TEXT("ClothBatchedSolver: Failed to compile ClothComputeBoundsPass2 shader (optional)"));
+    }
+    ComputeBoundsPass2CS = ShaderManager->GetComputeShaderByKey(L"ClothComputeBoundsPass2CS");
+
     // Verify critical shaders loaded
     if (!IntegrateCS || !ConstraintSolverCS || !BendConstraintSolverCS || !ApplyDeltasCS || !FinalizeCS)
     {
@@ -950,13 +1369,12 @@ bool FClothBatchedSolver::LoadComputeShaders()
 }
 
 void FClothBatchedSolver::SetUsedCounts(uint32 Particles, uint32 Constraints, uint32 BendConstraints,
-                                        uint32 KinematicTargets, uint32 Triangles, uint32 Instances,
-                                        uint32 AreaConstraints, uint32 EdgeCollisions)
+    uint32 Attachments, uint32 Triangles, uint32 Instances, uint32 AreaConstraints, uint32 EdgeCollisions)
 {
     UsedParticleCount = Particles;
     UsedConstraintCount = Constraints;
     UsedBendConstraintCount = BendConstraints;
-    UsedKinematicTargetCount = KinematicTargets;
+    UsedAttachmentCount = Attachments;
     UsedTriangleCount = Triangles;
     UsedInstanceCount = Instances;
     UsedAreaConstraintCount = AreaConstraints;
@@ -1138,50 +1556,6 @@ void FClothBatchedSolver::UploadEdgeCollisionData(const TArray<FClothEdgeCollisi
                                                EdgeCollisions.GetData(), 0, 0);
 }
 
-// ClothBatchedSolver.cpp
-void FClothBatchedSolver::UploadKinematicTargets(
-    const TArray<FClothKinematicTargetGPU> &Targets,
-    uint32 DestOffset)
-{
-    if (!Graphics || !Graphics->DeviceContext || Targets.Num() == 0)
-        return;
-    if (!UnifiedKinematicTargetBuffer)
-        return;
-
-    // Kinematic targets는 매 프레임 전체를 업데이트하므로
-    // WRITE_DISCARD 사용 (DestOffset은 무시됨)
-    D3D11_MAPPED_SUBRESOURCE msr;
-    HRESULT hr = Graphics->DeviceContext->Map(
-        UnifiedKinematicTargetBuffer,
-        0,
-        D3D11_MAP_WRITE_DISCARD,
-        0,
-        &msr);
-
-    if (SUCCEEDED(hr))
-    {
-        // DestOffset이 0이 아니면 경고
-        if (DestOffset != 0)
-        {
-            UE_LOG(ELogLevel::Warning,
-                   TEXT("UploadKinematicTargets: DestOffset %d ignored (WRITE_DISCARD used)"),
-                   DestOffset);
-        }
-
-        // 전체 버퍼의 시작부터 복사
-        uint32 bytesToCopy = Targets.Num() * sizeof(FClothKinematicTargetGPU);
-        memcpy(msr.pData, Targets.GetData(), bytesToCopy);
-
-        Graphics->DeviceContext->Unmap(UnifiedKinematicTargetBuffer, 0);
-    }
-    else
-    {
-        UE_LOG(ELogLevel::Error,
-               TEXT("ClothBatchedSolver: Failed to map kinematic target buffer (HR=0x%08X)"),
-               hr);
-    }
-}
-
 void FClothBatchedSolver::UploadInstanceParameters(const TArray<FClothInstanceParameters> &Parameters)
 {
     if (!Graphics || !Graphics->DeviceContext || !InstanceParameterBuffer)
@@ -1304,6 +1678,206 @@ void FClothBatchedSolver::UploadComponentTransforms(const TArray<FMatrix> &Trans
         memcpy(msr.pData, Transforms.GetData(), bytesToCopy);
         Graphics->DeviceContext->Unmap(ComponentTransformBuffer, 0);
     }
+}
+
+// NEW: Production rendering - Upload render mesh data
+void FClothBatchedSolver::UploadRenderMeshData(
+    const TArray<FVector>& RenderPositions,
+    const TArray<FVector>& RenderNormals,
+    const TArray<FVector2D>& RenderUVs,
+    const TArray<uint32>& RenderIndices,
+    uint32 RenderVertexOffset,
+    uint32 RenderIndexOffset)
+{
+    if (!Graphics || !Graphics->DeviceContext)
+        return;
+
+    if (RenderPositions.Num() == 0 || RenderIndices.Num() == 0)
+        return;
+
+    uint32 numRenderVertices = RenderPositions.Num();
+    uint32 numRenderIndices = RenderIndices.Num();
+
+    // CRITICAL FIX: Check if buffers need allocation or reallocation
+    uint32 requiredVertexCapacity = RenderVertexOffset + numRenderVertices;
+    uint32 requiredIndexCapacity = RenderIndexOffset + numRenderIndices;
+    
+    bool needsAllocation = !UnifiedRenderVertexBuffer || !UnifiedRenderIndexBuffer;
+    bool needsReallocation = requiredVertexCapacity > AllocatedRenderVertexCapacity ||
+                             requiredIndexCapacity > AllocatedRenderIndexCapacity;
+    
+    if (needsAllocation || needsReallocation)
+    {
+        // Release old buffers if reallocating
+        if (needsReallocation)
+        {
+            SAFE_RELEASE(UnifiedRenderVertexBuffer);
+            SAFE_RELEASE(UnifiedRenderIndexBuffer);
+            SAFE_RELEASE(UnifiedSkinningWeightBuffer);
+            SAFE_RELEASE(UnifiedTriangleSkinningWeightBuffer);  // NEW: Triangle-based skinning weights
+            SAFE_RELEASE(UnifiedRenderVertexSRV);
+            SAFE_RELEASE(UnifiedRenderIndexSRV);
+            SAFE_RELEASE(SkinningWeightsSRV);
+            SAFE_RELEASE(TriangleSkinningWeightsSRV);  // NEW: Triangle-based skinning weights SRV
+            
+            UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Reallocating render buffers - Old: V=%u I=%u, Required: V=%u I=%u"),
+                   AllocatedRenderVertexCapacity, AllocatedRenderIndexCapacity,
+                   requiredVertexCapacity, requiredIndexCapacity);
+        }
+        
+        // Allocate with growth factor for future instances
+        uint32 newVertexCapacity = FMath::Max(requiredVertexCapacity, AllocatedRenderVertexCapacity) * 2;
+        uint32 newIndexCapacity = FMath::Max(requiredIndexCapacity, AllocatedRenderIndexCapacity) * 2;
+        
+        if (!AllocateRenderBuffers(newVertexCapacity, newIndexCapacity))
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to allocate render buffers"));
+            return;
+        }
+    }
+
+    // Pack render vertex data
+    TArray<FClothRenderVertex> renderVertices;
+    renderVertices.SetNum(numRenderVertices);
+
+    for (uint32 i = 0; i < numRenderVertices; ++i)
+    {
+        renderVertices[i].Position = (i < static_cast<uint32>(RenderPositions.Num())) ? RenderPositions[i] : FVector::ZeroVector;
+        renderVertices[i].Normal = (i < static_cast<uint32>(RenderNormals.Num())) ? RenderNormals[i] : FVector(0, 0, 1);
+        renderVertices[i].UV = (i < static_cast<uint32>(RenderUVs.Num())) ? RenderUVs[i] : FVector2D::ZeroVector;
+    }
+
+    // Upload render vertices
+    D3D11_BOX destBox;
+    destBox.left = RenderVertexOffset * sizeof(FClothRenderVertex);
+    destBox.right = destBox.left + numRenderVertices * sizeof(FClothRenderVertex);
+    destBox.top = 0;
+    destBox.bottom = 1;
+    destBox.front = 0;
+    destBox.back = 1;
+
+    Graphics->DeviceContext->UpdateSubresource(UnifiedRenderVertexBuffer, 0, &destBox,
+                                               renderVertices.GetData(), 0, 0);
+
+    // Upload render indices
+    destBox.left = RenderIndexOffset * sizeof(uint32);
+    destBox.right = destBox.left + numRenderIndices * sizeof(uint32);
+
+    Graphics->DeviceContext->UpdateSubresource(UnifiedRenderIndexBuffer, 0, &destBox,
+                                               RenderIndices.GetData(), 0, 0);
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Uploaded render mesh - Vertices: %u (offset %u), Indices: %u (offset %u)"),
+           numRenderVertices, RenderVertexOffset, numRenderIndices, RenderIndexOffset);
+}
+
+// NEW: Production rendering - Upload skinning weights
+void FClothBatchedSolver::UploadSkinningWeights(
+    const TArray<FClothSkinningWeight>& Weights,
+    uint32 RenderVertexOffset)
+{
+    if (!Graphics || !Graphics->DeviceContext)
+        return;
+
+    if (Weights.Num() == 0)
+        return;
+
+    if (!UnifiedSkinningWeightBuffer)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Skinning weight buffer not allocated"));
+        return;
+    }
+
+    uint32 numWeights = Weights.Num();
+
+    // Convert CPU skinning weights to GPU format
+    TArray<FClothSkinningWeightGPU> gpuWeights;
+    gpuWeights.SetNum(numWeights);
+
+    for (uint32 i = 0; i < numWeights; ++i)
+    {
+        const FClothSkinningWeight& cpuWeight = Weights[i];
+        FClothSkinningWeightGPU& gpuWeight = gpuWeights[i];
+
+        // Copy indices and weights directly (indices are already global in batched mode)
+        for (int j = 0; j < 4; ++j)
+        {
+            gpuWeight.SimVertexIndices[j] = cpuWeight.SimVertexIndices[j];
+            gpuWeight.Weights[j] = cpuWeight.Weights[j];
+        }
+    }
+
+    // Upload to GPU
+    D3D11_BOX destBox;
+    destBox.left = RenderVertexOffset * sizeof(FClothSkinningWeightGPU);
+    destBox.right = destBox.left + numWeights * sizeof(FClothSkinningWeightGPU);
+    destBox.top = 0;
+    destBox.bottom = 1;
+    destBox.front = 0;
+    destBox.back = 1;
+
+    Graphics->DeviceContext->UpdateSubresource(UnifiedSkinningWeightBuffer, 0, &destBox,
+                                               gpuWeights.GetData(), 0, 0);
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Uploaded legacy skinning weights - Count: %u (offset %u)"),
+           numWeights, RenderVertexOffset);
+}
+
+// NEW: Upload triangle-based skinning weights (fixes edge curling and UV distortion)
+void FClothBatchedSolver::UploadTriangleSkinningWeights(
+    const TArray<FClothSkinningWeightTriangle>& Weights,
+    uint32 RenderVertexOffset)
+{
+    if (!Graphics || !Graphics->DeviceContext)
+        return;
+
+    if (Weights.Num() == 0)
+        return;
+
+    if (!UnifiedTriangleSkinningWeightBuffer)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Triangle skinning weight buffer not allocated"));
+        return;
+    }
+
+    uint32 numWeights = Weights.Num();
+
+    // Convert CPU triangle skinning weights to GPU format
+    TArray<FClothSkinningWeightTriangleGPU> gpuWeights;
+    gpuWeights.SetNum(numWeights);
+
+    for (uint32 i = 0; i < numWeights; ++i)
+    {
+        const FClothSkinningWeightTriangle& cpuWeight = Weights[i];
+        FClothSkinningWeightTriangleGPU& gpuWeight = gpuWeights[i];
+
+        // Copy triangle indices
+        gpuWeight.SimTriangleIndices[0] = cpuWeight.SimTriangleIndices[0];
+        gpuWeight.SimTriangleIndices[1] = cpuWeight.SimTriangleIndices[1];
+        gpuWeight.SimTriangleIndices[2] = cpuWeight.SimTriangleIndices[2];
+        
+        // Copy barycentric coordinates
+        gpuWeight.BarycentricCoords[0] = cpuWeight.BarycentricCoords[0];
+        gpuWeight.BarycentricCoords[1] = cpuWeight.BarycentricCoords[1];
+        gpuWeight.BarycentricCoords[2] = cpuWeight.BarycentricCoords[2];
+        
+        // Copy tangent-space offset
+        gpuWeight.TangentSpaceOffset = cpuWeight.TangentSpaceOffset;
+    }
+
+    // Upload to GPU
+    D3D11_BOX destBox;
+    destBox.left = RenderVertexOffset * sizeof(FClothSkinningWeightTriangleGPU);
+    destBox.right = destBox.left + numWeights * sizeof(FClothSkinningWeightTriangleGPU);
+    destBox.top = 0;
+    destBox.bottom = 1;
+    destBox.front = 0;
+    destBox.back = 1;
+
+    Graphics->DeviceContext->UpdateSubresource(UnifiedTriangleSkinningWeightBuffer, 0, &destBox,
+                                               gpuWeights.GetData(), 0, 0);
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Uploaded triangle skinning weights - Count: %u (offset %u)"),
+           numWeights, RenderVertexOffset);
 }
 
 // Dispatch method implementations
@@ -1506,42 +2080,12 @@ void FClothBatchedSolver::DispatchApplyDeltas(uint32 ParticleCount)
     Graphics->DeviceContext->CSSetShaderResources(0, 1, nullSRVs);
 }
 
-void FClothBatchedSolver::DispatchApplyKinematicTargets(uint32 TargetCount)
-{
-    if (!Graphics || !Graphics->DeviceContext || !ApplyKinematicTargetsCS || TargetCount == 0)
-        return;
-
-    // Bind constant buffer
-    Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
-
-    // Bind kinematic target data as SRV
-    Graphics->DeviceContext->CSSetShaderResources(0, 1, &UnifiedKinematicTargetSRV);
-
-    // Bind predicted buffer as UAV (modify in-place)
-    ID3D11UnorderedAccessView *uavs[] = {UnifiedPredictedUAV};
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, uavs, nullptr);
-
-    // Set shader
-    Graphics->DeviceContext->CSSetShader(ApplyKinematicTargetsCS, nullptr, 0);
-
-    // Dispatch (one thread per kinematic target)
-    uint32 dispatchCount = GetDispatchCount(TargetCount, 256);
-    Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
-
-    // Unbind
-    ID3D11UnorderedAccessView *nullUAVs[] = {nullptr};
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, nullUAVs, nullptr);
-    ID3D11ShaderResourceView *nullSRVs[] = {nullptr};
-    Graphics->DeviceContext->CSSetShaderResources(0, 1, nullSRVs);
-}
-
-// NEW: GPU-based kinematic target computation dispatch (P1 optimization)
 void FClothBatchedSolver::DispatchComputeKinematicTargets(uint32 AttachmentCount)
 {
     if (!Graphics || !Graphics->DeviceContext || !ComputeKinematicTargetsCS || AttachmentCount == 0)
         return;
 
-    if (!AttachmentDataSRV || !ComponentTransformSRV)
+    if (!AttachmentDataSRV)
         return;
 
     // Set shader
@@ -1610,82 +2154,107 @@ void FClothBatchedSolver::DispatchFinalize(uint32 ParticleCount)
     Graphics->DeviceContext->CSSetShaderResources(0, 3, nullSRVs);
 }
 
-void FClothBatchedSolver::DispatchClearNormals(uint32 ParticleCount)
-{
-    if (!Graphics || !Graphics->DeviceContext || !ClearNormalsCS)
-        return;
-
-    // Bind constant buffer
-    Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
-
-    // Bind normal buffer UAV
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &UnifiedNormalUAV, nullptr);
-
-    // Set shader
-    Graphics->DeviceContext->CSSetShader(ClearNormalsCS, nullptr, 0);
-
-    // Dispatch
-    uint32 dispatchCount = GetDispatchCount(ParticleCount);
-    Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
-
-    // Unbind
-    ID3D11UnorderedAccessView *nullUAV = nullptr;
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
-}
-
 void FClothBatchedSolver::DispatchUpdateNormals(uint32 TriangleCount)
 {
-    if (!Graphics || !Graphics->DeviceContext || !UpdateNormalsCS || TriangleCount == 0)
+    if (!Graphics || !Graphics->DeviceContext || TriangleCount == 0)
         return;
-
-    // Bind constant buffer
-    Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
-
-    // Bind SRVs - use position buffer (final positions after finalize)
-    ID3D11ShaderResourceView *srvs[] = {
-        UnifiedPositionSRV, // t0: Final positions
-        UnifiedIndexSRV     // t1: Index buffer
-    };
-    Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
-
-    // Bind normal buffer UAV
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &UnifiedNormalUAV, nullptr);
-
-    // Set shader
-    Graphics->DeviceContext->CSSetShader(UpdateNormalsCS, nullptr, 0);
-
-    // Dispatch
-    uint32 dispatchCount = GetDispatchCount(TriangleCount, 256);
-    Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
-
-    // Unbind
-    ID3D11UnorderedAccessView *nullUAV = nullptr;
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
-    ID3D11ShaderResourceView *nullSRVs[2] = {nullptr, nullptr};
-    Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
-}
-
-void FClothBatchedSolver::DispatchNormalizeNormals(uint32 ParticleCount)
-{
-    if (!Graphics || !Graphics->DeviceContext || !NormalizeNormalsCS)
-        return;
-
-    // Bind constant buffer
-    Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
-
-    // Bind normal buffer UAV
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &UnifiedNormalUAV, nullptr);
-
-    // Set shader
-    Graphics->DeviceContext->CSSetShader(NormalizeNormalsCS, nullptr, 0);
-
-    // Dispatch
-    uint32 dispatchCount = GetDispatchCount(ParticleCount);
-    Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
-
-    // Unbind
-    ID3D11UnorderedAccessView *nullUAV = nullptr;
-    Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+    
+    // Use two-pass approach with integer accumulation if shaders are available
+    if (ComputeTriangleNormalsCS && NormalizeVertexNormalsCS)
+    {
+        // === TWO-PASS APPROACH WITH INTEGER ACCUMULATION (race-condition free) ===
+        
+        // STEP 1: Clear integer accumulation buffer to zero
+        UINT clearValue[4] = { 0, 0, 0, 0 };
+        Graphics->DeviceContext->ClearUnorderedAccessViewUint(UnifiedNormalAccumulationUAV, clearValue);
+        
+        // STEP 2: PASS 1 - Compute triangle normals and accumulate to vertices (atomic integer ops)
+        {
+            // Bind constant buffer (contains NumParticles, NumConstraints stores triangle count)
+            Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
+            
+            // Bind SRVs - use position buffer (final positions after finalize)
+            ID3D11ShaderResourceView *srvs[] = {
+                UnifiedPositionSRV, // t0: Final positions
+                UnifiedIndexSRV     // t1: Index buffer
+            };
+            Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
+            
+            // Bind UAVs: u0 = integer accumulation buffer, u1 = final normal buffer (not used in pass 1)
+            ID3D11UnorderedAccessView *uavs[] = {
+                UnifiedNormalAccumulationUAV,  // u0: Integer accumulation (write with InterlockedAdd)
+                UnifiedNormalUAV               // u1: Final normals (not used in pass 1, but bound for consistency)
+            };
+            Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, nullptr);
+            
+            // Set Pass 1 shader
+            Graphics->DeviceContext->CSSetShader(ComputeTriangleNormalsCS, nullptr, 0);
+            
+            // Dispatch (one thread per triangle)
+            uint32 dispatchCount = GetDispatchCount(TriangleCount, 256);
+            Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
+            
+            // Unbind UAVs before next pass (required for proper synchronization)
+            ID3D11UnorderedAccessView *nullUAVs[2] = {nullptr, nullptr};
+            Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
+            ID3D11ShaderResourceView *nullSRVs[2] = {nullptr, nullptr};
+            Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
+        }
+        
+        // STEP 3: PASS 2 - Convert integer accumulation to float and normalize
+        {
+            // Bind constant buffer (contains NumParticles)
+            Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
+            
+            // Bind UAVs: u0 = integer accumulation (read), u1 = final normals (write)
+            ID3D11UnorderedAccessView *uavs[] = {
+                UnifiedNormalAccumulationUAV,  // u0: Read accumulated integers
+                UnifiedNormalUAV               // u1: Write final normalized float3 normals
+            };
+            Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, nullptr);
+            
+            // Set Pass 2 shader
+            Graphics->DeviceContext->CSSetShader(NormalizeVertexNormalsCS, nullptr, 0);
+            
+            // Dispatch (one thread per vertex)
+            uint32 dispatchCount = GetDispatchCount(UsedParticleCount, 256);
+            Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
+            
+            // Unbind
+            ID3D11UnorderedAccessView *nullUAVs[2] = {nullptr, nullptr};
+            Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
+        }
+    }
+    else if (UpdateNormalsCS)
+    {
+        // === LEGACY SINGLE-PASS APPROACH (fallback - has race conditions) ===
+        
+        // Bind constant buffer
+        Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
+        
+        // Bind SRVs - use position buffer (final positions after finalize)
+        ID3D11ShaderResourceView *srvs[] = {
+            UnifiedPositionSRV, // t0: Final positions
+            UnifiedIndexSRV     // t1: Index buffer
+        };
+        Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
+        
+        // Bind normal buffer UAV
+        Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &UnifiedNormalUAV, nullptr);
+        
+        // Set shader
+        Graphics->DeviceContext->CSSetShader(UpdateNormalsCS, nullptr, 0);
+        
+        // Dispatch
+        uint32 dispatchCount = GetDispatchCount(TriangleCount, 256);
+        Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
+        
+        // Unbind
+        ID3D11UnorderedAccessView *nullUAV = nullptr;
+        Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+        ID3D11ShaderResourceView *nullSRVs[2] = {nullptr, nullptr};
+        Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
+    }
 }
 
 void FClothBatchedSolver::DispatchCollisionSDF(uint32 ParticleCount)
@@ -1781,61 +2350,211 @@ void FClothBatchedSolver::DispatchEdgeCollisionSDF(uint32 EdgeCollisionCount)
     Graphics->DeviceContext->CSSetShaderResources(0, 4, nullSRVs);
 }
 
-void FClothBatchedSolver::ClearAccumulationBuffers(uint32 ParticleCount)
+void FClothBatchedSolver::DispatchSelfCollision(uint32 ParticleCount)
 {
-    if (!Graphics || !Graphics->DeviceContext)
-        return;
-
-    UINT clearValues[4] = {0, 0, 0, 0};
-    if (UnifiedPositionDeltaUAV)
-        Graphics->DeviceContext->ClearUnorderedAccessViewUint(UnifiedPositionDeltaUAV, clearValues);
-    if (UnifiedPositionWeightUAV)
-        Graphics->DeviceContext->ClearUnorderedAccessViewUint(UnifiedPositionWeightUAV, clearValues);
+	if (!Graphics || !Graphics->DeviceContext || ParticleCount == 0)
+		return;
+	
+	if (!SelfCollisionBuildGridCS || !SelfCollisionSolverCS)
+		return;
+	
+	if (!bSelfCollisionInitialized)
+		return;
+	
+	// NOTE: UpdateSelfCollisionParams() now called once per frame in Simulate(), not here
+	
+	// PASS 1: Build spatial hash grid
+    {
+        // Clear cell counters
+        UINT clearValue[4] = {0, 0, 0, 0};
+        Graphics->DeviceContext->ClearUnorderedAccessViewUint(SelfCollisionCellCountersUAV, clearValue);
+        
+        // Bind shader
+        Graphics->DeviceContext->CSSetShader(SelfCollisionBuildGridCS, nullptr, 0);
+        
+        // Bind constant buffers
+        ID3D11Buffer* cbs[] = {BatchSimConstantBuffer, SelfCollisionParamsBuffer};
+        Graphics->DeviceContext->CSSetConstantBuffers(0, 2, cbs);
+        
+        // Bind SRVs
+        ID3D11ShaderResourceView* srvs[] = {UnifiedPredictedSRV, UnifiedInvMassSRV};
+        Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
+        
+        // Bind UAVs
+        ID3D11UnorderedAccessView* uavs[] = {SelfCollisionCellCountersUAV, SelfCollisionCellDataUAV};
+        Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, nullptr);
+        
+        // Dispatch
+        uint32 dispatchCount = GetDispatchCount(ParticleCount, 256);
+        Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
+        
+        // Unbind
+        ID3D11UnorderedAccessView* nullUAVs[] = {nullptr, nullptr};
+        Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
+        ID3D11ShaderResourceView* nullSRVs[] = {nullptr, nullptr};
+        Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
+    }
+    
+    // PASS 2: Solve self-collisions
+    {
+        // Bind shader
+        Graphics->DeviceContext->CSSetShader(SelfCollisionSolverCS, nullptr, 0);
+        
+        // Bind constant buffers
+        ID3D11Buffer* cbs[] = {BatchSimConstantBuffer, SelfCollisionParamsBuffer};
+        Graphics->DeviceContext->CSSetConstantBuffers(0, 2, cbs);
+        
+        // Bind SRVs
+        ID3D11ShaderResourceView* srvs[] = {
+            UnifiedPredictedSRV,
+            UnifiedInvMassSRV,
+            SelfCollisionCellCountersSRV,
+            SelfCollisionCellDataSRV,
+            UnifiedIndexSRV  // For topology check
+        };
+        Graphics->DeviceContext->CSSetShaderResources(0, 5, srvs);
+        
+        // Bind UAVs (reuse existing delta/weight buffers)
+        ID3D11UnorderedAccessView* uavs[] = {
+            UnifiedPositionDeltaUAV,
+            UnifiedPositionWeightUAV
+        };
+        Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, uavs, nullptr);
+        
+        // Dispatch
+        uint32 dispatchCount = GetDispatchCount(ParticleCount, 256);
+        Graphics->DeviceContext->Dispatch(dispatchCount, 1, 1);
+        
+        // Unbind
+        ID3D11UnorderedAccessView* nullUAVs[] = {nullptr, nullptr};
+        Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
+        ID3D11ShaderResourceView* nullSRVs[] = {nullptr, nullptr, nullptr, nullptr, nullptr};
+        Graphics->DeviceContext->CSSetShaderResources(0, 5, nullSRVs);
+    }
+    
+    // PASS 3: Apply accumulated corrections (reuse existing method)
+    //DispatchApplyDeltas(ParticleCount);
 }
 
-// void FClothBatchedSolver::UpdateConstantBuffers(float DeltaTime)
-//{
-//     if (!Graphics || !Graphics->DeviceContext || !BatchSimConstantBuffer)
-//         return;
-//
-//     FClothSimConstants constants = {};
-//     constants.NumParticles = UsedParticleCount;
-//     constants.NumConstraints = UsedConstraintCount;
-//     constants.NumBendConstraints = UsedBendConstraintCount;
-//     constants.NumKinematicTargets = UsedKinematicTargetCount;
-//     constants.DeltaTime = DeltaTime;
-//     constants.Damping = Config.Damping;
-//     constants.Gravity = Config.Gravity; // Default gravity
-//     constants.StretchStiffness = Config.StretchStiffness;
-//     constants.Wind = FVector::ZeroVector;
-//     constants.BendStiffness = Config.BendStiffness;
-//     constants.AirDrag = Config.AirDrag;
-//     constants.NumIterations = Config.NumIterations;
-//     constants.CurrentIteration = 0;
-//     constants.UseXPBD = Config.bUseXPBD ? 1 : 0;
-//
-//     // NEW: Velvet-inspired parameters
-//     constants.RelaxationFactor = Config.RelaxationFactor;
-//     constants.MaxSpeed = Config.MaxSpeed;
-//     constants.LongRangeStretchiness = Config.LongRangeStretchiness;
-//
-//     // NEW: Collision parameters
-//     constants.NumColliders = CollisionManager ? CollisionManager->GetColliderCount() : 0;
-//     constants.CollisionThickness = 0.1f;   // TODO: Make configurable in FClothConfig
-//     constants.CollisionFriction = 0.2f;    // TODO: Make configurable
-//
-//     constants.WorldMatrix = FMatrix::Identity;
-//
-//     D3D11_MAPPED_SUBRESOURCE msr;
-//     HRESULT hr = Graphics->DeviceContext->Map(BatchSimConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &msr);
-//     if (SUCCEEDED(hr))
-//     {
-//         memcpy(msr.pData, &constants, sizeof(FClothSimConstants));
-//         Graphics->DeviceContext->Unmap(BatchSimConstantBuffer, 0);
-//     }
-// }
+void FClothBatchedSolver::UpdateSelfCollisionParams(const TArray<FClothInstanceMetadata>& InstanceMetadata)
+{
+	if (!Graphics || !Graphics->DeviceContext || !SelfCollisionParamsBuffer)
+		return;
+	
+	if (InstanceMetadata.Num() == 0)
+		return;
+	
+	// STRATEGY: Use median or weighted average of all active instances
+	// This ensures the spatial hash works reasonably well for all cloths
+	
+	TArray<float> avgEdgeLengths;
+	TArray<float> cellSizes;
+	TArray<float> collisionRadii;
+	FVector globalMin = FVector(FLT_MAX, FLT_MAX, FLT_MAX);
+	FVector globalMax = FVector(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+	
+	// Collect parameters from all active instances
+	for (const FClothInstanceMetadata& meta : InstanceMetadata)
+	{
+		if (!meta.bIsActive || meta.AvgEdgeLength == 0.0f)
+			continue;
+		
+		avgEdgeLengths.Add(meta.AvgEdgeLength);
+		cellSizes.Add(meta.AdaptiveCellSize);
+		collisionRadii.Add(meta.AdaptiveCollisionRadius);
+		
+		// Expand global bounds
+		globalMin.X = FMath::Min(globalMin.X, meta.MeshBoundsMin.X);
+		globalMin.Y = FMath::Min(globalMin.Y, meta.MeshBoundsMin.Y);
+		globalMin.Z = FMath::Min(globalMin.Z, meta.MeshBoundsMin.Z);
+		
+		globalMax.X = FMath::Max(globalMax.X, meta.MeshBoundsMax.X);
+		globalMax.Y = FMath::Max(globalMax.Y, meta.MeshBoundsMax.Y);
+		globalMax.Z = FMath::Max(globalMax.Z, meta.MeshBoundsMax.Z);
+	}
+	
+	if (avgEdgeLengths.Num() == 0)
+	{
+		UE_LOG(ELogLevel::Warning, TEXT("Self-Collision: No active cloth instances with valid parameters"));
+		return;
+	}
+	
+	// Use MEDIAN for robustness (not affected by outliers)
+	avgEdgeLengths.Sort();
+	cellSizes.Sort();
+	collisionRadii.Sort();
+	
+	int32 medianIdx = avgEdgeLengths.Num() / 2;
+	float medianCellSize = cellSizes[medianIdx];
+	float medianCollisionRadius = collisionRadii[medianIdx];
+	
+	// Apply multipliers from config (artist control)
+	float finalCellSize = medianCellSize * Config.SelfCollisionCellSizeMultiplier;
+	float finalCollisionRadius = medianCollisionRadius * Config.SelfCollisionRadiusMultiplier;
+	
+	// Add margin to global bounds
+	float margin = finalCellSize * 2.0f;
+	FVector gridMin = globalMin - FVector(margin, margin, margin);
+	FVector gridMax = globalMax + FVector(margin, margin, margin);
+	
+	// Compute grid dimensions
+	FVector extent = gridMax - gridMin;
+	uint32 gridDimX = FMath::Max(1u, static_cast<uint32>(FMath::CeilToInt(extent.X / finalCellSize)));
+	uint32 gridDimY = FMath::Max(1u, static_cast<uint32>(FMath::CeilToInt(extent.Y / finalCellSize)));
+	uint32 gridDimZ = FMath::Max(1u, static_cast<uint32>(FMath::CeilToInt(extent.Z / finalCellSize)));
+	
+	// Clamp to reasonable limits
+	const uint32 MaxGridDim = 128;
+	gridDimX = FMath::Min(gridDimX, MaxGridDim);
+	gridDimY = FMath::Min(gridDimY, MaxGridDim);
+	gridDimZ = FMath::Min(gridDimZ, MaxGridDim);
+	
+	// Fill params
+	SelfCollisionParams.GridMin = gridMin;
+	SelfCollisionParams.CellSize = finalCellSize;
+	SelfCollisionParams.GridDimX = gridDimX;
+	SelfCollisionParams.GridDimY = gridDimY;
+	SelfCollisionParams.GridDimZ = gridDimZ;
+	SelfCollisionParams.MaxParticlesPerCell = Config.SelfCollisionMaxPerCell;
+	SelfCollisionParams.CollisionRadius = finalCollisionRadius;
+	SelfCollisionParams.CollisionStiffness = Config.SelfCollisionStiffness * Config.SelfCollisionStiffnessMultiplier;
+	SelfCollisionParams.bEnableSelfCollision = Config.bEnableSelfCollision ? 1 : 0;
+	SelfCollisionParams.Padding = 0;
+	
+	// Upload to GPU
+	D3D11_MAPPED_SUBRESOURCE msr;
+	HRESULT hr = Graphics->DeviceContext->Map(SelfCollisionParamsBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &msr);
+	if (SUCCEEDED(hr))
+	{
+		memcpy(msr.pData, &SelfCollisionParams, sizeof(FClothSelfCollisionParams));
+		Graphics->DeviceContext->Unmap(SelfCollisionParamsBuffer, 0);
+	}
+	
+	// Log computed parameters
+	UE_LOG(ELogLevel::Display,
+		TEXT("Self-Collision: GridMin=(%.1f,%.1f,%.1f), CellSize=%.3f, Grid=%ux%ux%u, Radius=%.3f"),
+		gridMin.X, gridMin.Y, gridMin.Z, finalCellSize,
+		gridDimX, gridDimY, gridDimZ, finalCollisionRadius);
+	
+	// NEW: Validate self-collision setup
+	bool bValid = FClothMeshAnalysis::ValidateSelfCollisionSetup(
+		SelfCollisionParams.CellSize,
+		SelfCollisionParams.CollisionRadius,
+		SelfCollisionParams.GridMin,
+		gridMax,
+		SelfCollisionParams.GridDimX,
+		SelfCollisionParams.GridDimY,
+		SelfCollisionParams.GridDimZ,
+		SelfCollisionParams.MaxParticlesPerCell,
+		UsedParticleCount);
+	
+	if (!bValid)
+	{
+		UE_LOG(ELogLevel::Warning,
+			TEXT("Self-Collision: Setup has issues. Consider adjusting multipliers."));
+	}
+}
 
-// NEW: P2 Optimization - Split constant buffer updates
 void FClothBatchedSolver::UpdateFrameConstants(float DeltaTime)
 {
     // Build and cache constants that DON'T change between substeps
@@ -1845,7 +2564,7 @@ void FClothBatchedSolver::UpdateFrameConstants(float DeltaTime)
     CachedConstants.NumParticles = UsedParticleCount;
     CachedConstants.NumConstraints = UsedConstraintCount;
     CachedConstants.NumBendConstraints = UsedBendConstraintCount;
-    CachedConstants.NumKinematicTargets = UsedKinematicTargetCount;
+    CachedConstants.NumKinematicTargets = UsedAttachmentCount;
     CachedConstants.DeltaTime = DeltaTime;
     CachedConstants.Damping = Config.Damping;
     CachedConstants.Gravity = Config.Gravity;
@@ -1899,6 +2618,227 @@ void FClothBatchedSolver::UpdateIterationConstants(int32 CurrentIteration)
 
 bool FClothBatchedSolver::CreateGPUResources()
 {
-    // Handled by AllocateBuffers
-    return true;
+	// Handled by AllocateBuffers
+	return true;
+}
+
+// NEW: Allocate GPU bounds computation buffers
+bool FClothBatchedSolver::AllocateBoundsComputeBuffers()
+{
+	if (!Graphics || !Graphics->Device)
+		return false;
+	
+	// Calculate number of thread groups needed (256 threads per group)
+	uint32 maxThreadGroups = (AllocatedParticleCapacity + 255) / 256;
+	
+	HRESULT hr;
+	D3D11_BUFFER_DESC bufferDesc = {};
+	D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+	
+	// Create intermediate bounds buffer (one bound per thread group)
+	bufferDesc.Usage = D3D11_USAGE_DEFAULT;
+	bufferDesc.ByteWidth = sizeof(FClothBoundsGPU) * maxThreadGroups;
+	bufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
+	bufferDesc.StructureByteStride = sizeof(FClothBoundsGPU);
+	bufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+	
+	hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &BoundsComputeBuffer);
+	if (FAILED(hr))
+	{
+		UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create bounds compute buffer"));
+		return false;
+	}
+	
+	// Create UAV for bounds buffer
+	uavDesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+	uavDesc.Format = DXGI_FORMAT_UNKNOWN;
+	uavDesc.Buffer.NumElements = maxThreadGroups;
+	
+	hr = Graphics->Device->CreateUnorderedAccessView(BoundsComputeBuffer, &uavDesc, &BoundsComputeUAV);
+	if (FAILED(hr))
+	{
+		UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create bounds compute UAV"));
+		return false;
+	}
+	
+	// Create staging buffer for CPU readback
+	bufferDesc.Usage = D3D11_USAGE_STAGING;
+	bufferDesc.ByteWidth = sizeof(FClothBoundsGPU);
+	bufferDesc.BindFlags = 0;
+	bufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+	bufferDesc.MiscFlags = 0;
+	
+	hr = Graphics->Device->CreateBuffer(&bufferDesc, nullptr, &BoundsReadbackBuffer);
+	if (FAILED(hr))
+	{
+		UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to create bounds readback buffer"));
+		return false;
+	}
+	
+	UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Allocated GPU bounds compute buffers - ThreadGroups: %u"),
+		   maxThreadGroups);
+	
+	return true;
+}
+
+// NEW: Dispatch GPU bounds computation
+void FClothBatchedSolver::DispatchComputeBounds(uint32 ParticleCount)
+{
+	if (!Graphics || !Graphics->DeviceContext || ParticleCount == 0)
+		return;
+	
+	if (!ComputeBoundsPass1CS || !ComputeBoundsPass2CS)
+		return;
+	
+	// Pass 1: Per-thread-group reduction
+	{
+		Graphics->DeviceContext->CSSetShader(ComputeBoundsPass1CS, nullptr, 0);
+		Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
+		
+		ID3D11ShaderResourceView* srvs[] = {UnifiedPositionSRV, UnifiedInvMassSRV};
+		Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
+		
+		Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &BoundsComputeUAV, nullptr);
+		
+		uint32 numGroups = (ParticleCount + 255) / 256;
+		Graphics->DeviceContext->Dispatch(numGroups, 1, 1);
+		
+		// Unbind
+		ID3D11UnorderedAccessView* nullUAV = nullptr;
+		Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+		ID3D11ShaderResourceView* nullSRVs[] = {nullptr, nullptr};
+		Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
+	}
+	
+	// Pass 2: Final reduction
+	{
+		Graphics->DeviceContext->CSSetShader(ComputeBoundsPass2CS, nullptr, 0);
+		Graphics->DeviceContext->CSSetConstantBuffers(0, 1, &BatchSimConstantBuffer);
+		
+		Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &BoundsComputeUAV, nullptr);
+		
+		Graphics->DeviceContext->Dispatch(1, 1, 1);
+		
+		// Unbind
+		ID3D11UnorderedAccessView* nullUAV = nullptr;
+		Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+	}
+}
+
+// NEW: Readback GPU-computed bounds to CPU
+void FClothBatchedSolver::ReadbackBounds(FVector& OutMin, FVector& OutMax)
+{
+	if (!Graphics || !Graphics->DeviceContext || !BoundsComputeBuffer || !BoundsReadbackBuffer)
+		return;
+	
+	// Copy GPU bounds to staging buffer
+	Graphics->DeviceContext->CopyResource(BoundsReadbackBuffer, BoundsComputeBuffer);
+	
+	// Map and read
+	D3D11_MAPPED_SUBRESOURCE msr;
+	HRESULT hr = Graphics->DeviceContext->Map(BoundsReadbackBuffer, 0, D3D11_MAP_READ, 0, &msr);
+	if (SUCCEEDED(hr))
+	{
+		FClothBoundsGPU* bounds = static_cast<FClothBoundsGPU*>(msr.pData);
+		OutMin = bounds->BoundsMin;
+		OutMax = bounds->BoundsMax;
+		Graphics->DeviceContext->Unmap(BoundsReadbackBuffer, 0);
+	}
+}
+
+// NEW: Update dynamic bounds with motion tracking
+void FClothBatchedSolver::UpdateDynamicBounds(TArray<FClothInstanceMetadata>& InstanceMetadata)
+{
+	if (!Config.bEnableDynamicBoundsUpdate)
+		return;
+	
+	if (!ComputeBoundsPass1CS || !ComputeBoundsPass2CS || !BoundsComputeBuffer)
+		return;
+	
+	// NOTE: Current implementation computes global bounds for all particles
+	// Future enhancement: Compute per-instance bounds for more accurate motion tracking
+	
+	bool bAnyInstanceNeedsUpdate = false;
+	
+	// Check all instances for update conditions
+	for (FClothInstanceMetadata& meta : InstanceMetadata)
+	{
+		if (!meta.bIsActive)
+			continue;
+		
+		meta.FramesSinceLastBoundsUpdate++;
+		
+		// Check if forced update needed (periodic)
+		if (meta.FramesSinceLastBoundsUpdate >= Config.BoundsUpdateMaxFrames)
+		{
+			meta.bNeedsBoundsUpdate = true;
+			bAnyInstanceNeedsUpdate = true;
+		}
+	}
+	
+	// If any instance needs update, compute new global bounds via GPU
+	if (bAnyInstanceNeedsUpdate)
+	{
+		// Dispatch GPU bounds computation (all particles)
+		DispatchComputeBounds(UsedParticleCount);
+		
+		// Readback computed bounds from GPU
+		FVector newGlobalMin, newGlobalMax;
+		ReadbackBounds(newGlobalMin, newGlobalMax);
+		
+		// Update all active instances with new bounds
+		// NOTE: Using global bounds for all instances (conservative approach)
+		// Future: Compute per-instance bounds for more accurate tracking
+		for (FClothInstanceMetadata& meta : InstanceMetadata)
+		{
+			if (!meta.bIsActive)
+				continue;
+			
+			if (meta.bNeedsBoundsUpdate)
+			{
+				// Calculate motion as percentage of current bounds size
+				FVector currentExtent = meta.MeshBoundsMax - meta.MeshBoundsMin;
+				FVector displacement = FVector::GetAbs((newGlobalMin - meta.MeshBoundsMin)) +
+									   FVector::GetAbs((newGlobalMax - meta.MeshBoundsMax));
+				
+				float maxDisplacement = FMath::Max3(
+					displacement.X / FMath::Max(currentExtent.X, 0.01f),
+					displacement.Y / FMath::Max(currentExtent.Y, 0.01f),
+					displacement.Z / FMath::Max(currentExtent.Z, 0.01f));
+				
+				meta.AccumulatedMotion = maxDisplacement;
+				
+				// Update bounds
+				meta.PrevBoundsMin = meta.MeshBoundsMin;
+				meta.PrevBoundsMax = meta.MeshBoundsMax;
+				meta.MeshBoundsMin = newGlobalMin;
+				meta.MeshBoundsMax = newGlobalMax;
+				
+				// Recompute grid parameters with new bounds
+				FVector gridMin, gridMax;
+				FClothMeshAnalysis::ComputeAdaptiveSpatialHashParams(
+					meta.AvgEdgeLength,
+					meta.MeshBoundsMin,
+					meta.MeshBoundsMax,
+					meta.ParticleCount,
+					meta.AdaptiveCellSize,
+					meta.AdaptiveCollisionRadius,
+					gridMin,
+					gridMax,
+					meta.AdaptiveGridDimX,
+					meta.AdaptiveGridDimY,
+					meta.AdaptiveGridDimZ,
+					meta.AdaptiveMaxPerCell);
+				
+				// Reset tracking state
+				meta.FramesSinceLastBoundsUpdate = 0;
+				meta.AccumulatedMotion = 0.0f;
+				meta.bNeedsBoundsUpdate = false;
+				
+				UE_LOG(ELogLevel::Display,
+					TEXT("Cloth Instance: Bounds updated (Motion=%.2f%%, Periodic update after %u frames)"),
+					maxDisplacement * 100.0f, Config.BoundsUpdateMaxFrames);
+			}
+		}
+	}
 }

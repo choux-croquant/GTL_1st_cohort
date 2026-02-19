@@ -1,0 +1,166 @@
+{
+    "Actors": [
+        {
+            "ActorClass": "ADirectionalLight",
+            "ActorID": "ADirectionalLight_733",
+            "ActorLabel": "OBJ_DIRECTIONALLGIHT_733",
+            "ActorTickInEditor": "false",
+            "Components": [
+                {
+                    "ComponentClass": "UDirectionalLightComponent",
+                    "ComponentID": "UDirectionalLightComponent_0",
+                    "Properties": {
+                        "AABB_Max": "X=1.000 Y=1.000 Z=0.100",
+                        "AABB_Min": "X=-1.000 Y=-1.000 Z=-0.100",
+                        "AttachParentID": "UBillboardComponent_0",
+                        "ComponentClass": "UDirectionalLightComponent",
+                        "ComponentName": "UDirectionalLightComponent_0",
+                        "ComponentOwner": "ADirectionalLight_733",
+                        "ComponentOwnerClass": "ADirectionalLight",
+                        "Direction": "X=-1.000 Y=-0.000 Z=-0.000",
+                        "Intensity": "10.000000",
+                        "LightColor": "R=1.000 G=1.000 B=1.000 A=1.000",
+                        "RelativeLocation": "X=0.000 Y=0.000 Z=0.000",
+                        "RelativeRotation": "Pitch=0.000 Yaw=0.000 Roll=-0.000",
+                        "RelativeScale3D": "X=1.000 Y=1.000 Z=1.000",
+                        "bAutoActive": "true",
+                        "bIsActive": "true"
+                    }
+                },
+                {
+                    "ComponentClass": "UBillboardComponent",
+                    "ComponentID": "UBillboardComponent_0",
+                    "Properties": {
+                        "AABB_max": "X=0.000 Y=0.000 Z=0.000",
+                        "AABB_min": "X=0.000 Y=0.000 Z=0.000",
+                        "AttachParentID": "nullptr",
+                        "BufferKey": "Assets/Editor/Icon/S_LightDirectional.PNG",
+                        "ComponentClass": "UBillboardComponent",
+                        "ComponentName": "UBillboardComponent_0",
+                        "ComponentOwner": "ADirectionalLight_733",
+                        "ComponentOwnerClass": "ADirectionalLight",
+                        "FinalIndexU": "0.000000",
+                        "FinalIndexV": "0.000000",
+                        "GeomsCount": "0",
+                        "RelativeLocation": "X=0.000 Y=0.000 Z=0.000",
+                        "RelativeRotation": "Pitch=-0.000 Yaw=-103.705 Roll=-0.000",
+                        "RelativeScale3D": "X=1.000 Y=1.000 Z=1.000",
+                        "RigidBodyType": "1",
+                        "bApplyGravity": "false",
+                        "bAutoActive": "true",
+                        "bIsActive": "true",
+                        "bSimulate": "false",
+                        "m_Type": "UBillboardComponent"
+                    }
+                },
+                {
+                    "ComponentClass": "ULuaScriptComponent",
+                    "ComponentID": "LuaComponent",
+                    "Properties": {
+                        "ComponentClass": "ULuaScriptComponent",
+                        "ComponentName": "LuaComponent",
+                        "ComponentOwner": "ADirectionalLight_733",
+                        "ComponentOwnerClass": "ADirectionalLight",
+                        "ScriptName": "LuaScripts/Actors/DefaultActor.lua",
+                        "bAutoActive": "true",
+                        "bIsActive": "true"
+                    }
+                }
+            ],
+            "RootComponentID": "UBillboardComponent_0"
+        },
+        {
+            "ActorClass": "ACube",
+            "ActorID": "ACube_736",
+            "ActorLabel": "OBJ_CUBE_736",
+            "ActorTickInEditor": "false",
+            "Components": [
+                {
+                    "ComponentClass": "UStaticMeshComponent",
+                    "ComponentID": "StaticMeshComponent_0",
+                    "Properties": {
+                        "AABB_max": "X=1.287 Y=1.199 Z=2.555",
+                        "AABB_min": "X=-1.287 Y=-1.199 Z=-0.000",
+                        "AttachParentID": "nullptr",
+                        "ComponentClass": "UStaticMeshComponent",
+                        "ComponentName": "StaticMeshComponent_0",
+                        "ComponentOwner": "ACube_736",
+                        "ComponentOwnerClass": "ACube",
+                        "Geom_0Extent": "X=100.000 Y=1.000 Z=1.000",
+                        "Geom_0Offset": "X=0.000 Y=0.000 Z=0.000",
+                        "Geom_0Rotation": "Pitch=0.000 Yaw=0.000 Roll=0.000",
+                        "Geom_0Type": "0",
+                        "Geom_1Extent": "X=100.000 Y=1.000 Z=1.000",
+                        "Geom_1Offset": "X=100.000 Y=0.000 Z=0.000",
+                        "Geom_1Rotation": "Pitch=0.000 Yaw=0.000 Roll=0.000",
+                        "Geom_1Type": "0",
+                        "Geom_2Extent": "X=100.000 Y=1.000 Z=1.000",
+                        "Geom_2Offset": "X=-100.000 Y=0.000 Z=0.000",
+                        "Geom_2Rotation": "Pitch=0.000 Yaw=0.000 Roll=0.000",
+                        "Geom_2Type": "0",
+                        "Geom_3Extent": "X=100.000 Y=1.000 Z=1.000",
+                        "Geom_3Offset": "X=0.000 Y=100.000 Z=0.000",
+                        "Geom_3Rotation": "Pitch=0.000 Yaw=0.000 Roll=0.000",
+                        "Geom_3Type": "0",
+                        "Geom_4Extent": "X=100.000 Y=1.000 Z=1.000",
+                        "Geom_4Offset": "X=0.000 Y=-100.000 Z=0.000",
+                        "Geom_4Rotation": "Pitch=0.000 Yaw=0.000 Roll=0.000",
+                        "Geom_4Type": "0",
+                        "GeomsCount": "5",
+                        "RelativeLocation": "X=0.000 Y=0.000 Z=-100.000",
+                        "RelativeRotation": "Pitch=0.000 Yaw=0.000 Roll=-0.000",
+                        "RelativeScale3D": "X=1.000 Y=1.000 Z=1.000",
+                        "RigidBodyType": "1",
+                        "StaticMeshPath": "Contents/Reference/Reference.obj",
+                        "bApplyGravity": "false",
+                        "bAutoActive": "true",
+                        "bIsActive": "true",
+                        "bSimulate": "true",
+                        "m_Type": ""
+                    }
+                },
+                {
+                    "ComponentClass": "ULuaScriptComponent",
+                    "ComponentID": "LuaComponent",
+                    "Properties": {
+                        "ComponentClass": "ULuaScriptComponent",
+                        "ComponentName": "LuaComponent",
+                        "ComponentOwner": "ACube_736",
+                        "ComponentOwnerClass": "ACube",
+                        "ScriptName": "LuaScripts/Actors/DefaultActor.lua",
+                        "bAutoActive": "true",
+                        "bIsActive": "true"
+                    }
+                }
+            ],
+            "RootComponentID": "StaticMeshComponent_0"
+        },
+        {
+            "ActorClass": "AClothActor",
+            "ActorID": "AClothActor_747",
+            "ActorLabel": "AClothActor747",
+            "ActorTickInEditor": "false",
+            "Components": [
+                {
+                    "ComponentClass": "UClothMeshComponent",
+                    "ComponentID": "ClothMeshComponent",
+                    "Properties": {
+                        "AttachParentID": "nullptr",
+                        "ComponentClass": "UClothMeshComponent",
+                        "ComponentName": "ClothMeshComponent",
+                        "ComponentOwner": "AClothActor_747",
+                        "ComponentOwnerClass": "AClothActor",
+                        "RelativeLocation": "X=0.000 Y=0.000 Z=0.000",
+                        "RelativeRotation": "Pitch=0.000 Yaw=0.000 Roll=-0.000",
+                        "RelativeScale3D": "X=1.000 Y=1.000 Z=1.000",
+                        "bAutoActive": "true",
+                        "bIsActive": "true"
+                    }
+                }
+            ],
+            "RootComponentID": "ClothMeshComponent"
+        }
+    ],
+    "NextUUID": 0,
+    "Version": 1
+}

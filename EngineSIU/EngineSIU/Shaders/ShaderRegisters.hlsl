@@ -108,6 +108,27 @@ struct PS_INPUT_CommonMesh
     float3 WorldPosition : TEXCOORD3;
 };
 
+struct VS_OUTPUT_ClothMesh
+{
+    float4 Position : SV_POSITION;
+    float4 Color : COLOR;
+    float2 UV : TEXCOORD0;
+    float3 WorldNormal : TEXCOORD1;
+    float4 WorldTangent : TEXCOORD2;
+    float3 WorldPosition : TEXCOORD3;
+};
+
+struct PS_INPUT_ClothMesh
+{
+    float4 Position : SV_POSITION;
+    float4 Color : COLOR;
+    float2 UV : TEXCOORD0;
+    float3 WorldNormal : TEXCOORD1;
+    float4 WorldTangent : TEXCOORD2;
+    float3 WorldPosition : TEXCOORD3;
+    bool IsFrontFace : SV_IsFrontFace;
+};
+
 ////////
 /// 공용: 11 ~ 13
 ///////

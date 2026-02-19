@@ -1,9 +1,3 @@
-/**
- * Cloth Component Implementation (Refactored)
- * Uses centralized ClothWorld manager instead of per-component solver
- * Now supports both Legacy and Batched modes
- */
-
 #include "ClothComponent.h"
 #include "Engine/ClothAsset.h"
 #include "Cloth/ClothInstanceHandle.h"
@@ -13,7 +7,7 @@
 #include "Cloth/ClothPhysicsManager.h"
 
 UClothComponent::UClothComponent()
-    : ClothAsset(nullptr), ClothInstanceHandle(nullptr), bIsSimulating(false), bUseBatchedMode(false), bDebugDrawEnabled(false), AccumulatedForce(FVector::ZeroVector)
+    : ClothAsset(nullptr), ClothInstanceHandle(nullptr), bIsSimulating(false), bUseBatchedMode(false)
 {
 }
 
@@ -43,9 +37,6 @@ void UClothComponent::TickComponent(float DeltaTime)
 {
     Super::TickComponent(DeltaTime);
 
-    // Note: We NO LONGER call solver here!
-    // ClothWorld::Update() handles all simulation
-
     if (!bIsSimulating)
         return;
 
@@ -54,28 +45,19 @@ void UClothComponent::TickComponent(float DeltaTime)
     {
         // Batched mode
         // Apply accumulated forces (TODO: implement force system for batched mode)
-        if (AccumulatedForce.SizeSquared() > 0.0f)
-        {
-            // TODO: Add force support to batched system
-            AccumulatedForce = FVector::ZeroVector;
-        }
-
-        // NEW ATTACHMENT PATTERN: No manual updates needed!
-        // Attachments are automatically resolved by ClothBatchManager::UpdateKinematicTargets()
-        // which reads attachment data directly from the ClothAsset each frame.
-        // The simulation system owns the attachment update flow.
     }
 }
 
 void UClothComponent::BeginPlay()
 {
     Super::BeginPlay();
+}
 
-    // Auto-start simulation
-    if (ClothAsset)
-    {
-        StartSimulation();
-    }
+UObject* UClothComponent::Duplicate(UObject* InOuter)
+{
+    ThisClass* NewComponent = Cast<ThisClass>(Super::Duplicate(InOuter));
+
+    return NewComponent;
 }
 
 void UClothComponent::SetClothAsset(UClothAsset *InAsset)
@@ -95,8 +77,6 @@ void UClothComponent::SetClothAsset(UClothAsset *InAsset)
             ClothInstanceHandle = nullptr;
         }
     }
-
-    // Registration will happen in StartSimulation() based on detected mode
 }
 
 void UClothComponent::StartSimulation()
@@ -143,6 +123,22 @@ void UClothComponent::StopSimulation()
     if (bUseBatchedMode && ClothInstanceHandle)
     {
         ClothInstanceHandle->SetActive(false);
+
+        FClothWorld* ClothWorld = GEngine->ClothPhysicsManager->CreateClothWorld(GetWorld());
+        if (!ClothWorld || !ClothWorld->IsInitialized())
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ClothComponent: ClothWorld not available"));
+            return;
+        }
+
+        // Detect mode and register appropriately
+        if (ClothWorld->GetSystemMode() == EClothSystemMode::Batched)
+        {
+            // Batched mode registration
+            ClothWorld->UnregisterClothInstanceBatched(ClothInstanceHandle);
+
+            UE_LOG(ELogLevel::Display, TEXT("ClothComponent: Instance unregistered"));
+        }
     }
 
     bIsSimulating = false;
@@ -158,13 +154,7 @@ void UClothComponent::ResetSimulation()
         UE_LOG(ELogLevel::Warning, TEXT("ClothComponent: Reset not yet implemented for batched mode"));
     }
 
-    AccumulatedForce = FVector::ZeroVector;
     UE_LOG(ELogLevel::Display, TEXT("ClothComponent: Simulation reset"));
-}
-
-void UClothComponent::AddForce(const FVector &Force)
-{
-    AccumulatedForce += Force;
 }
 
 void UClothComponent::AddImpulse(const FVector &Impulse)
