@@ -494,26 +494,26 @@ UClothAsset* FClothAssetGenerator::PackageIntoAsset(
     // WorldPosition attachments will be transformed during BuildKinematicAttachmentData
     // based on the component's world transform at registration time
     
-    FClothAttachmentData attachment1;
-    attachment1.ClothVertexIndex = 0;
-    attachment1.Type = EClothAttachmentType::WorldPosition;
-    attachment1.Stiffness = 1.0f;
-    attachment1.bIsKinematic = true;
-    attachment1.AttachDistance = 0.0f;
-    // Store in LOCAL space - will be transformed to world space during registration
-    attachment1.WorldPosition = FVector(10, -10, 0);
-    asset->AddAttachmentData(attachment1);
+    //FClothAttachmentData attachment1;
+    //attachment1.ClothVertexIndex = 0;
+    //attachment1.Type = EClothAttachmentType::WorldPosition;
+    //attachment1.Stiffness = 1.0f;
+    //attachment1.bIsKinematic = true;
+    //attachment1.AttachDistance = 0.0f;
+    //// Store in LOCAL space - will be transformed to world space during registration
+    //attachment1.WorldPosition = FVector(10, -10, 0);
+    //asset->AddAttachmentData(attachment1);
 
-    // Attach second endpoint
-    FClothAttachmentData attachment2;
-    attachment2.ClothVertexIndex = 3;
-    attachment2.Type = EClothAttachmentType::WorldPosition;
-    attachment2.Stiffness = 1.0f;
-    attachment2.bIsKinematic = true;
-    attachment2.AttachDistance = 0.0f;
-    // Store in LOCAL space - will be transformed to world space during registration
-    attachment1.WorldPosition = FVector(0, 0, 0);
-    asset->AddAttachmentData(attachment2);
+    //// Attach second endpoint
+    //FClothAttachmentData attachment2;
+    //attachment2.ClothVertexIndex = 3;
+    //attachment2.Type = EClothAttachmentType::WorldPosition;
+    //attachment2.Stiffness = 1.0f;
+    //attachment2.bIsKinematic = true;
+    //attachment2.AttachDistance = 0.0f;
+    //// Store in LOCAL space - will be transformed to world space during registration
+    //attachment1.WorldPosition = FVector(0, 0, 0);
+    //asset->AddAttachmentData(attachment2);
 
     // Set source mesh reference
     asset->SourceMesh = SourceMesh;
