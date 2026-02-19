@@ -51,7 +51,21 @@ void UClothAsset::SerializeAsset(FArchive &Ar)
     // Simulation mesh data
     Ar << RestPositions;
     Ar << Indices;
-    Ar << InvMasses;
+    
+    // NEW: Serialize BaseInvMasses (immutable source of truth)
+    Ar << BaseInvMasses;
+    
+    // DEPRECATED: Also serialize old InvMasses for backward compatibility
+    // During loading, copy BaseInvMasses to InvMasses for old code paths
+    if (Ar.IsLoading())
+    {
+        InvMasses = BaseInvMasses;
+    }
+    else
+    {
+        // During saving, ensure InvMasses matches BaseInvMasses
+        Ar << BaseInvMasses;  // Serialize twice for compatibility
+    }
 
     // Render mesh data (if enabled)
     if (bUseRenderMesh)
@@ -81,9 +95,12 @@ void UClothAsset::SerializeAsset(FArchive &Ar)
     if (flags & 0x08)
         Ar << EdgeCollisions;
 
-    // Attachments
-    Ar << AttachmentsData;
-    Ar << AttachmentIndices;
+    // NEW: Attachment capabilities (asset-level metadata)
+    Ar << AttachmentCapabilities;
+
+    // DEPRECATED: Old attachments (kept for backward compatibility)
+    //Ar << AttachmentsData;
+    //Ar << AttachmentIndices;
 
     // Vertex paint data
     Ar << VertexPaintData;
@@ -207,10 +224,10 @@ uint64 UClothAsset::GetEstimatedFileSize() const
     }
     
     // Attachments
-    size += sizeof(uint32); // attachment data count
-    size += AttachmentsData.Num() * sizeof(FClothAttachmentData);
-    size += sizeof(uint32); // attachment indices count
-    size += AttachmentIndices.Num() * sizeof(uint32);
+    //size += sizeof(uint32); // attachment data count
+    //size += AttachmentsData.Num() * sizeof(FClothAttachmentData);
+    //size += sizeof(uint32); // attachment indices count
+    //size += AttachmentIndices.Num() * sizeof(uint32);
     
     // Vertex paint data
     size += sizeof(uint32); // vertex paint data count

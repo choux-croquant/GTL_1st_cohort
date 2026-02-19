@@ -20,7 +20,8 @@
 struct FClothConfig
 {
     // Global simulation settings
-    FVector Gravity = {0.0f, 0.0f, -980.0f};
+    //FVector Gravity = {0.0f, 0.0f, -980.0f};
+    FVector Gravity = { 0.0f, 0.0f, -1.0f };
     float Mass = 1.0f;
     float Damping = 0.5f;
 
@@ -244,8 +245,68 @@ class USceneComponent;
 class AActor;
 
 /**
- * Attachment data for connecting cloth to skeletal meshes or static objects
- * Now supports automatic transform resolution from driver references
+ * ASSET-LEVEL: Attachment capability metadata
+ * Defines which simulation vertices CAN be attached (not what they're attached to)
+ * Stored in UClothAsset as reusable template data
+ */
+struct FClothAttachmentCapability
+{
+    uint32 SimVertexIndex;           // Which simulation vertex can be attached
+    float DefaultStiffness = 1.0f;   // Default constraint stiffness
+    float DefaultAttachDistance = 0.0f; // 0 = hard kinematic, >0 = LRA
+    FString DebugName;               // Optional: "LeftShoulder", "RightHip", etc.
+    
+    FClothAttachmentCapability()
+        : SimVertexIndex(0), DefaultStiffness(1.0f), DefaultAttachDistance(0.0f)
+    {}
+};
+
+/**
+ * INSTANCE-LEVEL: Attachment target
+ * Defines what a specific instance attaches to (instance-specific)
+ * Stored in UClothComponent per-instance
+ */
+struct FClothAttachmentTarget
+{
+    EClothAttachmentType Type = EClothAttachmentType::WorldPosition;
+    
+    // Driver references (instance-specific)
+    USceneComponent* DriverComponent = nullptr;
+    AActor* DriverActor = nullptr;
+    
+    // Skeletal mesh attachment
+    FName BoneName;
+    int32 BoneIndex = -1;
+    FTransform LocalOffset = FTransform::Identity;
+    
+    // World position (cached, auto-updated from driver)
+    FVector WorldPosition = FVector::ZeroVector;
+    
+    FClothAttachmentTarget() {}
+};
+
+/**
+ * INSTANCE-LEVEL: Attachment binding
+ * Combines vertex index with instance-specific target
+ * Stored in UClothComponent per-instance
+ */
+struct FClothAttachmentBinding
+{
+    uint32 SimVertexIndex;              // Which vertex is attached
+    FClothAttachmentTarget Target;      // What it's attached to (instance-specific)
+    float Stiffness = 1.0f;             // Per-instance override
+    float AttachDistance = 0.0f;        // Per-instance override
+    bool bIsActive = true;              // Can disable without unbinding
+    
+    FClothAttachmentBinding()
+        : SimVertexIndex(0), Stiffness(1.0f), AttachDistance(0.0f), bIsActive(true)
+    {}
+};
+
+/**
+ * DEPRECATED: Old attachment data structure (kept for backward compatibility during migration)
+ * Will be removed after full migration to new system
+ * Use FClothAttachmentCapability (asset) + FClothAttachmentBinding (instance) instead
  */
 struct FClothAttachmentData
 {
@@ -483,6 +544,47 @@ inline FArchive &operator<<(FArchive &Ar, FClothLODData &LOD)
     return Ar;
 }
 
+// NEW: Serialization for FClothAttachmentCapability (asset-level)
+inline FArchive &operator<<(FArchive &Ar, FClothAttachmentCapability &C)
+{
+    Ar << C.SimVertexIndex;
+    Ar << C.DefaultStiffness;
+    Ar << C.DefaultAttachDistance;
+    Ar << C.DebugName;
+    return Ar;
+}
+
+// NEW: Serialization for FClothAttachmentTarget (instance-level)
+inline FArchive &operator<<(FArchive &Ar, FClothAttachmentTarget &T)
+{
+    // Serialize enum as uint8
+    uint8 TypeAsByte = static_cast<uint8>(T.Type);
+    Ar << TypeAsByte;
+    if (Ar.IsLoading())
+    {
+        T.Type = static_cast<EClothAttachmentType>(TypeAsByte);
+    }
+
+    // Note: DriverComponent and DriverActor are NOT serialized (runtime references only)
+    Ar << T.BoneName;
+    Ar << T.BoneIndex;
+    Ar << T.LocalOffset;
+    Ar << T.WorldPosition;
+    return Ar;
+}
+
+// NEW: Serialization for FClothAttachmentBinding (instance-level)
+inline FArchive &operator<<(FArchive &Ar, FClothAttachmentBinding &B)
+{
+    Ar << B.SimVertexIndex;
+    Ar << B.Target;
+    Ar << B.Stiffness;
+    Ar << B.AttachDistance;
+    Ar << B.bIsActive;
+    return Ar;
+}
+
+// DEPRECATED: Old attachment data serialization (kept for backward compatibility)
 inline FArchive &operator<<(FArchive &Ar, FClothAttachmentData &A)
 {
     Ar << A.ClothVertexIndex;

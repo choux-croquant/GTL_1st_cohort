@@ -10,6 +10,7 @@
 #include "Cloth/ClothBatchTypes.h"
 
 class UClothMeshComponent;
+class UStaticMesh;
 class UClothAsset;
 class AStaticMeshActor;
 class FClothInstanceHandle;
@@ -30,17 +31,24 @@ public:
 
     // Multiple cloth instances for batching test
     // Target: ~200 instances with ~400 particles each = ~80,000 total particles
-    static constexpr int32 NumClothInstances = 200;
+    static constexpr int32 NumClothInstances = 10;
     TArray<UClothMeshComponent*> ClothMeshes;
 
     // Shared cloth asset (generated once, reused by all instances)
     UClothAsset* SharedClothAsset;
+    UStaticMesh* SharedStaticMesh;
 
     // Create shared cloth asset (called once)
     void CreateSharedClothAsset();
     
     // Create test cloth instance using shared asset
     void CreateTestClothMesh(int32 Index, const FVector& Position);
+
+    // NEW: Attachment system testing methods
+    void TestAttachmentIndependence();      // Test multiple instances with different attachments
+    void TestRuntimeAttachmentChanges();    // Test bind/unbind during runtime
+    void TestInvMassIsolation();            // Test per-instance InvMass isolation
+    void TestAttachmentPatterns();          // Test various attachment patterns
 
 private:
     // Animation time

@@ -75,10 +75,10 @@ void UWorld::Tick(float DeltaTime)
 void UWorld::BeginPlay()
 {
     // ===== NEW BATCHED TEST =====
-    /*ATestBatchedClothActor *BatchedClothTest = this->SpawnActor<ATestBatchedClothActor>();
+   /* ATestBatchedClothActor *BatchedClothTest = this->SpawnActor<ATestBatchedClothActor>();
     if (BatchedClothTest)
     {
-        BatchedClothTest->SetActorLocation(FVector(0.0f, -300.0f, 0.0f));
+        BatchedClothTest->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));
         UE_LOG(ELogLevel::Display, TEXT("World: Spawned TestBatchedClothActor for batched simulation testing"));
     }*/
 

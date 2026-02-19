@@ -284,10 +284,15 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         instanceIDs[i] = metadata.InstanceParameterIndex; // All particles belong to this instance
     }
 
+    // NEW: Use per-instance RuntimeInvMasses instead of asset InvMasses
+    // This enables per-instance attachment isolation
+    const TArray<float>& runtimeInvMasses = Params.OwnerComponent ?
+        Params.OwnerComponent->GetRuntimeInvMasses() : Params.InvMasses;
+    
     // Upload transformed world-space positions (NOT local-space positions!)
     BatchedSolver->UploadParticleData(
         worldSpacePositions, // Changed from Params.RestPositions
-        Params.InvMasses,
+        runtimeInvMasses,    // NEW: Per-instance InvMass
         instanceIDs,
         metadata.ParticleOffset);
 
@@ -828,30 +833,38 @@ void FClothBatchManager::BuildKinematicAttachmentData()
     UniqueComponents.Empty();
     TArray<FKinematicAttachmentGPU> attachmentData;
 
-    // Collect all attachments and deduplicate components
+    // NEW: Collect all attachments from per-instance bindings (not asset)
     for (FClothInstanceHandle *Handle : Instances)
     {
-        if (!Handle || !Handle->GetOwnerComponent() || !Handle->GetOwnerComponent()->GetClothAsset())
+        if (!Handle || !Handle->GetOwnerComponent())
             continue;
 
         const FClothInstanceMetadata &metadata = Handle->GetMetadata();
         UClothComponent *owner = Handle->GetOwnerComponent();
-        const TArray<FClothAttachmentData> &attachments = owner->GetClothAsset()->AttachmentsData;
+        
+        // NEW: Read from component's AttachmentBindings instead of asset's AttachmentsData
+        const TArray<FClothAttachmentBinding> &bindings = owner->GetAttachmentBindings();
 
-        for (const FClothAttachmentData &attachment : attachments)
+        for (const FClothAttachmentBinding &binding : bindings)
         {
-            if (attachment.Type == EClothAttachmentType::ActorTransform) {
-                if (!attachment.DriverComponent)
+            // Skip inactive bindings
+            if (!binding.bIsActive)
+                continue;
+            
+            const FClothAttachmentTarget &target = binding.Target;
+            
+            if (target.Type == EClothAttachmentType::ActorTransform) {
+                if (!target.DriverComponent)
                     continue;
                 // Get or create component index (deduplication!)
-                uint32 *ComponentIndexPtr = ComponentIndexMap.Find(attachment.DriverComponent);
+                uint32 *ComponentIndexPtr = ComponentIndexMap.Find(target.DriverComponent);
                 uint32 ComponentIndex;
 
                 if (!ComponentIndexPtr)
                 {
                     ComponentIndex = UniqueComponents.Num();
-                    ComponentIndexMap.Add(attachment.DriverComponent, ComponentIndex);
-                    UniqueComponents.Add(attachment.DriverComponent);
+                    ComponentIndexMap.Add(target.DriverComponent, ComponentIndex);
+                    UniqueComponents.Add(target.DriverComponent);
                 }
                 else
                 {
@@ -862,29 +875,61 @@ void FClothBatchManager::BuildKinematicAttachmentData()
                 FKinematicAttachmentGPU gpuAttachment;
                 gpuAttachment.Type = 1;
                 gpuAttachment.ComponentIndex = ComponentIndex;
-                gpuAttachment.ParticleIndex = attachment.ClothVertexIndex + metadata.ParticleOffset;
-                gpuAttachment.Stiffness = attachment.Stiffness;
-                gpuAttachment.AttachDistance = attachment.AttachDistance;
-                gpuAttachment.LocalOffset = attachment.LocalOffset.GetTranslation();
+                gpuAttachment.ParticleIndex = binding.SimVertexIndex + metadata.ParticleOffset;
+                gpuAttachment.Stiffness = binding.Stiffness;
+                gpuAttachment.AttachDistance = binding.AttachDistance;
+                gpuAttachment.LocalOffset = target.LocalOffset.GetTranslation();
                 gpuAttachment.Padding = 0.0f;
 
                 attachmentData.Add(gpuAttachment);
             }
-            else if (attachment.Type == EClothAttachmentType::WorldPosition) {
+            else if (target.Type == EClothAttachmentType::WorldPosition) {
                 // FIXED: WorldPosition attachments are in absolute world space
                 // Since particles are now in local space, we need to transform the world position
                 // to local space so the shader can compare them correctly
                 FTransform componentTransform = owner->GetComponentTransform();
                 FTransform invComponentTransform = componentTransform.Inverse();
-                FVector localPosition = invComponentTransform.TransformPosition(attachment.WorldPosition);
+                FVector localPosition = invComponentTransform.TransformPosition(target.WorldPosition);
                 
                 // Build GPU attachment data
                 FKinematicAttachmentGPU gpuAttachment;
                 gpuAttachment.Type = 0;
-                gpuAttachment.ParticleIndex = attachment.ClothVertexIndex + metadata.ParticleOffset;
-                gpuAttachment.Stiffness = attachment.Stiffness;
-                gpuAttachment.AttachDistance = attachment.AttachDistance;
+                gpuAttachment.ParticleIndex = binding.SimVertexIndex + metadata.ParticleOffset;
+                gpuAttachment.Stiffness = binding.Stiffness;
+                gpuAttachment.AttachDistance = binding.AttachDistance;
                 gpuAttachment.TargetPosition = localPosition;  // Transformed to local space
+                gpuAttachment.Padding = 0.0f;
+
+                attachmentData.Add(gpuAttachment);
+            }
+            else if (target.Type == EClothAttachmentType::SkeletalBone) {
+                // NEW: Support for skeletal bone attachments
+                if (!target.DriverComponent)
+                    continue;
+                    
+                // Get or create component index (deduplication!)
+                uint32 *ComponentIndexPtr = ComponentIndexMap.Find(target.DriverComponent);
+                uint32 ComponentIndex;
+
+                if (!ComponentIndexPtr)
+                {
+                    ComponentIndex = UniqueComponents.Num();
+                    ComponentIndexMap.Add(target.DriverComponent, ComponentIndex);
+                    UniqueComponents.Add(target.DriverComponent);
+                }
+                else
+                {
+                    ComponentIndex = *ComponentIndexPtr;
+                }
+
+                // Build GPU attachment data (similar to ActorTransform but with bone offset)
+                FKinematicAttachmentGPU gpuAttachment;
+                gpuAttachment.Type = 1; // Use same type as ActorTransform for now
+                gpuAttachment.ComponentIndex = ComponentIndex;
+                gpuAttachment.ParticleIndex = binding.SimVertexIndex + metadata.ParticleOffset;
+                gpuAttachment.Stiffness = binding.Stiffness;
+                gpuAttachment.AttachDistance = binding.AttachDistance;
+                gpuAttachment.LocalOffset = target.LocalOffset.GetTranslation();
                 gpuAttachment.Padding = 0.0f;
 
                 attachmentData.Add(gpuAttachment);
@@ -904,11 +949,11 @@ void FClothBatchManager::BuildKinematicAttachmentData()
 
     float dedupPercent = attachmentData.Num() > 0 ? (1.0f - (float)UniqueComponents.Num() / attachmentData.Num()) * 100.0f : 0.0f;
 
-    UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Built kinematic attachments - %d attachments, %d unique components (%.1f%% dedup)"),
+   /* UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Built kinematic attachments - %d attachments, %d unique components (%.1f%% dedup)"),
            static_cast<int32>(LODLevel),
            attachmentData.Num(),
            UniqueComponents.Num(),
-           dedupPercent);
+           dedupPercent);*/
 
     bAttachmentDataDirty = false;
 }
@@ -917,11 +962,12 @@ void FClothBatchManager::UpdateKinematicTargetsGPU(float DeltaTime)
 {
     QUICK_SCOPE_CYCLE_COUNTER(UpdateKinematicTargets_GPU);
 
-    if (!BatchedSolver || TotalAttachmentCount == 0)
+    //if (!BatchedSolver || TotalAttachmentCount == 0)
+    if (!BatchedSolver)
         return;
 
     // Rebuild attachment data if needed (rare - only when attachments change)
-    if (bAttachmentDataDirty)
+    //if (bAttachmentDataDirty)
     {
         BuildKinematicAttachmentData();
     }
@@ -969,4 +1015,106 @@ uint32 FClothBatchManager::CalculateNewCapacity(uint32 CurrentCapacity, uint32 R
     }
 
     return newCapacity;
+}
+
+// NEW: Phase 3 - Runtime attachment update methods
+
+void FClothBatchManager::UpdateInstanceInvMass(FClothInstanceHandle* Instance)
+{
+    if (!Instance || !BatchedSolver || !Graphics)
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("ClothBatchManager: Cannot update InvMass - invalid state"));
+        return;
+    }
+
+    UClothComponent* component = Instance->GetOwnerComponent();
+    if (!component)
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("ClothBatchManager: Cannot update InvMass - no owner component"));
+        return;
+    }
+
+    const FClothInstanceMetadata& metadata = Instance->GetMetadata();
+    const TArray<float>& runtimeInvMasses = component->GetRuntimeInvMasses();
+
+    if (runtimeInvMasses.Num() == 0)
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("ClothBatchManager: Cannot update InvMass - empty RuntimeInvMasses"));
+        return;
+    }
+
+    // Get instance's buffer range
+    uint32 offset = metadata.ParticleOffset;
+    uint32 count = metadata.ParticleCount;
+
+    // Validate range
+    if (count != (uint32)runtimeInvMasses.Num())
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchManager: InvMass count mismatch - metadata: %d, runtime: %d"),
+               count, runtimeInvMasses.Num());
+        return;
+    }
+
+    // Update only this instance's range in unified buffer using D3D11_BOX
+    D3D11_BOX destBox;
+    destBox.left = offset * sizeof(float);
+    destBox.right = (offset + count) * sizeof(float);
+    destBox.top = 0;
+    destBox.bottom = 1;
+    destBox.front = 0;
+    destBox.back = 1;
+
+    ID3D11Buffer* invMassBuffer = BatchedSolver->GetInvMassBuffer();
+    if (!invMassBuffer)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothBatchManager: InvMass buffer not available"));
+        return;
+    }
+
+    Graphics->DeviceContext->UpdateSubresource(
+        invMassBuffer,
+        0,
+        &destBox,
+        runtimeInvMasses.GetData(),
+        0,
+        0
+    );
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager: Updated InvMass for instance (offset: %d, count: %d)"),
+           offset, count);
+}
+
+void FClothBatchManager::UpdateInstanceAttachments(FClothInstanceHandle* Instance)
+{
+    if (!Instance)
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("ClothBatchManager: Cannot update attachments - invalid instance"));
+        return;
+    }
+
+    // NEW: Immediately rebuild attachment data instead of just marking dirty
+    // This ensures TotalAttachmentCount is updated before next simulation frame
+    BuildKinematicAttachmentData();
+
+    // CRITICAL: Update solver's UsedAttachmentCount so kinematic constraints are applied
+    if (BatchedSolver)
+    {
+        BatchedSolver->SetUsedCounts(
+            TotalParticleCount,
+            TotalConstraintCount,
+            TotalBendConstraintCount,
+            TotalAttachmentCount,  // This updates UsedAttachmentCount in solver
+            TotalTriangleCount,
+            Instances.Num(),
+            TotalAreaConstraintCount,
+            TotalEdgeCollisionCount
+        );
+    }
+
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager: Rebuilt attachment data (Total: %d attachments, Solver updated)"),
+           TotalAttachmentCount);
+
+    // TODO: Implement incremental update optimization
+    // For now, we rebuild all attachments when any instance changes
+    // Future optimization: Track per-instance attachment ranges and update only affected range
 }

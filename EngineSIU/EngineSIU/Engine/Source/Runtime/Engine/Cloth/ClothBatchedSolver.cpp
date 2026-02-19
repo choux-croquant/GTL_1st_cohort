@@ -2531,10 +2531,10 @@ void FClothBatchedSolver::UpdateSelfCollisionParams(const TArray<FClothInstanceM
 	}
 	
 	// Log computed parameters
-	UE_LOG(ELogLevel::Display,
-		TEXT("Self-Collision: GridMin=(%.1f,%.1f,%.1f), CellSize=%.3f, Grid=%ux%ux%u, Radius=%.3f"),
-		gridMin.X, gridMin.Y, gridMin.Z, finalCellSize,
-		gridDimX, gridDimY, gridDimZ, finalCollisionRadius);
+	//UE_LOG(ELogLevel::Display,
+	//	TEXT("Self-Collision: GridMin=(%.1f,%.1f,%.1f), CellSize=%.3f, Grid=%ux%ux%u, Radius=%.3f"),
+	//	gridMin.X, gridMin.Y, gridMin.Z, finalCellSize,
+	//	gridDimX, gridDimY, gridDimZ, finalCollisionRadius);
 	
 	// NEW: Validate self-collision setup
 	bool bValid = FClothMeshAnalysis::ValidateSelfCollisionSetup(
