@@ -52,12 +52,6 @@ void UClothMeshComponent::BeginPlay()
     {
         RegisterWithClothWorld();
         bIsSimulationActive = true;  // Lock transform during simulation
-
-
-        // Attach different vertices on each instance
-        FVector pos1 = this->GetComponentLocation() + FVector(0, 0, 0);
-
-        BindAttachmentToWorldPosition(0, pos1);
     }
 }
 
