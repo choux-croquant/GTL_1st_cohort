@@ -14,6 +14,8 @@ StructuredBuffer<float> InvMass : register(t1);                 // Inverse masse
 StructuredBuffer<uint> CellCounters : register(t2);             // Per-cell particle counts
 StructuredBuffer<uint> CellData : register(t3);                 // Particle indices per cell
 Buffer<uint> Indices : register(t4);                            // Index buffer (for topology check)
+StructuredBuffer<FClothParticle> PreviousPositions : register(t5);  // Previous frame positions (for displacement)
+StructuredBuffer<FClothInstanceParameters> InstanceParams : register(t6);  // Per-instance parameters
 
 // Output buffers (Jacobi accumulation pattern)
 RWStructuredBuffer<int3> PositionDelta : register(u0);   // Accumulated position corrections
@@ -55,6 +57,42 @@ bool AreTopologicallyAdjacent(uint idxA, uint idxB)
 }
 
 /**
+ * Displacement-based friction calculation
+ * Based on Coulomb friction model with tangential displacement clamping
+ *
+ * @param relDisp - Relative displacement vector (current - previous)
+ * @param normal - Collision normal (points away from collider)
+ * @param normalForce - Normal impulse magnitude (penetration depth)
+ * @param mu - Friction coefficient (0-1)
+ * @return Friction correction to apply to position
+ */
+float3 CalculateFriction(float3 relDisp, float3 normal, float normalForce, float mu)
+{
+    // No friction if coefficient is zero or no normal force
+    if (mu <= 0.0f || normalForce <= 0.0f)
+        return float3(0, 0, 0);
+    
+    // Calculate tangential displacement (perpendicular to normal)
+    float3 tangent = relDisp - normal * dot(relDisp, normal);
+    float tangentLength = length(tangent);
+    
+    // Ignore negligible tangential movement
+    if (tangentLength < 1e-9f)
+        return float3(0, 0, 0);
+    
+    // Coulomb friction limit: mu * NormalForce
+    float maxTangentialForce = mu * normalForce;
+    
+    // Calculate friction scaling factor
+    // If tangent movement < limit: full static friction (stop completely)
+    // If tangent movement > limit: dynamic friction (resist by limit amount)
+    float scale = min(1.0f, maxTangentialForce / tangentLength);
+    
+    // Return friction correction (opposes tangential motion)
+    return -tangent * scale;
+}
+
+/**
  * Solve self-collisions using spatial hash grid
  * Each thread processes one particle and checks for collisions with neighbors
  */
@@ -70,6 +108,16 @@ void SolveSelfCollisionsCS(uint3 DTid : SV_DispatchThreadID)
         return;  // Skip kinematic particles
     
     float3 posA = PredictedRead[particleIdx].Position;
+    float3 prevPosA = PreviousPositions[particleIdx].Position;
+    uint instanceIDA = PredictedRead[particleIdx].InstanceID;
+    
+    // Get instance friction parameters
+    FClothInstanceParameters paramsA = InstanceParams[instanceIDA];
+    float finalFriction = paramsA.Friction * CollisionFriction;
+    
+    // Calculate displacement for particle A
+    float3 dispA = posA - prevPosA;
+    
     uint3 cellA = GetGridCell(posA);
     
     // Query 3×3×3 neighborhood (27 cells)
@@ -102,8 +150,16 @@ void SolveSelfCollisionsCS(uint3 DTid : SV_DispatchThreadID)
                     if (AreTopologicallyAdjacent(particleIdx, particleIdxB))
                         continue;
                     
+                    // Prevent double counting: only process if particleIdx < particleIdxB
+                    if (particleIdx > particleIdxB)
+                        continue;
+                    
                     float invMassB = InvMass[particleIdxB];
                     float3 posB = PredictedRead[particleIdxB].Position;
+                    float3 prevPosB = PreviousPositions[particleIdxB].Position;
+                    
+                    // Calculate displacement for particle B
+                    float3 dispB = posB - prevPosB;
                     
                     // Collision detection
                     float3 diff = posB - posA;
@@ -120,14 +176,34 @@ void SolveSelfCollisionsCS(uint3 DTid : SV_DispatchThreadID)
                         if (wSum < EPSILON)
                             continue;
                         
-                        // Compute corrections with stiffness
+                        // Position correction (normal separation)
                         float3 correction = normal * penetration * CollisionStiffness;
                         float3 corrA = -correction * (invMassA / wSum);
                         float3 corrB = +correction * (invMassB / wSum);
                         
+                        // Friction correction (tangential resistance)
+                        // Calculate relative displacement
+                        float3 relDisp = dispA - dispB;
+                        
+                        // Calculate friction in relative space
+                        float3 frictionRel = CalculateFriction(
+                            relDisp,
+                            normal,
+                            penetration,  // Use penetration as normal force proxy
+                            finalFriction
+                        );
+                        
+                        // Distribute friction based on mass ratios
+                        float3 fricA = (invMassA / wSum) * frictionRel;
+                        float3 fricB = -(invMassB / wSum) * frictionRel;
+                        
+                        // Combine position and friction corrections
+                        float3 outA = corrA + fricA;
+                        float3 outB = corrB + fricB;
+                        
                         // Atomic accumulation (scaled to int for thread safety)
-                        int3 deltaA = int3(corrA * kScale);
-                        int3 deltaB = int3(corrB * kScale);
+                        int3 deltaA = int3(outA * kScale);
+                        int3 deltaB = int3(outB * kScale);
                         
                         // Accumulate corrections for particle A
                         InterlockedAdd(PositionDelta[particleIdx].x, deltaA.x);

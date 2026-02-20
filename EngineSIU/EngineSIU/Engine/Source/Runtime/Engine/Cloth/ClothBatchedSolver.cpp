@@ -2411,11 +2411,15 @@ void FClothBatchedSolver::DispatchCollisionSDF(uint32 ParticleCount)
     // Bind SRVs:
     // t0: Collider buffer (read-only)
     // t1: InvMass (to skip kinematic particles)
-    ID3D11ShaderResourceView *srvs[2] = {
+    // t2: Previous positions (for displacement calculation)
+    // t3: Instance parameters (for per-instance friction)
+    ID3D11ShaderResourceView *srvs[4] = {
         CollisionManager->GetColliderBufferSRV(), // t0
-        UnifiedInvMassSRV                         // t1
+        UnifiedInvMassSRV,                        // t1
+        UnifiedPositionSRV,                       // t2 - Previous frame positions
+        InstanceParameterSRV                      // t3 - Instance parameters
     };
-    Graphics->DeviceContext->CSSetShaderResources(0, 2, srvs);
+    Graphics->DeviceContext->CSSetShaderResources(0, 4, srvs);
 
     // Bind UAV:
     // u0: Predicted buffer (read-write, modify in-place)
@@ -2432,8 +2436,8 @@ void FClothBatchedSolver::DispatchCollisionSDF(uint32 ParticleCount)
     // Unbind
     ID3D11UnorderedAccessView *nullUAVs[] = {nullptr};
     Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 1, nullUAVs, nullptr);
-    ID3D11ShaderResourceView *nullSRVs[2] = {nullptr, nullptr};
-    Graphics->DeviceContext->CSSetShaderResources(0, 2, nullSRVs);
+    ID3D11ShaderResourceView *nullSRVs[4] = {nullptr, nullptr, nullptr, nullptr};
+    Graphics->DeviceContext->CSSetShaderResources(0, 4, nullSRVs);
 }
 
 void FClothBatchedSolver::DispatchEdgeCollisionSDF(uint32 EdgeCollisionCount)
@@ -2543,13 +2547,15 @@ void FClothBatchedSolver::DispatchSelfCollision(uint32 ParticleCount)
         
         // Bind SRVs
         ID3D11ShaderResourceView* srvs[] = {
-            UnifiedPredictedSRV,
-            UnifiedInvMassSRV,
-            SelfCollisionCellCountersSRV,
-            SelfCollisionCellDataSRV,
-            UnifiedIndexSRV  // For topology check
+            UnifiedPredictedSRV,              // t0: Predicted positions
+            UnifiedInvMassSRV,                // t1: Inverse masses
+            SelfCollisionCellCountersSRV,    // t2: Cell counters
+            SelfCollisionCellDataSRV,         // t3: Cell data
+            UnifiedIndexSRV,                  // t4: Indices (for topology check)
+            UnifiedPositionSRV,               // t5: Previous positions (for displacement)
+            InstanceParameterSRV              // t6: Instance parameters (for friction)
         };
-        Graphics->DeviceContext->CSSetShaderResources(0, 5, srvs);
+        Graphics->DeviceContext->CSSetShaderResources(0, 7, srvs);
         
         // Bind UAVs (reuse existing delta/weight buffers)
         ID3D11UnorderedAccessView* uavs[] = {
@@ -2565,8 +2571,8 @@ void FClothBatchedSolver::DispatchSelfCollision(uint32 ParticleCount)
         // Unbind
         ID3D11UnorderedAccessView* nullUAVs[] = {nullptr, nullptr};
         Graphics->DeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
-        ID3D11ShaderResourceView* nullSRVs[] = {nullptr, nullptr, nullptr, nullptr, nullptr};
-        Graphics->DeviceContext->CSSetShaderResources(0, 5, nullSRVs);
+        ID3D11ShaderResourceView* nullSRVs[] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+        Graphics->DeviceContext->CSSetShaderResources(0, 7, nullSRVs);
     }
     
     // PASS 3: Apply accumulated corrections (reuse existing method)

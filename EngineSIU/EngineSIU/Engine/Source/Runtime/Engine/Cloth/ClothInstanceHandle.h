@@ -32,6 +32,10 @@ public:
 
     void SetActive(bool bActive);
     bool IsActive() const { return Metadata.bIsActive; }
+    
+    // Friction control
+    void SetFriction(float InFriction);
+    float GetFriction() const { return Parameters.Friction; }
 
     // LOD management
     void RequestLODChange(EClothLODLevel TargetLOD);

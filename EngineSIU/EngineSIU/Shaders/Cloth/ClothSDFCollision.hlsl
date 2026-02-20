@@ -6,9 +6,11 @@
 
 #include "ClothCommon.hlsli"
 
- // Input buffers
+// Input buffers
 StructuredBuffer<FClothCollider> Colliders : register(t0);  // Collider data
 StructuredBuffer<float> InvMass : register(t1);             // Inverse masses
+StructuredBuffer<FClothParticle> PreviousPositions : register(t2);  // Previous frame positions (for displacement)
+StructuredBuffer<FClothInstanceParameters> InstanceParams : register(t3);  // Per-instance parameters
 
 // Output buffer (read-write)
 RWStructuredBuffer<FClothParticle> PredictedRW : register(u0);  // Modify in-place
@@ -127,26 +129,32 @@ float QueryColliderSDF(FClothCollider collider, float3 pos, out float3 normal)
 }
 
 /**
- * Collision response
- * Applies position correction and velocity damping
+ * Displacement-based friction calculation
+ * Based on Coulomb friction model with tangential displacement clamping
+ *
+ * @param relDisp - Relative displacement vector (current - previous)
+ * @param normal - Collision normal (points away from collider)
+ * @param normalForce - Normal impulse magnitude (penetration depth)
+ * @param mu - Friction coefficient (0-1)
+ * @return Friction correction to apply to position
  */
-void ApplyCollisionResponse(inout float3 position, float3 normal, float penetration,
-    float friction, float invMass)
+float3 CalculateFriction(float3 relativeDisplacement, float3 normal, float normalForce, float mu)
 {
-    if (invMass < EPSILON)
-        return;  // Kinematic particle - no response
-
-    // Clamp penetration to prevent extreme corrections
-    float maxCorrection = 100.0f;  // Adjust based on your scene scale
-    penetration = min(penetration, maxCorrection);
-
-    // Position correction - push particle out by penetration distance
-    float3 correction = normal * penetration;
-    position += correction;
-
-    // TODO: If you need velocity-based friction/damping:
-    // This would require reading velocity buffer and applying tangential friction
-    // For now, position correction is sufficient for basic collision
+    if (mu <= 0.0f || normalForce <= 0.0f)
+        return float3(0, 0, 0);
+    
+    // Tangential displacement
+    float3 tangent = relativeDisplacement - normal * dot(relativeDisplacement, normal);
+    float tangentLength = length(tangent);
+    
+    if (tangentLength < 1e-9f)
+        return float3(0, 0, 0);
+    
+    float maxTangentialForce = mu * normalForce;
+    
+    float scale = min(1.0f, maxTangentialForce / tangentLength);
+    
+    return -tangent * scale;
 }
 
 /**
@@ -166,15 +174,27 @@ void SolveCollisionsCS(uint3 DTid : SV_DispatchThreadID)
     if (invMass < EPSILON)
         return;
 
-    // Read current predicted position
+    // Read current and previous positions
     FClothParticle particle = PredictedRW[idx];
     float3 position = particle.Position;
+    float3 previousPosition = PreviousPositions[idx].Position;
+    
+    // Get instance parameters for friction
+    uint instanceID = particle.InstanceID;
+    FClothInstanceParameters instanceParams = InstanceParams[instanceID];
+    
+    // Calculate displacement since last frame
+    float3 displacement = position - previousPosition;
+    
+    // Calculate final friction coefficient (instance × global)
+    float finalFriction = instanceParams.Friction * CollisionFriction;
 
     // Store original position for NaN recovery
     float3 originalPosition = position;
 
     bool hadCollision = false;
     float3 totalCorrection = float3(0, 0, 0);
+    float3 totalFriction = float3(0, 0, 0);
 
     // Test against all colliders
     for (uint i = 0; i < NumColliders; i++)
@@ -193,8 +213,19 @@ void SolveCollisionsCS(uint3 DTid : SV_DispatchThreadID)
             float maxSingleCorrection = max(collider.Radius * 2.0f, 50.0f);
             penetration = min(penetration, maxSingleCorrection);
 
-            // Apply correction
-            totalCorrection += normal * penetration;
+            // Position correction (normal force)
+            float3 correction = normal * penetration;
+            totalCorrection += correction;
+            
+            // Friction correction (tangential resistance)
+            float3 frictionCorrection = CalculateFriction(
+                displacement,
+                normal,
+                penetration,  // Use penetration as normal force proxy
+                finalFriction
+            );
+            totalFriction += frictionCorrection;
+            
             hadCollision = true;
         }
     }
@@ -202,17 +233,13 @@ void SolveCollisionsCS(uint3 DTid : SV_DispatchThreadID)
     // Apply accumulated corrections
     if (hadCollision)
     {
-        position += totalCorrection;
+        position += totalCorrection + totalFriction;
 
         // NaN/Inf validation and recovery
         if (any(isnan(position)) || any(isinf(position)))
         {
             // Recovery: revert to original position
             position = originalPosition;
-
-            // Alternative recovery: push to safe position outside all colliders
-            // position = collider.Center + SafeNormalizeWithFallback(originalPosition - collider.Center) 
-            //            * (collider.Radius + CollisionThickness);
         }
 
         // Write back modified position
