@@ -621,14 +621,14 @@ void FClothBatchManager::RemoveInstance(FClothInstanceHandle *Instance)
     int32 metadataIndex = *MetadataIndexPtr;
     const FClothInstanceMetadata &metadata = InstanceMetadata[metadataIndex];
 
-    // Update totals
-    TotalParticleCount -= metadata.ParticleCount;
-    TotalConstraintCount -= metadata.ConstraintCount;
-    TotalBendConstraintCount -= metadata.BendConstraintCount;
-    TotalAttachmentCount -= metadata.KinematicTargetCount;
-    TotalTriangleCount -= metadata.TriangleCount;
-    TotalAreaConstraintCount -= metadata.AreaConstraintCount;     // NEW
-    TotalEdgeCollisionCount -= metadata.EdgeCollisionCount;       // NEW
+    // CRITICAL FIX: DO NOT decrement totals when removing instance
+    // This preserves buffer offsets for remaining instances
+    // Gaps will be handled by compaction later
+    //
+    // OLD BUGGY CODE (caused offset corruption):
+    // TotalParticleCount -= metadata.ParticleCount;  // ❌ This breaks offsets!
+    //
+    // NEW APPROACH: Keep totals stable, mark instance as inactive
 
     // Remove from tracking
     Instances.Remove(Instance);
@@ -637,37 +637,49 @@ void FClothBatchManager::RemoveInstance(FClothInstanceHandle *Instance)
     // Invalidate metadata to prevent stale access
     FClothInstanceMetadata& metadataRef = InstanceMetadata[metadataIndex];
     metadataRef.bIsActive = false;
-    metadataRef.ParticleCount = 0;
-    metadataRef.ConstraintCount = 0;
-    metadataRef.BendConstraintCount = 0;
-    metadataRef.KinematicTargetCount = 0;
-    metadataRef.TriangleCount = 0;
-    metadataRef.AreaConstraintCount = 0;
-    metadataRef.EdgeCollisionCount = 0;
     
-    // Mark metadata slot as free for reuse with invalid offset markers
-    metadataRef.ParticleOffset = 0xFFFFFFFF;  // Invalid offset marker
-    metadataRef.ConstraintOffset = 0xFFFFFFFF;
-    metadataRef.BendConstraintOffset = 0xFFFFFFFF;
-    metadataRef.KinematicTargetOffset = 0xFFFFFFFF;
-    metadataRef.TriangleOffset = 0xFFFFFFFF;
-    metadataRef.AreaConstraintOffset = 0xFFFFFFFF;
-    metadataRef.EdgeCollisionOffset = 0xFFFFFFFF;
-    metadataRef.RenderVertexOffset = 0xFFFFFFFF;
-    metadataRef.RenderIndexOffset = 0xFFFFFFFF;
+    // IMPORTANT: Keep offsets and counts intact for now
+    // This allows other instances to maintain their correct buffer positions
+    // The space will be reclaimed during compaction
     
-    UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Invalidated metadata at index %d"),
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Deactivated instance at index %d (offsets preserved)"),
            static_cast<int32>(LODLevel), metadataIndex);
+    UE_LOG(ELogLevel::Display, TEXT("  Particle range: [%u-%u], Constraint range: [%u-%u]"),
+           metadataRef.ParticleOffset, metadataRef.ParticleOffset + metadataRef.ParticleCount - 1,
+           metadataRef.ConstraintOffset, metadataRef.ConstraintOffset + metadataRef.ConstraintCount - 1);
 
     // Mark for compaction (don't compact immediately)
     bNeedsCompaction = true;
 
-    // Update solver counts
-    BatchedSolver->SetUsedCounts(TotalParticleCount, TotalConstraintCount, TotalBendConstraintCount, TotalAttachmentCount,
-                                 TotalTriangleCount, Instances.Num(), TotalAreaConstraintCount, TotalEdgeCollisionCount);
+    // Update solver with ACTIVE instance count (not total capacity)
+    // Count only active instances for simulation
+    uint32 activeParticles = 0;
+    uint32 activeConstraints = 0;
+    uint32 activeBendConstraints = 0;
+    uint32 activeAttachments = 0;
+    uint32 activeTriangles = 0;
+    uint32 activeAreaConstraints = 0;
+    uint32 activeEdgeCollisions = 0;
+    
+    for (const FClothInstanceMetadata& meta : InstanceMetadata)
+    {
+        if (meta.bIsActive)
+        {
+            activeParticles += meta.ParticleCount;
+            activeConstraints += meta.ConstraintCount;
+            activeBendConstraints += meta.BendConstraintCount;
+            activeAttachments += meta.KinematicTargetCount;
+            activeTriangles += meta.TriangleCount;
+            activeAreaConstraints += meta.AreaConstraintCount;
+            activeEdgeCollisions += meta.EdgeCollisionCount;
+        }
+    }
+    
+    BatchedSolver->SetUsedCounts(activeParticles, activeConstraints, activeBendConstraints, activeAttachments,
+                                 activeTriangles, Instances.Num(), activeAreaConstraints, activeEdgeCollisions);
 
-    UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Removed instance - Remaining: %d instances, %d particles"),
-           static_cast<int32>(LODLevel), Instances.Num(), TotalParticleCount);
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Removed instance - Remaining: %d instances, %d active particles (Total capacity: %d)"),
+           static_cast<int32>(LODLevel), Instances.Num(), activeParticles, TotalParticleCount);
 }
 
 void FClothBatchManager::UpdateInstanceParameters(FClothInstanceHandle *Instance,

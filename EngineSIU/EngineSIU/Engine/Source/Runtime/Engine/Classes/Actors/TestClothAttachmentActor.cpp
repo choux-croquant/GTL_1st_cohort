@@ -520,17 +520,17 @@ void ATestClothAttachmentActor::Tick(float DeltaTime)
     PoleComponent2->SetWorldRotation(NewRotation2);
 
     // ===== Sphere: Circular motion in XY plane =====
-    const float Speed3 = 1.5f;
-    const float CircleRadius = 30.0f;  // Radius of circular motion
+    const float Speed3 = 4.0f;
+    const float CircleRadius = 20.0f;  // Radius of circular motion
 
     float Time3 = AnimationTime * Speed3;
 
     // Circular motion in XY plane
     float CircleX = FMath::Cos(Time3) * CircleRadius;
-    float CircleY = FMath::Sin(Time3) * CircleRadius;
+    float CircleZ = FMath::Sin(Time3) * CircleRadius;
 
     // Apply circular offset relative to initial location
-    FVector NewLocation3 = InitialSphereLocation + FVector(CircleX, CircleY, 0.0f);
+    FVector NewLocation3 = InitialSphereLocation + FVector(CircleX, 0.0f, CircleZ);
 
     SphereComponent->SetWorldLocation(NewLocation3);
 }
