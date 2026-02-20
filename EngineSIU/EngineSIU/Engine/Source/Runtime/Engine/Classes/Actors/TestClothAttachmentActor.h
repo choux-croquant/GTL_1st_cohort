@@ -32,11 +32,14 @@ private:
     UClothMeshComponent* ClothComponent;
     UStaticMeshComponent* PoleComponent2;  // Second pole for second cloth
     UClothMeshComponent* ClothComponent2;  // Second cloth with 90 degree rotation
+    UStaticMeshComponent* SphereComponent;  // Sphere for third cloth
+    UClothMeshComponent* ClothComponent3;  // Third cloth with single vertex attachment
 
     // Animation
     float AnimationTime;
-    FVector InitialPoleLocation;   // Store initial location for first pole oscillation
-    FVector InitialPole2Location;  // Store initial location for second pole oscillation
+    FVector InitialPoleLocation;    // Store initial location for first pole oscillation
+    FVector InitialPole2Location;   // Store initial location for second pole oscillation
+    FVector InitialSphereLocation;  // Store initial location for sphere circular motion
     
     // Initialization guard
     bool bInitialized;

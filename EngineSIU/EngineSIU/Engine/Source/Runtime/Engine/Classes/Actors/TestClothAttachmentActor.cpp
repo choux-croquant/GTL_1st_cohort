@@ -17,9 +17,12 @@ ATestClothAttachmentActor::ATestClothAttachmentActor()
     , ClothComponent(nullptr)
     , PoleComponent2(nullptr)
     , ClothComponent2(nullptr)
+    , SphereComponent(nullptr)
+    , ClothComponent3(nullptr)
     , AnimationTime(0.0f)
     , InitialPoleLocation(FVector::ZeroVector)
     , InitialPole2Location(FVector::ZeroVector)
+    , InitialSphereLocation(FVector::ZeroVector)
     , bInitialized(false)
 {
 }
@@ -341,10 +344,127 @@ void ATestClothAttachmentActor::PostSpawnInitialize()
     // Store initial second pole location for oscillation
     InitialPole2Location = PoleComponent2->GetComponentLocation();
 
+    // ===== STEP 9: Create sphere component =====
+    SphereComponent = AddComponent<UStaticMeshComponent>(TEXT("SphereComponent"));
+    if (!SphereComponent)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("TestClothAttachmentActor: Failed to create sphere component"));
+        return;
+    }
+
+    // Load sphere mesh
+    FString SphereMeshName = "Contents/sphereblender/sphereblender.obj";
+    UStaticMesh* SphereMesh = FObjManager::GetStaticMesh(SphereMeshName.ToWideString());
+    if (!SphereMesh)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("TestClothAttachmentActor: Failed to load sphere mesh: %s"), *SphereMeshName);
+        return;
+    }
+
+    SphereComponent->SetStaticMesh(SphereMesh);
+    
+    // Position sphere offset from other components
+    FVector SphereLocation = GetActorLocation() + FVector(0.0f, -100.0f, 0.0f);  // -100 units on Y axis
+    SphereComponent->SetWorldLocation(SphereLocation);
+    SphereComponent->SetWorldRotation(FRotator(0.0f, 0.0f, 0.0f));
+    
+    UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Sphere component created"));
+
+    // ===== STEP 10: Create third cloth component =====
+    ClothComponent3 = AddComponent<UClothMeshComponent>(TEXT("ClothComponent3"));
+    if (!ClothComponent3)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("TestClothAttachmentActor: Failed to create third cloth component"));
+        return;
+    }
+
+    // Reuse first cloth mesh for third cloth
+    ClothComponent3->SourceStaticMesh = ClothSourceMesh;
+    ClothComponent3->SimulationMeshReductionRatio = 0.20f;
+    ClothComponent3->bPreserveBoundaryEdges = true;
+    ClothComponent3->bPreserveUVSeams = true;
+    ClothComponent3->DecimationMethod = EClothDecimationMethod::Voronoi;
+    
+    // Physics parameters
+    ClothComponent3->bGenerateDistanceConstraints = true;
+    ClothComponent3->bGenerateBendConstraints = true;
+    ClothComponent3->bGenerateAreaConstraints = true;
+    ClothComponent3->bGenerateEdgeCollisions = true;
+    
+    // Simulation parameters
+    ClothComponent3->StretchStiffness = 0.9f;
+    ClothComponent3->BendStiffness = 0.1f;
+    ClothComponent3->AreaStiffness = 0.001f;
+    ClothComponent3->TotalMass = 1.0f;
+    
+    UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Third cloth component created"));
+
+    // Generate cloth asset for third cloth
+    ClothComponent3->GenerateClothAsset();
+    
+    if (!ClothComponent3->GeneratedClothAsset)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("TestClothAttachmentActor: Failed to generate third cloth asset"));
+        return;
+    }
+
+    UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Third cloth asset generated"));
+    UE_LOG(ELogLevel::Display, TEXT("  Simulation vertices: %d"), ClothComponent3->GeneratedClothAsset->RestPositions.Num());
+    UE_LOG(ELogLevel::Display, TEXT("  Render vertices: %d"), ClothComponent3->GeneratedClothAsset->RenderRestPositions.Num());
+
+    // Register third cloth with cloth world
+    ClothComponent3->RegisterWithClothWorld();
+    
+    UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Third cloth registered with cloth world"));
+
+    // ===== STEP 11: Attach single vertex of third cloth to sphere =====
+    UClothAsset* ClothAsset3 = ClothComponent3->GeneratedClothAsset;
+    if (!ClothAsset3)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("TestClothAttachmentActor: No third cloth asset available for attachment"));
+        return;
+    }
+
+    // Find the topmost vertex (highest Y value)
+    uint32 TopVertexIndex = 0;
+    float MaxY3 = -FLT_MAX;
+
+    for (int32 i = 0; i < ClothAsset3->RestPositions.Num(); ++i)
+    {
+        if (ClothAsset3->RestPositions[i].Y > MaxY3)
+        {
+            MaxY3 = ClothAsset3->RestPositions[i].Y;
+            TopVertexIndex = i;
+        }
+    }
+
+    UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Found topmost vertex at index %d (Y = %.2f)"),
+        TopVertexIndex, MaxY3);
+
+    // Attach the single vertex to the sphere
+    FTransform LocalTransform;
+    LocalTransform.SetTranslation(FVector::ZeroVector);  // Attach at sphere center
+    LocalTransform.SetRotation(FQuat::Identity);
+    LocalTransform.SetScale3D(FVector::OneVector);
+
+    ClothComponent3->BindAttachmentToComponent(
+        TopVertexIndex,
+        SphereComponent,
+        LocalTransform,
+        1.0f,   // Stiffness (1.0 = hard constraint)
+        0.0f    // AttachDistance (0.0 = kinematic, no stretch)
+    );
+
+    UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Successfully attached single vertex to sphere"));
+
+    // Store initial sphere location for circular motion
+    InitialSphereLocation = SphereComponent->GetComponentLocation();
+
     UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Attached %d vertices to pole component"), TopVertices.Num());
     UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Initialization complete!"));
-    UE_LOG(ELogLevel::Display, TEXT("  - Pole will rotate continuously"));
-    UE_LOG(ELogLevel::Display, TEXT("  - Cloth should follow the pole motion"));
+    UE_LOG(ELogLevel::Display, TEXT("  - First pole: Complex circular motion"));
+    UE_LOG(ELogLevel::Display, TEXT("  - Second pole: Back-and-forth on Y axis"));
+    UE_LOG(ELogLevel::Display, TEXT("  - Sphere: Circular motion with single-vertex cloth"));
     
     bInitialized = true;
 }
@@ -353,7 +473,7 @@ void ATestClothAttachmentActor::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
     
-    if (!bInitialized || !PoleComponent || !PoleComponent2)
+    if (!bInitialized || !PoleComponent || !PoleComponent2 || !SphereComponent)
         return;
     
     AnimationTime += DeltaTime;
@@ -398,4 +518,19 @@ void ATestClothAttachmentActor::Tick(float DeltaTime)
 
     PoleComponent2->SetWorldLocation(NewLocation2);
     PoleComponent2->SetWorldRotation(NewRotation2);
+
+    // ===== Sphere: Circular motion in XY plane =====
+    const float Speed3 = 1.5f;
+    const float CircleRadius = 30.0f;  // Radius of circular motion
+
+    float Time3 = AnimationTime * Speed3;
+
+    // Circular motion in XY plane
+    float CircleX = FMath::Cos(Time3) * CircleRadius;
+    float CircleY = FMath::Sin(Time3) * CircleRadius;
+
+    // Apply circular offset relative to initial location
+    FVector NewLocation3 = InitialSphereLocation + FVector(CircleX, CircleY, 0.0f);
+
+    SphereComponent->SetWorldLocation(NewLocation3);
 }
