@@ -15,7 +15,11 @@
 ATestClothAttachmentActor::ATestClothAttachmentActor()
     : PoleComponent(nullptr)
     , ClothComponent(nullptr)
+    , PoleComponent2(nullptr)
+    , ClothComponent2(nullptr)
     , AnimationTime(0.0f)
+    , InitialPoleLocation(FVector::ZeroVector)
+    , InitialPole2Location(FVector::ZeroVector)
     , bInitialized(false)
 {
 }
@@ -72,7 +76,7 @@ void ATestClothAttachmentActor::PostSpawnInitialize()
 
     // Configure cloth mesh component
     ClothComponent->SourceStaticMesh = ClothSourceMesh;
-    ClothComponent->SimulationMeshReductionRatio = 0.15f;  // Reduce to ~400 vertices
+    ClothComponent->SimulationMeshReductionRatio = 0.20f;  // Reduce to ~400 vertices
     ClothComponent->bPreserveBoundaryEdges = true;
     ClothComponent->bPreserveUVSeams = true;
     ClothComponent->DecimationMethod = EClothDecimationMethod::Voronoi;
@@ -162,7 +166,7 @@ void ATestClothAttachmentActor::PostSpawnInitialize()
     for (uint32 VertexIndex : TopVertices)
     {
         // Calculate local offset along Z axis based on sorted order
-        FVector LocalOffset = FVector(0.0f, 0.0f, -15.0f + (i / n) * 30.0f);
+        FVector LocalOffset = FVector(0.0f, 0.0f, -10.0f + (i / n) * 25.0f);
         i += 1.0f;
 
         // Create attachment with local offset
@@ -184,6 +188,158 @@ void ATestClothAttachmentActor::PostSpawnInitialize()
     UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Successfully attached %d vertices to pole component"),
         TopVertices.Num());
 
+    // Store initial pole location for oscillation
+    InitialPoleLocation = PoleComponent->GetComponentLocation();
+
+    // ===== STEP 6: Create second pole component =====
+    PoleComponent2 = AddComponent<UStaticMeshComponent>(TEXT("PoleComponent2"));
+    if (!PoleComponent2)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("TestClothAttachmentActor: Failed to create second pole component"));
+        return;
+    }
+
+    // Load pole mesh for second pole (reuse same mesh)
+    PoleComponent2->SetStaticMesh(PoleMesh);
+    
+    // Position second pole offset from the first pole
+    FVector Pole2Location = GetActorLocation() + FVector(0.0f, 100.0f, 0.0f);  // 100 units on Y axis
+    PoleComponent2->SetWorldLocation(Pole2Location);
+    PoleComponent2->SetWorldRotation(FRotator(0.0f, 90.0f, 0.0f));  // Rotate 90 degrees on Y axis
+    
+    UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Second pole component created"));
+
+    // ===== STEP 7: Create second cloth component =====
+    ClothComponent2 = AddComponent<UClothMeshComponent>(TEXT("ClothComponent2"));
+    if (!ClothComponent2)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("TestClothAttachmentActor: Failed to create second cloth component"));
+        return;
+    }
+
+    // Load second cloth source mesh
+    FString ClothMeshName2 = "Contents/TestClothMesh2/TestClothMesh2.obj";
+    UStaticMesh* ClothSourceMesh2 = FObjManager::GetStaticMesh(ClothMeshName2.ToWideString());
+    if (!ClothSourceMesh2)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("TestClothAttachmentActor: Failed to load second cloth mesh: %s"), *ClothMeshName2);
+        return;
+    }
+
+    // Configure second cloth mesh component
+    ClothComponent2->SourceStaticMesh = ClothSourceMesh2;
+    ClothComponent2->SimulationMeshReductionRatio = 0.20f;
+    ClothComponent2->bPreserveBoundaryEdges = true;
+    ClothComponent2->bPreserveUVSeams = true;
+    ClothComponent2->DecimationMethod = EClothDecimationMethod::Voronoi;
+    
+    // Physics parameters
+    ClothComponent2->bGenerateDistanceConstraints = true;
+    ClothComponent2->bGenerateBendConstraints = true;
+    ClothComponent2->bGenerateAreaConstraints = true;
+    ClothComponent2->bGenerateEdgeCollisions = true;
+    
+    // Simulation parameters
+    ClothComponent2->StretchStiffness = 0.9f;
+    ClothComponent2->BendStiffness = 0.1f;
+    ClothComponent2->AreaStiffness = 0.001f;
+    ClothComponent2->TotalMass = 1.0f;
+    
+    UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Second cloth component created"));
+
+    // Generate cloth asset for second cloth
+    ClothComponent2->GenerateClothAsset();
+    
+    if (!ClothComponent2->GeneratedClothAsset)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("TestClothAttachmentActor: Failed to generate second cloth asset"));
+        return;
+    }
+
+    UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Second cloth asset generated"));
+    UE_LOG(ELogLevel::Display, TEXT("  Simulation vertices: %d"), ClothComponent2->GeneratedClothAsset->RestPositions.Num());
+    UE_LOG(ELogLevel::Display, TEXT("  Render vertices: %d"), ClothComponent2->GeneratedClothAsset->RenderRestPositions.Num());
+
+    // Register second cloth with cloth world
+    ClothComponent2->RegisterWithClothWorld();
+    
+    UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Second cloth registered with cloth world"));
+
+    // ===== STEP 8: Attach second cloth to second pole =====
+    UClothAsset* ClothAsset2 = ClothComponent2->GeneratedClothAsset;
+    if (!ClothAsset2)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("TestClothAttachmentActor: No second cloth asset available for attachment"));
+        return;
+    }
+
+    // Find vertices to attach for second cloth (top 5% of vertices by Y coordinate)
+    TArray<uint32> TopVertices2;
+    float MaxY2 = -FLT_MAX;
+    float MinY2 = FLT_MAX;
+
+    // Find Y range
+    for (const FVector& Pos : ClothAsset2->RestPositions)
+    {
+        MaxY2 = FMath::Max(MaxY2, Pos.Y);
+        MinY2 = FMath::Min(MinY2, Pos.Y);
+    }
+
+    float YRange2 = MaxY2 - MinY2;
+    float AttachThreshold2 = MaxY2 - (YRange2 * 0.05f);  // Top 5%
+
+    // Collect top vertices
+    for (int32 i = 0; i < ClothAsset2->RestPositions.Num(); ++i)
+    {
+        if (ClothAsset2->RestPositions[i].Y >= AttachThreshold2)
+        {
+            TopVertices2.Add(i);
+        }
+    }
+
+    UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Found %d vertices to attach for second cloth (Y >= %.2f)"),
+        TopVertices2.Num(), AttachThreshold2);
+
+    // Sort vertices by X coordinate (ascending order)
+    TopVertices2.Sort([&ClothAsset2](const uint32& A, const uint32& B) {
+        const FVector& PosA = ClothAsset2->RestPositions[A];
+        const FVector& PosB = ClothAsset2->RestPositions[B];
+        return PosA.X < PosB.X;
+    });
+
+    UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Sorted %d vertices by X coordinate for second cloth"),
+        TopVertices2.Num());
+
+    // Attach each top vertex to the SECOND pole component
+    float i2 = 0.0f;
+    float n2 = float(TopVertices2.Num());
+    for (uint32 VertexIndex : TopVertices2)
+    {
+        // Calculate local offset along Z axis based on sorted order
+        FVector LocalOffset = FVector(0.0f, 0.0f, -10.0f + (i2 / n2) * 25.0f);
+        i2 += 1.0f;
+
+        // Create attachment with local offset
+        FTransform LocalTransform;
+        LocalTransform.SetTranslation(LocalOffset);
+        LocalTransform.SetRotation(FQuat::Identity);
+        LocalTransform.SetScale3D(FVector::OneVector);
+
+        // Bind attachment to SECOND pole
+        ClothComponent2->BindAttachmentToComponent(
+            VertexIndex,
+            PoleComponent2,  // Attach to second pole
+            LocalTransform,
+            1.0f,   // Stiffness (1.0 = hard constraint)
+            0.0f    // AttachDistance (0.0 = kinematic, no stretch)
+        );
+    }
+
+    UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Successfully attached %d vertices of second cloth to second pole"),
+        TopVertices2.Num());
+
+    // Store initial second pole location for oscillation
+    InitialPole2Location = PoleComponent2->GetComponentLocation();
 
     UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Attached %d vertices to pole component"), TopVertices.Num());
     UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Initialization complete!"));
@@ -197,25 +353,49 @@ void ATestClothAttachmentActor::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
     
-    if (!bInitialized || !PoleComponent)
+    if (!bInitialized || !PoleComponent || !PoleComponent2)
         return;
     
     AnimationTime += DeltaTime;
     
-    // Rotate the pole continuously
-    // This will cause the attached cloth to follow
-    float RotationSpeed = 30.0f;  // degrees per second
-    float CurrentAngle = AnimationTime * RotationSpeed;
-    
-    //FRotator NewRotation(0.0f, CurrentAngle, 0.0f);  // Rotate around Z axis
-    //PoleComponent->SetWorldRotation(NewRotation);
-    //
-    // Optional: Also move the pole up and down
-    //float BobSpeed = 1.0f;  // Hz
-    //float BobAmount = 1.0f;  // cm
-    //float BobOffset = FMath::Sin(AnimationTime * BobSpeed * 2.0f * PI) * BobAmount;
-    //
-    //FVector BaseLocation = GetActorLocation();
-    //FVector NewLocation = BaseLocation + FVector(0.0f, 0.0f, BobOffset);
-    //PoleComponent->SetWorldLocation(NewLocation);
+    // ===== First pole: Complex circular motion =====
+    const float Speed = 2.5f;
+    const float MoveRadius = 40.0f;
+    const float SwayAngleScale = 30.0f;
+
+    float Time = AnimationTime * Speed;
+
+    // Calculate oscillating offsets
+    float OffsetY = FMath::Sin(Time) * MoveRadius;
+    float OffsetX = FMath::Cos(Time * 2.0f) * (MoveRadius * 0.3f);
+    float OffsetZ = FMath::Sin(Time * 1.5f) * (MoveRadius * 0.15f);
+
+    // Apply offsets relative to the initial location (not current location)
+    FVector NewLocation = InitialPoleLocation + FVector(OffsetX, OffsetY, OffsetZ);
+
+    float RollAngle = -FMath::Cos(Time) * SwayAngleScale;
+    float PitchAngle = FMath::Sin(Time * 1.5f) * (SwayAngleScale * 0.2f);
+
+    FRotator NewRotation = FRotator(PitchAngle, 0.0f, RollAngle);
+
+    PoleComponent->SetWorldLocation(NewLocation);
+    PoleComponent->SetWorldRotation(NewRotation);
+
+    // ===== Second pole: Simple back-and-forth motion on Y axis =====
+    const float Speed2 = 1.0f;
+    const float MoveRange2 = 50.0f;  // Move 50 units back and forth
+
+    float Time2 = AnimationTime * Speed2;
+
+    // Simple sine wave motion on Y axis only
+    float OffsetX2 = FMath::Sin(Time2) * MoveRange2;
+
+    // Apply offset relative to initial location
+    FVector NewLocation2 = InitialPole2Location + FVector(OffsetX2, 0.0f, 0.0f);
+
+    // Keep rotation fixed at 90 degrees
+    FRotator NewRotation2 = FRotator(90.0f, 90.0f, 0.0f);
+
+    PoleComponent2->SetWorldLocation(NewLocation2);
+    PoleComponent2->SetWorldRotation(NewRotation2);
 }

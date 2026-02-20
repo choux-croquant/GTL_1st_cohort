@@ -30,9 +30,13 @@ private:
     // Components
     UStaticMeshComponent* PoleComponent;
     UClothMeshComponent* ClothComponent;
+    UStaticMeshComponent* PoleComponent2;  // Second pole for second cloth
+    UClothMeshComponent* ClothComponent2;  // Second cloth with 90 degree rotation
 
     // Animation
     float AnimationTime;
+    FVector InitialPoleLocation;   // Store initial location for first pole oscillation
+    FVector InitialPole2Location;  // Store initial location for second pole oscillation
     
     // Initialization guard
     bool bInitialized;

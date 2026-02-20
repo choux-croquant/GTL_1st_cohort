@@ -55,7 +55,7 @@ struct FClothConfig
     
     // Self-collision parameters (REFACTORED: Now use multipliers for adaptive computation)
     // MULTIPLIERS (applied to adaptive base values computed from mesh topology)
-    float SelfCollisionRadiusMultiplier = 1.0f;      // × (AvgEdgeLength × 0.5)
+    float SelfCollisionRadiusMultiplier = 0.75f;      // × (AvgEdgeLength × 0.5)
     float SelfCollisionStiffnessMultiplier = 0.3f;   // × adaptive base stiffness
     float SelfCollisionCellSizeMultiplier = 1.0f;    // × (AvgEdgeLength × 1.5)
     
