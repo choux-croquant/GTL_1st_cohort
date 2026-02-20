@@ -166,15 +166,14 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
     metadata.KinematicTargetCount = attachmentCount;
     metadata.TriangleOffset = TotalTriangleCount;
     metadata.TriangleCount = triangleCount;
-    metadata.AreaConstraintOffset = TotalAreaConstraintCount;     // NEW
-    metadata.AreaConstraintCount = areaConstraintCount;           // NEW
-    metadata.EdgeCollisionOffset = TotalEdgeCollisionCount;       // NEW
-    metadata.EdgeCollisionCount = edgeCollisionCount;             // NEW
+    metadata.AreaConstraintOffset = TotalAreaConstraintCount;
+    metadata.AreaConstraintCount = areaConstraintCount;
+    metadata.EdgeCollisionOffset = TotalEdgeCollisionCount;
+    metadata.EdgeCollisionCount = edgeCollisionCount;
     metadata.InstanceParameterIndex = Instances.Num();
     metadata.bIsActive = Params.bStartActive;
     metadata.CurrentLOD = Params.InitialLOD;
    
-    // NEW: Compute adaptive self-collision parameters from mesh topology
     metadata.AvgEdgeLength = FClothMeshAnalysis::ComputeAverageEdgeLength(
     	Params.RestPositions, Params.Indices);
     

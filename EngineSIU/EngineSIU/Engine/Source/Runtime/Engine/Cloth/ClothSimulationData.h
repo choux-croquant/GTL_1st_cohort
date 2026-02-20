@@ -21,9 +21,9 @@ struct FClothConfig
 {
     // Global simulation settings
     //FVector Gravity = {0.0f, 0.0f, -980.0f};
-    FVector Gravity = { 0.0f, 0.0f, -1.0f };
+    FVector Gravity = { 0.0f, 0.0f, -700.0f };
     float Mass = 1.0f;
-    float Damping = 0.5f;
+    float Damping = 5.0f;
 
     // Constraint stiffness (0-1)
     float StretchStiffness = 0.9f;
@@ -33,12 +33,12 @@ struct FClothConfig
     float LongRangeStretchiness = 1.2f; // NEW: LRA slack multiplier (Velvet default)
 
     // Solver settings
-    int32 NumIterations = 2;
+    int32 NumIterations = 4;
     float TimeStep = 0.016f; // Fixed 60fps or variable
     bool bUseXPBD = false;   // Use XPBD instead of PBD
 
     // NEW: Substep settings (Velvet-inspired)
-    int32 NumSubsteps = 3;                  // How many substeps per frame time
+    int32 NumSubsteps = 5;                  // How many substeps per frame time
     float FixedSubstepTime = 1.0f / 600.0f; // Target substep dt (120 Hz default)
     int32 MaxSubstepsPerFrame = 10;         // Safety limit to prevent death spiral
     float MaxSpeed = 1000.0f;               // Velocity clamping (cm/s)
@@ -49,7 +49,7 @@ struct FClothConfig
     float WindStrength = 1.0f;
 
     // Collision
-    float CollisionThickness = 0.01f;
+    float CollisionThickness = 1.3f;
     float CollisionFriction = 0.1f;
     bool bEnableSelfCollision = true;
     
