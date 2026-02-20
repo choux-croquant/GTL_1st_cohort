@@ -83,3 +83,15 @@ FClothInstanceMetadata &FClothInstanceHandle::GetMetadataRef()
     // Fallback to local metadata if batch manager is invalid
     return Metadata;
 }
+
+void FClothInstanceHandle::SetFriction(float InFriction)
+{
+    // Clamp friction to reasonable range (allow > 1.0 for extra sticky cloth)
+    Parameters.Friction = FMath::Clamp(InFriction, 0.0f, 10.0f);
+    
+    // Mark parameters as dirty for next GPU upload
+    if (BatchManager)
+    {
+        //BatchManager->MarkInstanceParametersDirty(MetadataIndex);
+    }
+}

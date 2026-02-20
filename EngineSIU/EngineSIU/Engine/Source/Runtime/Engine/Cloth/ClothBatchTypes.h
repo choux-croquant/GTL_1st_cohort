@@ -58,6 +58,9 @@ struct FClothInstanceParameters
     float Damping;          // 4 bytes - Velocity damping
     float StretchStiffness; // 4 bytes - Distance constraint multiplier
     float BendStiffness;    // 4 bytes - Bend constraint multiplier
+    
+    // Collision properties
+    float Friction;         // 4 bytes - Per-instance friction coefficient (0-10, default 1.0)
 
     // Instance identification
     uint32 ParticleOffset;   // 4 bytes - First particle index
@@ -81,13 +84,13 @@ struct FClothInstanceParameters
     uint32 Padding;              // 4 bytes
 
     FClothInstanceParameters()
-        : Gravity(0.0f, 0.0f, -980.0f), GravityMultiplier(1.0f), Wind(0.0f, 0.0f, 0.0f), WindStrength(1.0f), AirDrag(1.0f), Damping(0.5f), StretchStiffness(0.9f), BendStiffness(0.9f), ParticleOffset(0), ParticleCount(0), ConstraintOffset(0), ConstraintCount(0), BendConstraintOffset(0), BendConstraintCount(0), KinematicTargetOffset(0), KinematicTargetCount(0), TriangleOffset(0), TriangleCount(0), AreaConstraintOffset(0), AreaConstraintCount(0), EdgeCollisionOffset(0), EdgeCollisionCount(0), IsActive(1), Padding(0)
+        : Gravity(0.0f, 0.0f, -980.0f), GravityMultiplier(1.0f), Wind(0.0f, 0.0f, 0.0f), WindStrength(1.0f), AirDrag(1.0f), Damping(0.5f), StretchStiffness(0.9f), BendStiffness(0.9f), Friction(1.0f), ParticleOffset(0), ParticleCount(0), ConstraintOffset(0), ConstraintCount(0), BendConstraintOffset(0), BendConstraintCount(0), KinematicTargetOffset(0), KinematicTargetCount(0), TriangleOffset(0), TriangleCount(0), AreaConstraintOffset(0), AreaConstraintCount(0), EdgeCollisionOffset(0), EdgeCollisionCount(0), IsActive(1), Padding(0)
     {
     }
 };
 
 // Verify structure size for GPU compatibility
-static_assert(sizeof(FClothInstanceParameters) == 112, "FClothInstanceParameters must be 112 bytes");
+static_assert(sizeof(FClothInstanceParameters) == 116, "FClothInstanceParameters must be 116 bytes");
 
 /**
  * Instance metadata for tracking buffer ranges

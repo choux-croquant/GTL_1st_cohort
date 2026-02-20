@@ -117,6 +117,9 @@ public:
     ID3D11ShaderResourceView *GetPositionBufferSRV() const;
     ID3D11ShaderResourceView *GetNormalBufferSRV() const;
 
+    // NEW: Phase 3 - Buffer access for runtime updates
+    ID3D11Buffer* GetInvMassBuffer() const { return UnifiedInvMassBuffer; }
+
     // Initialization state
     bool IsInitialized() const { return bInitialized; }
 

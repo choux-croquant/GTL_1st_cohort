@@ -71,6 +71,10 @@ public:
     void SetFixedTimestepConfig(const FClothFixedTimestepState &State) { FixedTimestepState = State; }
     const FClothFixedTimestepState &GetFixedTimestepConfig() const { return FixedTimestepState; }
 
+    // NEW: Runtime attachment updates (Phase 3)
+    void UpdateInstanceInvMass(FClothInstanceHandle* Instance);
+    void UpdateInstanceAttachments(FClothInstanceHandle* Instance);
+
 private:
     void ReallocateBuffers();
     void CompactBuffers(); // Remove gaps from deleted instances

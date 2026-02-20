@@ -24,7 +24,7 @@ class UClothAsset : public UObject
 
 public:
     UClothAsset();
-    ~UClothAsset();
+    virtual ~UClothAsset() override;
 
     // Asset initialization
     void InitializeFromMesh(UStaticMesh *InSourceMesh);
@@ -33,25 +33,49 @@ public:
     const TArray<FClothLODData> &GetLODData() const { return LODData; }
     const TArray<FVector> &GetRestPositions() const { return RestPositions; }
     const TArray<uint32> &GetIndices() const { return Indices; }
-    const TArray<float> &GetInvMasses() const { return InvMasses; }
+    
+    // NEW: Base InvMass (immutable, source of truth for instances)
+    const TArray<float> &GetBaseInvMasses() const { return BaseInvMasses; }
+    
+    // DEPRECATED: Old InvMass accessor (for backward compatibility during migration)
+    const TArray<float> &GetInvMasses() const { return BaseInvMasses; }
+    
     const TArray<FClothDistanceConstraint> &GetDistanceConstraints() const { return DistanceConstraints; }
     const TArray<FClothBendConstraint> &GetBendConstraints() const { return BendConstraints; }
     const TArray<FClothAreaConstraint> &GetAreaConstraints() const { return AreaConstraints; }
     const TArray<FClothEdgeCollisionConstraint> &GetEdgeCollisions() const { return EdgeCollisions; }
-    const TArray<FClothAttachmentData> &GetAttachmentData() const { return AttachmentsData; }
-    const TArray<uint32> &GetAttachmentIndices() const { return AttachmentIndices; }
+    
+    // NEW: Attachment capabilities (asset-level metadata)
+    const TArray<FClothAttachmentCapability> &GetAttachmentCapabilities() const { return AttachmentCapabilities; }
+    
+    // DEPRECATED: Old attachment data accessors (for backward compatibility during migration)
+    //const TArray<FClothAttachmentData> &GetAttachmentData() const { return AttachmentsData; }
+    //const TArray<uint32> &GetAttachmentIndices() const { return AttachmentIndices; }
+    
     const TArray<FClothVertexPaintData> &GetVertexPaintData() const { return VertexPaintData; }
 
     // Modifiers
     void SetRestPositions(const TArray<FVector> &InPositions) { RestPositions = InPositions; }
     void SetIndices(const TArray<uint32> &InIndices) { Indices = InIndices; }
-    void SetInvMasses(const TArray<float> &InInvMasses) { InvMasses = InInvMasses; }
+    
+    // NEW: Base InvMass setter
+    void SetBaseInvMasses(const TArray<float> &InInvMasses) { BaseInvMasses = InInvMasses; }
+    
+    // DEPRECATED: Old InvMass setter (redirects to BaseInvMasses for backward compatibility)
+    void SetInvMasses(const TArray<float> &InInvMasses) { BaseInvMasses = InInvMasses; }
+    
     void AddDistanceConstraint(const FClothDistanceConstraint &Constraint) { DistanceConstraints.Add(Constraint); }
     void AddBendConstraint(const FClothBendConstraint &Constraint) { BendConstraints.Add(Constraint); }
     void AddAreaConstraint(const FClothAreaConstraint &Constraint) { AreaConstraints.Add(Constraint); }
     void AddEdgeCollision(const FClothEdgeCollisionConstraint &EdgeCollision) { EdgeCollisions.Add(EdgeCollision); }
-    void AddAttachmentData(const FClothAttachmentData &Data) { AttachmentsData.Add(Data); }
-    void AddAttachmentIndex(uint32 VertexIndex) { AttachmentIndices.Add(VertexIndex); }
+    
+    // NEW: Attachment capability management
+    void AddAttachmentCapability(const FClothAttachmentCapability &Capability) { AttachmentCapabilities.Add(Capability); }
+    void ClearAttachmentCapabilities() { AttachmentCapabilities.Empty(); }
+    
+    // DEPRECATED: Old attachment data methods (for backward compatibility during migration)
+    //void AddAttachmentData(const FClothAttachmentData &Data) { AttachmentsData.Add(Data); }
+    //void AddAttachmentIndex(uint32 VertexIndex) { AttachmentIndices.Add(VertexIndex); }
 
     // Serialization
     virtual void SerializeAsset(FArchive &Ar) override;
@@ -77,6 +101,12 @@ public:
     // Simulation mesh data (low-res, used for physics)
     TArray<FVector> RestPositions;  // Simulation mesh positions
     TArray<uint32> Indices;         // Simulation mesh indices
+    
+    // NEW: Base InvMass (immutable, source of truth for per-instance RuntimeInvMasses)
+    TArray<float> BaseInvMasses;
+    
+    // DEPRECATED: Old InvMass field (kept for backward compatibility during migration)
+    // Will be removed after full migration - use BaseInvMasses instead
     TArray<float> InvMasses;
 
     // NEW: Render mesh data (high-res, used for rendering)
@@ -105,9 +135,13 @@ public:
     
     TArray<FClothEdgeCollisionConstraint> EdgeCollisions;
 
-    TArray<FClothAttachmentData> AttachmentsData;
+    // NEW: Attachment capabilities (asset-level metadata - which vertices CAN be attached)
+    TArray<FClothAttachmentCapability> AttachmentCapabilities;
 
-    TArray<uint32> AttachmentIndices;
+    // DEPRECATED: Old attachment data (instance-specific, should be in component)
+    // Kept for backward compatibility during migration - will be removed
+    //TArray<FClothAttachmentData> AttachmentsData;
+    //TArray<uint32> AttachmentIndices;
 
     // Per-vertex painting data for authoring
     TArray<FClothVertexPaintData> VertexPaintData;

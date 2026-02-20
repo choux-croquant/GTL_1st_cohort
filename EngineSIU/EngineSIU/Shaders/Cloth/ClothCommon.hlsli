@@ -198,6 +198,9 @@ struct FClothInstanceParameters
     float StretchStiffness;
     float BendStiffness;
     
+    // Collision properties
+    float Friction;         // Per-instance friction coefficient (0-10, default 1.0)
+    
     // Instance identification
     uint ParticleOffset;
     uint ParticleCount;

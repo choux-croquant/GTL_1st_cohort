@@ -13,6 +13,7 @@
 #include "Engine/Classes/Actors/BehellaGameMode.h"
 #include "Classes/Components/TextComponent.h"
 #include "Actors/TestBatchedClothActor.h"
+#include "Actors/TestClothAttachmentActor.h"
 #include "GameFramework/PIETestGameMode.h"
 #include "GameFramework/PIEFreeFlyPawn.h"
 #include "GameFramework/PIEPlayerController.h"
@@ -75,12 +76,18 @@ void UWorld::Tick(float DeltaTime)
 void UWorld::BeginPlay()
 {
     // ===== NEW BATCHED TEST =====
-    /*ATestBatchedClothActor *BatchedClothTest = this->SpawnActor<ATestBatchedClothActor>();
+   /* ATestBatchedClothActor *BatchedClothTest = this->SpawnActor<ATestBatchedClothActor>();
     if (BatchedClothTest)
     {
-        BatchedClothTest->SetActorLocation(FVector(0.0f, -300.0f, 0.0f));
+        BatchedClothTest->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));
         UE_LOG(ELogLevel::Display, TEXT("World: Spawned TestBatchedClothActor for batched simulation testing"));
     }*/
+    ATestClothAttachmentActor *ClothTest = this->SpawnActor<ATestClothAttachmentActor>();
+    if (ClothTest)
+    {
+        ClothTest->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));
+        UE_LOG(ELogLevel::Display, TEXT("World: Spawned TestBatchedClothActor for batched simulation testing"));
+    }
 
     if (!GameMode && this->WorldType == EWorldType::PIE)
     {

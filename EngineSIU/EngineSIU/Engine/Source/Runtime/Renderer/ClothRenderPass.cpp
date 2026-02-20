@@ -277,17 +277,33 @@ void FClothRenderPass::RenderClothComponent(UClothMeshComponent *ClothComponent,
 
     // Validate production rendering data
     if (!renderData.bUseProductionRendering)
+    {
+        // DEBUG: Log why production rendering is disabled
+        //UE_LOG(ELogLevel::Verbose, TEXT("ClothRenderPass: Component not using production rendering"));
         return; // Fall back to debug rendering
+    }
 
     if (!renderData.UnifiedRenderVertexBuffer || !renderData.UnifiedRenderIndexBuffer)
+    {
+        // DEBUG: Log missing buffers
+        UE_LOG(ELogLevel::Warning, TEXT("ClothRenderPass: Missing render buffers (Vertex=%p, Index=%p)"),
+               renderData.UnifiedRenderVertexBuffer, renderData.UnifiedRenderIndexBuffer);
         return;
+    }
     
     // Require at least one skinning weight buffer (triangle or legacy)
     if (!renderData.TriangleSkinningWeightBufferSRV && !renderData.SkinningWeightBufferSRV)
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("ClothRenderPass: Missing skinning weight buffers"));
         return;
+    }
 
     if (renderData.RenderIndexCount == 0)
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("ClothRenderPass: RenderIndexCount is 0 (Offset=%d, Count=%d)"),
+               renderData.RenderIndexOffset, renderData.RenderIndexCount);
         return;
+    }
 
     // CRITICAL FIX: Bind actual unified render vertex buffer (contains rest positions, normals, UVs)
     UINT stride = sizeof(FClothRenderVertex);  // 32 bytes: position(12) + normal(12) + UV(8)

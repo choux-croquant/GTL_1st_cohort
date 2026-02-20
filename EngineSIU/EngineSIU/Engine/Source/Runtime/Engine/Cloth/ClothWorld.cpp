@@ -161,13 +161,51 @@ FClothInstanceHandle *FClothWorld::RegisterClothInstanceBatched(UClothComponent 
 
     // Get simulation mesh data from asset (in LOCAL space)
     Params.RestPositions = Asset->GetRestPositions();
-    Params.InvMasses = Asset->GetInvMasses();
+    
+    // NEW: Use component's RuntimeInvMasses if available (per-instance), otherwise use asset's BaseInvMasses
+    if (Component->GetRuntimeInvMasses().Num() > 0)
+    {
+        Params.InvMasses = Component->GetRuntimeInvMasses();
+    }
+    else
+    {
+        // Fallback to asset's BaseInvMasses (backward compatibility)
+        Params.InvMasses = Asset->GetBaseInvMasses();
+    }
+    
     Params.Indices = Asset->GetIndices();
     Params.Constraints = Asset->GetDistanceConstraints();
     Params.BendConstraints = Asset->GetBendConstraints();
     Params.AreaConstraints = Asset->GetAreaConstraints();  // Area constraints
     Params.EdgeCollisions = Asset->GetEdgeCollisions();    // Edge collision constraints
-    Params.Attachments = Asset->GetAttachmentData();
+    
+    // NEW: Use component's AttachmentBindings if available (per-instance), otherwise use asset's deprecated data
+    if (Component->GetAttachmentBindings().Num() > 0)
+    {
+        // Convert bindings to old format for now (will be refactored in batch manager)
+        // This is temporary - batch manager will read bindings directly
+        Params.Attachments.Empty();
+        for (const FClothAttachmentBinding& binding : Component->GetAttachmentBindings())
+        {
+            FClothAttachmentData oldFormat;
+            oldFormat.ClothVertexIndex = binding.SimVertexIndex;
+            oldFormat.Type = binding.Target.Type;
+            oldFormat.DriverComponent = binding.Target.DriverComponent;
+            oldFormat.DriverActor = binding.Target.DriverActor;
+            oldFormat.BoneName = binding.Target.BoneName;
+            oldFormat.BoneIndex = binding.Target.BoneIndex;
+            oldFormat.LocalOffset = binding.Target.LocalOffset;
+            oldFormat.WorldPosition = binding.Target.WorldPosition;
+            oldFormat.Stiffness = binding.Stiffness;
+            oldFormat.AttachDistance = binding.AttachDistance;
+            Params.Attachments.Add(oldFormat);
+        }
+    }
+    else
+    {
+        // Fallback to asset's deprecated AttachmentsData (backward compatibility)
+        //Params.Attachments = Asset->GetAttachmentData();
+    }
 
     // NEW: Get render mesh data from asset if available (for production rendering)
     if (Asset->bUseRenderMesh)
