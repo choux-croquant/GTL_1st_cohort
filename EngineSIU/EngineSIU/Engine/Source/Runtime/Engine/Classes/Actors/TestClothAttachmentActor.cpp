@@ -502,7 +502,7 @@ void ATestClothAttachmentActor::Tick(float DeltaTime)
     PoleComponent->SetWorldRotation(NewRotation);
 
     // ===== Second pole: Simple back-and-forth motion on Y axis =====
-    const float Speed2 = 1.0f;
+    const float Speed2 = 0.5f;
     const float MoveRange2 = 50.0f;  // Move 50 units back and forth
 
     float Time2 = AnimationTime * Speed2;
@@ -521,7 +521,7 @@ void ATestClothAttachmentActor::Tick(float DeltaTime)
 
     // ===== Sphere: Circular motion in XY plane =====
     const float Speed3 = 4.0f;
-    const float CircleRadius = 20.0f;  // Radius of circular motion
+    const float CircleRadius = 30.0f;  // Radius of circular motion
 
     float Time3 = AnimationTime * Speed3;
 

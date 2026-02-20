@@ -33,7 +33,7 @@ struct FClothConfig
     float LongRangeStretchiness = 1.2f; // NEW: LRA slack multiplier (Velvet default)
 
     // Solver settings
-    int32 NumIterations = 4;
+    int32 NumIterations = 5;
     float TimeStep = 0.016f; // Fixed 60fps or variable
     bool bUseXPBD = false;   // Use XPBD instead of PBD
 
@@ -41,7 +41,7 @@ struct FClothConfig
     int32 NumSubsteps = 5;                  // How many substeps per frame time
     float FixedSubstepTime = 1.0f / 600.0f; // Target substep dt (120 Hz default)
     int32 MaxSubstepsPerFrame = 10;         // Safety limit to prevent death spiral
-    float MaxSpeed = 1000.0f;               // Velocity clamping (cm/s)
+    float MaxSpeed = 300.0f;               // Velocity clamping (cm/s)
     float RelaxationFactor = 1.0f;          // Jacobi convergence control
 
     // Wind and drag
