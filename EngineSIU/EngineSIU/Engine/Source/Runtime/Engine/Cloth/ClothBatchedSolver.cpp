@@ -1708,31 +1708,168 @@ void FClothBatchedSolver::UploadRenderMeshData(
     
     if (needsAllocation || needsReallocation)
     {
-        // Release old buffers if reallocating
+        // STEP 1: Store old buffer references and capacities BEFORE releasing
+        ID3D11Buffer* oldVertexBuffer = nullptr;
+        ID3D11Buffer* oldIndexBuffer = nullptr;
+        ID3D11Buffer* oldSkinningBuffer = nullptr;
+        ID3D11Buffer* oldTriangleSkinningBuffer = nullptr;
+        uint32 oldVertexCapacity = 0;
+        uint32 oldIndexCapacity = 0;
+        
         if (needsReallocation)
         {
-            SAFE_RELEASE(UnifiedRenderVertexBuffer);
-            SAFE_RELEASE(UnifiedRenderIndexBuffer);
-            SAFE_RELEASE(UnifiedSkinningWeightBuffer);
-            SAFE_RELEASE(UnifiedTriangleSkinningWeightBuffer);  // NEW: Triangle-based skinning weights
+            // Save old buffer pointers (don't release yet!)
+            oldVertexBuffer = UnifiedRenderVertexBuffer;
+            oldIndexBuffer = UnifiedRenderIndexBuffer;
+            oldSkinningBuffer = UnifiedSkinningWeightBuffer;
+            oldTriangleSkinningBuffer = UnifiedTriangleSkinningWeightBuffer;
+            oldVertexCapacity = AllocatedRenderVertexCapacity;
+            oldIndexCapacity = AllocatedRenderIndexCapacity;
+            
+            // Release SRVs (they'll be recreated)
             SAFE_RELEASE(UnifiedRenderVertexSRV);
             SAFE_RELEASE(UnifiedRenderIndexSRV);
             SAFE_RELEASE(SkinningWeightsSRV);
-            SAFE_RELEASE(TriangleSkinningWeightsSRV);  // NEW: Triangle-based skinning weights SRV
+            SAFE_RELEASE(TriangleSkinningWeightsSRV);
+            
+            // Clear buffer pointers (but don't release buffers yet)
+            UnifiedRenderVertexBuffer = nullptr;
+            UnifiedRenderIndexBuffer = nullptr;
+            UnifiedSkinningWeightBuffer = nullptr;
+            UnifiedTriangleSkinningWeightBuffer = nullptr;
             
             UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Reallocating render buffers - Old: V=%u I=%u, Required: V=%u I=%u"),
-                   AllocatedRenderVertexCapacity, AllocatedRenderIndexCapacity,
-                   requiredVertexCapacity, requiredIndexCapacity);
+                   oldVertexCapacity, oldIndexCapacity, requiredVertexCapacity, requiredIndexCapacity);
         }
         
-        // Allocate with growth factor for future instances
+        // STEP 2: Allocate new larger buffers
         uint32 newVertexCapacity = FMath::Max(requiredVertexCapacity, AllocatedRenderVertexCapacity) * 2;
         uint32 newIndexCapacity = FMath::Max(requiredIndexCapacity, AllocatedRenderIndexCapacity) * 2;
         
         if (!AllocateRenderBuffers(newVertexCapacity, newIndexCapacity))
         {
             UE_LOG(ELogLevel::Error, TEXT("ClothBatchedSolver: Failed to allocate render buffers"));
+            
+            // Restore old buffers on failure
+            if (needsReallocation)
+            {
+                UnifiedRenderVertexBuffer = oldVertexBuffer;
+                UnifiedRenderIndexBuffer = oldIndexBuffer;
+                UnifiedSkinningWeightBuffer = oldSkinningBuffer;
+                UnifiedTriangleSkinningWeightBuffer = oldTriangleSkinningBuffer;
+                AllocatedRenderVertexCapacity = oldVertexCapacity;
+                AllocatedRenderIndexCapacity = oldIndexCapacity;
+            }
             return;
+        }
+        
+        // STEP 3: Copy old data to new buffers (if reallocating)
+        if (needsReallocation && oldVertexBuffer && oldIndexBuffer)
+        {
+            // Copy vertex buffer data
+            if (oldVertexCapacity > 0)
+            {
+                D3D11_BOX srcBox;
+                srcBox.left = 0;
+                srcBox.right = oldVertexCapacity * sizeof(FClothRenderVertex);
+                srcBox.top = 0;
+                srcBox.bottom = 1;
+                srcBox.front = 0;
+                srcBox.back = 1;
+                
+                Graphics->DeviceContext->CopySubresourceRegion(
+                    UnifiedRenderVertexBuffer,  // Destination (new buffer)
+                    0,                          // Dest subresource
+                    0, 0, 0,                    // Dest X, Y, Z
+                    oldVertexBuffer,            // Source (old buffer)
+                    0,                          // Source subresource
+                    &srcBox                     // Source box
+                );
+                
+                UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Copied %u render vertices from old buffer"),
+                       oldVertexCapacity);
+            }
+            
+            // Copy index buffer data
+            if (oldIndexCapacity > 0)
+            {
+                D3D11_BOX srcBox;
+                srcBox.left = 0;
+                srcBox.right = oldIndexCapacity * sizeof(uint32);
+                srcBox.top = 0;
+                srcBox.bottom = 1;
+                srcBox.front = 0;
+                srcBox.back = 1;
+                
+                Graphics->DeviceContext->CopySubresourceRegion(
+                    UnifiedRenderIndexBuffer,   // Destination (new buffer)
+                    0,                          // Dest subresource
+                    0, 0, 0,                    // Dest X, Y, Z
+                    oldIndexBuffer,             // Source (old buffer)
+                    0,                          // Source subresource
+                    &srcBox                     // Source box
+                );
+                
+                UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Copied %u render indices from old buffer"),
+                       oldIndexCapacity);
+            }
+            
+            // Copy skinning weight buffer data (legacy K-nearest neighbor)
+            if (oldSkinningBuffer && oldVertexCapacity > 0)
+            {
+                D3D11_BOX srcBox;
+                srcBox.left = 0;
+                srcBox.right = oldVertexCapacity * sizeof(FClothSkinningWeightGPU);
+                srcBox.top = 0;
+                srcBox.bottom = 1;
+                srcBox.front = 0;
+                srcBox.back = 1;
+                
+                Graphics->DeviceContext->CopySubresourceRegion(
+                    UnifiedSkinningWeightBuffer,
+                    0,
+                    0, 0, 0,
+                    oldSkinningBuffer,
+                    0,
+                    &srcBox
+                );
+                
+                UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Copied %u legacy skinning weights from old buffer"),
+                       oldVertexCapacity);
+            }
+            
+            // Copy triangle skinning weight buffer data
+            if (oldTriangleSkinningBuffer && oldVertexCapacity > 0)
+            {
+                D3D11_BOX srcBox;
+                srcBox.left = 0;
+                srcBox.right = oldVertexCapacity * sizeof(FClothSkinningWeightTriangleGPU);
+                srcBox.top = 0;
+                srcBox.bottom = 1;
+                srcBox.front = 0;
+                srcBox.back = 1;
+                
+                Graphics->DeviceContext->CopySubresourceRegion(
+                    UnifiedTriangleSkinningWeightBuffer,
+                    0,
+                    0, 0, 0,
+                    oldTriangleSkinningBuffer,
+                    0,
+                    &srcBox
+                );
+                
+                UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Copied %u triangle skinning weights from old buffer"),
+                       oldVertexCapacity);
+            }
+            
+            // STEP 4: Now safe to release old buffers
+            SAFE_RELEASE(oldVertexBuffer);
+            SAFE_RELEASE(oldIndexBuffer);
+            SAFE_RELEASE(oldSkinningBuffer);
+            SAFE_RELEASE(oldTriangleSkinningBuffer);
+            
+            UE_LOG(ELogLevel::Display, TEXT("ClothBatchedSolver: Buffer reallocation complete - New capacity: V=%u I=%u"),
+                   newVertexCapacity, newIndexCapacity);
         }
     }
 

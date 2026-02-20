@@ -165,7 +165,26 @@ void UClothMeshComponent::SetMaterial(uint32 Index, UMaterial *InMaterial)
 
 void UClothMeshComponent::GenerateClothAsset()
 {
-    // Validate setup
+    // STEP 1: Unregister old instance FIRST (before generating new asset)
+    bool bWasRegistered = false;
+    if (bAssetGenerated && GeneratedClothAsset)
+    {
+        UE_LOG(ELogLevel::Display, TEXT("ClothMeshComponent: Unregistering old cloth instance before regeneration"));
+        
+        // Check if currently registered
+        bWasRegistered = (ClothInstanceHandle != nullptr);
+        
+        // Unregister from simulation (removes from unified buffers)
+        UnregisterFromClothWorld();
+        
+        // Clear old asset reference
+        GeneratedClothAsset = nullptr;
+        bAssetGenerated = false;
+        
+        UE_LOG(ELogLevel::Display, TEXT("ClothMeshComponent: Old cloth instance unregistered successfully"));
+    }
+    
+    // STEP 2: Validate setup
     FString errorMessage;
     if (!ValidateSetup(errorMessage))
     {
@@ -176,10 +195,10 @@ void UClothMeshComponent::GenerateClothAsset()
 
     UE_LOG(ELogLevel::Display, TEXT("ClothActor: Starting cloth asset generation..."));
 
-    // Build generation parameters from editor properties
+    // STEP 3: Build generation parameters from current component settings
     FClothAssetGenerationParams params = BuildGenerationParams();
 
-    // Generate asset
+    // STEP 4: Generate new asset
     FClothAssetGenerationResult result;
 
     bool success = FClothAssetGenerator::GenerateClothAssetFromStaticMesh(
@@ -190,17 +209,13 @@ void UClothMeshComponent::GenerateClothAsset()
 
     if (success)
     {
-        // Store generated asset
-        if (GeneratedClothAsset)
-        {
-            GeneratedClothAsset = nullptr;
-        }
-
+        // STEP 5: Store new generated asset
         GeneratedClothAsset = result.Asset;
         GeneratedClothAsset->SourceMeshName = SourceStaticMesh->GetRenderData()->ObjectName;
 
         bAssetGenerated = true;
 
+        // STEP 6: Setup materials
         Materials.Empty();
         // SourceStaticMesh path를 가지고 ClothAsset를 불러오기 한 경우 아래의 로직으로 Material세팅
         if (SourceStaticMesh)
@@ -224,12 +239,14 @@ void UClothMeshComponent::GenerateClothAsset()
                    Materials.Num());
         }
 
+        // STEP 7: Register new instance with ClothWorld
+        // This uploads new simulation and render data to unified buffers
+        RegisterWithClothWorld();
+        
         // Update status display
         LastErrorMessage = "";
-
-        // TEST
-        this->UnregisterFromClothWorld();
-        this->RegisterWithClothWorld();
+        
+        UE_LOG(ELogLevel::Display, TEXT("ClothMeshComponent: Asset generation and registration complete"));
     }
     else
     {

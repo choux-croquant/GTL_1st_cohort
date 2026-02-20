@@ -634,6 +634,31 @@ void FClothBatchManager::RemoveInstance(FClothInstanceHandle *Instance)
     Instances.Remove(Instance);
     InstanceToMetadataIndex.Remove(Instance);
 
+    // Invalidate metadata to prevent stale access
+    FClothInstanceMetadata& metadataRef = InstanceMetadata[metadataIndex];
+    metadataRef.bIsActive = false;
+    metadataRef.ParticleCount = 0;
+    metadataRef.ConstraintCount = 0;
+    metadataRef.BendConstraintCount = 0;
+    metadataRef.KinematicTargetCount = 0;
+    metadataRef.TriangleCount = 0;
+    metadataRef.AreaConstraintCount = 0;
+    metadataRef.EdgeCollisionCount = 0;
+    
+    // Mark metadata slot as free for reuse with invalid offset markers
+    metadataRef.ParticleOffset = 0xFFFFFFFF;  // Invalid offset marker
+    metadataRef.ConstraintOffset = 0xFFFFFFFF;
+    metadataRef.BendConstraintOffset = 0xFFFFFFFF;
+    metadataRef.KinematicTargetOffset = 0xFFFFFFFF;
+    metadataRef.TriangleOffset = 0xFFFFFFFF;
+    metadataRef.AreaConstraintOffset = 0xFFFFFFFF;
+    metadataRef.EdgeCollisionOffset = 0xFFFFFFFF;
+    metadataRef.RenderVertexOffset = 0xFFFFFFFF;
+    metadataRef.RenderIndexOffset = 0xFFFFFFFF;
+    
+    UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Invalidated metadata at index %d"),
+           static_cast<int32>(LODLevel), metadataIndex);
+
     // Mark for compaction (don't compact immediately)
     bNeedsCompaction = true;
 
