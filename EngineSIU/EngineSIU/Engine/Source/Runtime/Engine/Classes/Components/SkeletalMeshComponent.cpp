@@ -463,6 +463,80 @@ void USkeletalMeshComponent::GetCurrentGlobalBoneMatrices(TArray<FMatrix>& OutBo
     }
 }
 
+// NEW: Bone query methods for cloth attachment
+int32 USkeletalMeshComponent::GetBoneIndex(FName BoneName) const
+{
+    if (!SkeletalMeshAsset || !SkeletalMeshAsset->GetSkeleton())
+    {
+        return INDEX_NONE;
+    }
+    
+    const FReferenceSkeleton& RefSkeleton = SkeletalMeshAsset->GetSkeleton()->GetReferenceSkeleton();
+    return RefSkeleton.FindRawBoneIndex(BoneName);
+}
+
+FTransform USkeletalMeshComponent::GetBoneTransform(int32 BoneIndex) const
+{
+    if (!SkeletalMeshAsset || !SkeletalMeshAsset->GetSkeleton())
+    {
+        return FTransform::Identity;
+    }
+    
+    const FReferenceSkeleton& RefSkeleton = SkeletalMeshAsset->GetSkeleton()->GetReferenceSkeleton();
+    if (!RefSkeleton.IsValidRawIndex(BoneIndex))
+    {
+        return FTransform::Identity;
+    }
+    
+    // Get bone matrices in component space
+    TArray<FMatrix> BoneMatrices;
+    GetCurrentGlobalBoneMatrices(BoneMatrices);
+    
+    if (!BoneMatrices.IsValidIndex(BoneIndex))
+    {
+        return FTransform::Identity;
+    }
+    
+    // Convert to world space
+    FMatrix BoneWorldMatrix = BoneMatrices[BoneIndex] * GetComponentTransform().ToMatrixWithScale();
+    return FTransform(BoneWorldMatrix);
+}
+
+FTransform USkeletalMeshComponent::GetBoneTransform(FName BoneName) const
+{
+    int32 BoneIndex = GetBoneIndex(BoneName);
+    if (BoneIndex == INDEX_NONE)
+    {
+        return FTransform::Identity;
+    }
+    
+    return GetBoneTransform(BoneIndex);
+}
+
+void USkeletalMeshComponent::GetBoneWorldTransforms(TArray<FTransform>& OutTransforms) const
+{
+    OutTransforms.Empty();
+    
+    if (!SkeletalMeshAsset || !SkeletalMeshAsset->GetSkeleton())
+    {
+        return;
+    }
+    
+    // Get bone matrices in component space
+    TArray<FMatrix> BoneMatrices;
+    GetCurrentGlobalBoneMatrices(BoneMatrices);
+    
+    // Convert to world space transforms
+    FMatrix ComponentToWorld = GetComponentTransform().ToMatrixWithScale();
+    OutTransforms.Reserve(BoneMatrices.Num());
+    
+    for (const FMatrix& BoneMatrix : BoneMatrices)
+    {
+        FMatrix BoneWorldMatrix = BoneMatrix * ComponentToWorld;
+        OutTransforms.Add(FTransform(BoneWorldMatrix));
+    }
+}
+
 void USkeletalMeshComponent::DEBUG_SetAnimationEnabled(bool bEnable)
 {
     bPlayAnimation = bEnable;

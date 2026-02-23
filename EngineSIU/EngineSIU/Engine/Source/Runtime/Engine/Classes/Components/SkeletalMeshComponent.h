@@ -104,6 +104,12 @@ public:
 
     void SetLoopEndFrame(int32 InLoopEndFrame);
 
+    // NEW: Bone query methods for cloth attachment
+    int32 GetBoneIndex(FName BoneName) const;
+    FTransform GetBoneTransform(int32 BoneIndex) const;
+    FTransform GetBoneTransform(FName BoneName) const;
+    void GetBoneWorldTransforms(TArray<FTransform>& OutTransforms) const;
+
     void UpdateBoneTransformToPhysScene();
 
     void ChangeRigidBodyFlag(ERigidBodyType InType);
