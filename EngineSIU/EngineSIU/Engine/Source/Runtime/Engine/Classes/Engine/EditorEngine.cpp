@@ -25,6 +25,7 @@
 #include "Cloth/ClothPhysicsManager.h"
 #include "Components/ClothMeshComponent.h"
 #include "Cloth/ClothWorld.h"
+#include "Engine/Cloth/ClothCollisionManager.h"
 
 extern FEngineLoop GEngineLoop;
 
@@ -562,6 +563,48 @@ void UEditorEngine::SetClothWorld(UWorld *World)
 {
     ClothPhysicsManager->CreateClothWorld(PIEWorld);
     ClothPhysicsManager->SetCurrentWorld(PIEWorld);
+
+    // NEW: Register skeletal mesh colliders after cloth world is created
+    FClothWorld* ClothWorld = ClothPhysicsManager->GetCurrentClothWorld();
+    if (ClothWorld)
+    {
+        FClothCollisionManager* CollisionMgr = ClothWorld->GetCollisionManager();
+        if (CollisionMgr)
+        {
+            for (const auto &Actor : World->GetActiveLevel()->Actors)
+            {
+                USkeletalMeshComponent* SkelMesh = Actor->GetComponentByClass<USkeletalMeshComponent>();
+                if (SkelMesh && SkelMesh->bSimulate && SkelMesh->GetSkeletalMeshAsset())
+                {
+                    UPhysicsAsset* PhysicsAsset = SkelMesh->GetSkeletalMeshAsset()->GetPhysicsAsset();
+                    if (PhysicsAsset)
+                    {
+                        TArray<UBodySetup*> BodySetups = PhysicsAsset->BodySetups;
+                        TArray<FBodyInstance*>& Bodies = SkelMesh->GetBodies();
+                        
+                        for (int i = 0; i < BodySetups.Num() && i < Bodies.Num(); i++)
+                        {
+                            int32 NumRegistered = CollisionMgr->RegisterSkeletalCollider(
+                                SkelMesh,
+                                Bodies[i]->BoneIndex,
+                                BodySetups[i]
+                            );
+                            
+                            if (NumRegistered > 0)
+                            {
+                                UE_LOG(ELogLevel::Display,
+                                    TEXT("SetClothWorld: SkeletalMesh %s registered %d cloth colliders for bone %s (index %d)"),
+                                    *SkelMesh->GetName(),
+                                    NumRegistered,
+                                    *Bodies[i]->BodyInstanceName.ToString(),
+                                    Bodies[i]->BoneIndex);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     for (const auto &Actor : World->GetActiveLevel()->Actors)
     {

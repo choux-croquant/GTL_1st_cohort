@@ -17,6 +17,9 @@
 #include "UObject/ObjectFactory.h"
 #include "PhysicsEngine/ConstraintInstance.h"
 #include <Engine/Contents/AnimInstance/LuaScriptAnimInstance.h>
+#include "Cloth/ClothPhysicsManager.h"
+#include "Cloth/ClothWorld.h"
+#include "Cloth/ClothCollisionManager.h"
 
 bool USkeletalMeshComponent::bIsCPUSkinning = false;
 
@@ -274,6 +277,35 @@ void USkeletalMeshComponent::EndPhysicsTickComponent(float DeltaTime)
         //}
         
         CPUSkinning();
+    }
+    
+    // NEW: Update cloth collider transforms for animated bones
+    if (GEngine && GEngine->ClothPhysicsManager)
+    {
+        FClothWorld* ClothWorld = GEngine->ClothPhysicsManager->GetCurrentClothWorld();
+        if (ClothWorld)
+        {
+            FClothCollisionManager* CollisionMgr = ClothWorld->GetCollisionManager();
+            if (CollisionMgr)
+            {
+                // Get current bone transforms
+                TArray<FMatrix> CurrentGlobalBoneMatrices;
+                GetCurrentGlobalBoneMatrices(CurrentGlobalBoneMatrices);
+                FMatrix CompToWorld = GetComponentTransform().ToMatrixWithScale();
+                
+                // Convert to world space
+                for (int32 i = 0; i < CurrentGlobalBoneMatrices.Num(); ++i)
+                {
+                    CurrentGlobalBoneMatrices[i] = CurrentGlobalBoneMatrices[i] * CompToWorld;
+                }
+                
+                // Update collider manager with new bone transforms
+                CollisionMgr->UpdateSkeletalColliderTransforms(
+                    this,
+                    CurrentGlobalBoneMatrices
+                );
+            }
+        }
     }
 }
 
@@ -678,6 +710,9 @@ void USkeletalMeshComponent::CreatePhysXGameObject()
 
         Constraints.Add(NewConstraintInstance);
     }
+    
+    // NOTE: Cloth collider registration moved to EditorEngine::SetClothWorld()
+    // because ClothWorld is not created yet at this point
 }
 
 void USkeletalMeshComponent::AddBodyInstance(FBodyInstance* BodyInstance)
@@ -1035,24 +1070,15 @@ void USkeletalMeshComponent::UpdateBoneTransformToPhysScene()
                 FVector Location = CurrentGlobalBoneMatrices[BoneIndex].GetTranslationVector();
                 FQuat Rotation = FTransform(CurrentGlobalBoneMatrices[BoneIndex]).GetRotation();
                 PxTransform UpdatedPxTransform = PxTransform(PxVec3(Location.X, Location.Y, Location.Z), PxQuat(Rotation.X, Rotation.Y, Rotation.Z, Rotation.W));
-                // if (BIGameObject->RigidType == ERigidBodyType::DYNAMIC)
-                // {
-                //     LinearVelocity = (NewTransform.Translation - WorldTransform.Translation);
-                //     RigidBody->setLinearVelocity(LinearVelocity.ToPxVec3());
-                //
-                //     FQuat DeltaQuat = NewTransform.Rotation * WorldTransform.Rotation.Inverse();
-                //
-                //     FVector Axis;
-                //     float Angle;
-                //     DeltaQuat.ToAxisAndAngle(Axis, Angle);
-                //
-                //     float DeltaTime = 1.f / 60.f;
-                //     AngularVelocity = Axis * (Angle / DeltaTime);
-                //
-                //     BIGameObject->Dy->setAngularVelocity(AngularVelocity.ToPxVec3());
-                // }else if (BIGameObject->RigidType == ERigidBodyType::KINEMATIC)
-                // {
+                // Only update kinematic bodies with setKinematicTarget
+                if (BIGameObject->RigidType == ERigidBodyType::KINEMATIC)
+                {
                     BIGameObject->DynamicRigidBody->setKinematicTarget(UpdatedPxTransform);
+                }
+                // For dynamic bodies, you would set velocities instead (commented out for now)
+                // else if (BIGameObject->RigidType == ERigidBodyType::DYNAMIC)
+                // {
+                //     // Calculate and set linear/angular velocities
                 // }
             }
         }

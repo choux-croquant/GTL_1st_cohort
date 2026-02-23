@@ -51,6 +51,11 @@ struct FClothColliderSource
 	bool bIsDirty;                          // Transform changed since last upload
 	uint32 GPUBufferIndex;                  // Index in unified GPU buffer
 	
+	// NEW: Skeletal mesh support for per-bone colliders
+	int32 BoneIndex;                        // -1 for regular component, >= 0 for bone-based collider
+	FTransform CachedLocalOffset;           // Local offset from bone (for geometry offset)
+	TWeakObjectPtr<class USkeletalMeshComponent> SkeletalMeshComponent;  // For bone lookup
+	
 	FClothColliderSource()
 		: Type(EClothColliderType::Sphere)
 		, Component(nullptr)
@@ -63,6 +68,9 @@ struct FClothColliderSource
 		, CachedExtents(FVector::ZeroVector)
 		, bIsDirty(true)
 		, GPUBufferIndex(0)
+		, BoneIndex(-1)
+		, CachedLocalOffset(FTransform::Identity)
+		, SkeletalMeshComponent(nullptr)
 	{}
 };
 
@@ -118,6 +126,29 @@ public:
 	 * Manually add a box collider
 	 */
 	void AddBoxCollider(const FVector& WorldCenter, const FVector& Extents, const FRotator& Rotation);
+	
+	/**
+	 * NEW: Register colliders from a skeletal mesh bone
+	 * @param SkeletalMesh - The skeletal mesh component
+	 * @param BoneIndex - Index of the bone
+	 * @param BodySetup - Physics geometry for this bone
+	 * @return Number of colliders registered
+	 */
+	int32 RegisterSkeletalCollider(
+		class USkeletalMeshComponent* SkeletalMesh,
+		int32 BoneIndex,
+		class UBodySetup* BodySetup
+	);
+	
+	/**
+	 * NEW: Update transforms for all colliders belonging to a skeletal mesh
+	 * @param SkeletalMesh - The skeletal mesh component
+	 * @param BoneWorldTransforms - World-space transforms for each bone
+	 */
+	void UpdateSkeletalColliderTransforms(
+		class USkeletalMeshComponent* SkeletalMesh,
+		const TArray<FMatrix>& BoneWorldTransforms
+	);
 	
 	// Update
 	/**
