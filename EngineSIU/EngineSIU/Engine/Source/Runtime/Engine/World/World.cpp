@@ -14,6 +14,7 @@
 #include "Classes/Components/TextComponent.h"
 #include "Actors/TestBatchedClothActor.h"
 #include "Actors/TestClothAttachmentActor.h"
+#include "Actors/TestClothSkeletalAttachmentActor.h"
 #include "GameFramework/PIETestGameMode.h"
 #include "GameFramework/PIEFreeFlyPawn.h"
 #include "GameFramework/PIEPlayerController.h"
@@ -82,13 +83,18 @@ void UWorld::BeginPlay()
         BatchedClothTest->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));
         UE_LOG(ELogLevel::Display, TEXT("World: Spawned TestBatchedClothActor for batched simulation testing"));
     }*/
-    ATestClothAttachmentActor *ClothTest = this->SpawnActor<ATestClothAttachmentActor>();
-    if (ClothTest)
+    //ATestClothAttachmentActor *ClothTest = this->SpawnActor<ATestClothAttachmentActor>();
+    //if (ClothTest)
+    //{
+    //    ClothTest->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));
+    //    UE_LOG(ELogLevel::Display, TEXT("World: Spawned TestBatchedClothActor for batched simulation testing"));
+    //}
+    /*ATestClothSkeletalAttachmentActor* SkeletalTest = this->SpawnActor<ATestClothSkeletalAttachmentActor>();
+    if (SkeletalTest)
     {
-        ClothTest->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));
+        SkeletalTest->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));
         UE_LOG(ELogLevel::Display, TEXT("World: Spawned TestBatchedClothActor for batched simulation testing"));
-    }
-
+    }*/
     if (!GameMode && this->WorldType == EWorldType::PIE)
     {
         GameMode = this->SpawnActor<APieTestGameMode>();
