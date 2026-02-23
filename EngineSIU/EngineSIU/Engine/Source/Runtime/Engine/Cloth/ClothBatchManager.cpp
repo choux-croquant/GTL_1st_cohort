@@ -11,6 +11,9 @@
 #include "Classes/Engine/ClothAsset.h"
 #include "Classes/Components/ClothComponent.h"
 #include "Classes/Components/SceneComponent.h"
+#include "Classes/Components/SkeletalMeshComponent.h"
+#include "UObject/Casts.h"
+#include "Core/Math/Matrix.h"
 #include "Windows/D3D11RHI/GraphicDevice.h"
 #include "Windows/D3D11RHI/DXDBufferManager.h"
 #include "Windows/D3D11RHI/DXDShaderManager.h"
@@ -867,7 +870,11 @@ void FClothBatchManager::BuildKinematicAttachmentData()
 {
     ComponentIndexMap.Empty();
     UniqueComponents.Empty();
+    SkeletalMeshBoneMap.Empty(); // NEW: Clear bone tracking
     TArray<FKinematicAttachmentGPU> attachmentData;
+    
+    // NEW: Track next available transform slot for bone transforms
+    uint32 NextTransformSlot = 0;
 
     // NEW: Collect all attachments from per-instance bindings (not asset)
     for (FClothInstanceHandle *Handle : Instances)
@@ -898,7 +905,7 @@ void FClothBatchManager::BuildKinematicAttachmentData()
 
                 if (!ComponentIndexPtr)
                 {
-                    ComponentIndex = UniqueComponents.Num();
+                    ComponentIndex = NextTransformSlot++;
                     ComponentIndexMap.Add(target.DriverComponent, ComponentIndex);
                     UniqueComponents.Add(target.DriverComponent);
                 }
@@ -940,28 +947,53 @@ void FClothBatchManager::BuildKinematicAttachmentData()
             }
             else if (target.Type == EClothAttachmentType::SkeletalBone) {
                 // NEW: Support for skeletal bone attachments
-                if (!target.DriverComponent)
+                USkeletalMeshComponent* SkelMesh = Cast<USkeletalMeshComponent>(target.DriverComponent);
+                if (!SkelMesh || target.BoneIndex == INDEX_NONE)
                     continue;
+                
+                // Get or create bone tracking for this skeletal mesh
+                TArray<FBoneAttachmentInfo>* BoneInfoArrayPtr = SkeletalMeshBoneMap.Find(SkelMesh);
+                if (!BoneInfoArrayPtr)
+                {
+                    // First time seeing this skeletal mesh - add to unique components
+                    uint32 ComponentIndex = NextTransformSlot++;
+                    ComponentIndexMap.Add(SkelMesh, ComponentIndex);
+                    UniqueComponents.Add(SkelMesh);
                     
-                // Get or create component index (deduplication!)
-                uint32 *ComponentIndexPtr = ComponentIndexMap.Find(target.DriverComponent);
-                uint32 ComponentIndex;
-
-                if (!ComponentIndexPtr)
-                {
-                    ComponentIndex = UniqueComponents.Num();
-                    ComponentIndexMap.Add(target.DriverComponent, ComponentIndex);
-                    UniqueComponents.Add(target.DriverComponent);
+                    // Create bone tracking array
+                    TArray<FBoneAttachmentInfo> BoneInfoArray;
+                    SkeletalMeshBoneMap.Add(SkelMesh, BoneInfoArray);
+                    BoneInfoArrayPtr = SkeletalMeshBoneMap.Find(SkelMesh);
                 }
-                else
+                
+                // Find or add this bone to the tracking list
+                uint32 BoneTransformSlot = NextTransformSlot;
+                bool bFoundBone = false;
+                
+                for (const FBoneAttachmentInfo& BoneInfo : *BoneInfoArrayPtr)
                 {
-                    ComponentIndex = *ComponentIndexPtr;
+                    if (BoneInfo.BoneIndex == target.BoneIndex)
+                    {
+                        BoneTransformSlot = BoneInfo.TransformSlot;
+                        bFoundBone = true;
+                        break;
+                    }
+                }
+                
+                if (!bFoundBone)
+                {
+                    // New bone - allocate transform slot
+                    FBoneAttachmentInfo NewBoneInfo;
+                    NewBoneInfo.BoneIndex = target.BoneIndex;
+                    NewBoneInfo.TransformSlot = NextTransformSlot++;
+                    BoneInfoArrayPtr->Add(NewBoneInfo);
+                    BoneTransformSlot = NewBoneInfo.TransformSlot;
                 }
 
-                // Build GPU attachment data (similar to ActorTransform but with bone offset)
+                // Build GPU attachment data
                 FKinematicAttachmentGPU gpuAttachment;
-                gpuAttachment.Type = 1; // Use same type as ActorTransform for now
-                gpuAttachment.ComponentIndex = ComponentIndex;
+                gpuAttachment.Type = 1; // Use Type 1 (component transform) - bone transform uploaded to ComponentTransforms
+                gpuAttachment.ComponentIndex = BoneTransformSlot; // Use bone's transform slot
                 gpuAttachment.ParticleIndex = binding.SimVertexIndex + metadata.ParticleOffset;
                 gpuAttachment.Stiffness = binding.Stiffness;
                 gpuAttachment.AttachDistance = binding.AttachDistance;
@@ -1009,21 +1041,60 @@ void FClothBatchManager::UpdateKinematicTargetsGPU(float DeltaTime)
     }
 
     // Collect component transforms (ONLY unique components - 10-50 instead of 2,500!)
+    // NEW: Also collect bone transforms for skeletal mesh attachments
     TArray<FMatrix> componentTransforms;
-    componentTransforms.Reserve(UniqueComponents.Num());
+    componentTransforms.Reserve(UniqueComponents.Num() + SkeletalMeshBoneMap.Num() * 10); // Reserve extra for bones
 
     {
         QUICK_SCOPE_CYCLE_COUNTER(UpdateKinematicTargets_CollectTransforms);
+        
+        // First, upload regular component transforms
         for (const TWeakObjectPtr<USceneComponent> &Component : UniqueComponents)
         {
             if (Component.IsValid())
             {
-                componentTransforms.Add(Component->GetWorldMatrix());
+                USkeletalMeshComponent* SkelMesh = Cast<USkeletalMeshComponent>(Component.Get());
+                
+                if (SkelMesh && SkeletalMeshBoneMap.Contains(SkelMesh))
+                {
+                    // This is a skeletal mesh with bone attachments
+                    // Upload component transform first (for the skeletal mesh itself)
+                    componentTransforms.Add(SkelMesh->GetWorldMatrix());
+                }
+                else
+                {
+                    // Regular component transform
+                    componentTransforms.Add(Component->GetWorldMatrix());
+                }
             }
             else
             {
                 // Component destroyed - add identity
                 componentTransforms.Add(FMatrix::Identity);
+            }
+        }
+        
+        // NEW: Upload bone transforms for skeletal mesh attachments
+        for (const auto& Pair : SkeletalMeshBoneMap)
+        {
+            USkeletalMeshComponent* SkelMesh = Pair.Key;
+            const TArray<FBoneAttachmentInfo>& BoneInfos = Pair.Value;
+            
+            if (!SkelMesh)
+                continue;
+            
+            // Get all bone transforms for this skeletal mesh
+            for (const FBoneAttachmentInfo& BoneInfo : BoneInfos)
+            {
+                // Ensure we're adding at the correct slot
+                while (componentTransforms.Num() < static_cast<int32>(BoneInfo.TransformSlot))
+                {
+                    componentTransforms.Add(FMatrix::Identity);
+                }
+                
+                // Get bone world transform
+                FTransform BoneTransform = SkelMesh->GetBoneTransform(BoneInfo.BoneIndex);
+                componentTransforms.Add(BoneTransform.ToMatrixWithScale());
             }
         }
     }

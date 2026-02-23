@@ -22,6 +22,7 @@ class FGraphicsDevice;
 class FDXDBufferManager;
 class FDXDShaderManager;
 class USceneComponent;
+class USkeletalMeshComponent;
 struct ID3D11ShaderResourceView;
 
 /**
@@ -134,6 +135,9 @@ private:
     TMap<USceneComponent *, uint32> ComponentIndexMap;        // Component -> Index mapping
     TArray<TWeakObjectPtr<USceneComponent>> UniqueComponents; // Deduplicated component list
     bool bAttachmentDataDirty;                                // Needs rebuild when attachments change
+
+    // NEW: Skeletal mesh bone tracking for bone attachments
+    TMap<USkeletalMeshComponent*, TArray<FBoneAttachmentInfo>> SkeletalMeshBoneMap;
 
     bool bIsInitialized;
 };
