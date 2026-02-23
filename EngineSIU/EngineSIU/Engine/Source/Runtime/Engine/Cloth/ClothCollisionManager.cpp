@@ -628,7 +628,8 @@ int32 FClothCollisionManager::RegisterSkeletalCollider(
 		if (Shape->getBoxGeometry(BoxGeom))
 		{
 			Source.CachedLocalCenter = FVector(LocalPos.x, LocalPos.y, LocalPos.z);
-			Source.CachedExtents = FVector(BoxGeom.halfExtents.x, BoxGeom.halfExtents.y, BoxGeom.halfExtents.z);
+			// TEMP : x2 for skeletalmesh
+            Source.CachedExtents = FVector(BoxGeom.halfExtents.x * 2.0f, BoxGeom.halfExtents.y * 2.0f, BoxGeom.halfExtents.z * 2.0f);
 		}
 		
 		Source.bIsDirty = true;

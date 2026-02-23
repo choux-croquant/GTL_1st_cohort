@@ -1173,7 +1173,7 @@ void FEditorRenderPass::RenderClothColliders(uint64 ShowFlag)
                 FTransform LocalTransform(Source.CachedLocalRotation, Source.CachedLocalCenter, Source.CachedExtents);
                 
                 // Compose: LocalTransform * ComponentTransform = World transform with proper rotation and offset
-                FTransform WorldTransform = LocalTransform * Source.CachedTransform;
+                FTransform WorldTransform = Source.CachedTransform * LocalTransform;
                 
                 b.WorldMatrix = WorldTransform.ToMatrixWithScale();
                 b.Extent = Source.CachedExtents;
