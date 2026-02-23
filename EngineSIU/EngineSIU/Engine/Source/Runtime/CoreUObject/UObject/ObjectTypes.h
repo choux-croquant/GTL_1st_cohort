@@ -22,6 +22,7 @@ enum OBJECTS : uint8
     OBJ_SKELETALMESH,
     OBJ_HERO,
     OBJ_ENEMY,
+    OBJ_TEST_CHARACTER,
     OBJ_END
 };
 
