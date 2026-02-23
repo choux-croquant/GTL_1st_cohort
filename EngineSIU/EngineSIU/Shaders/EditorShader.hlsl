@@ -100,10 +100,9 @@ PS_INPUT BoxVS(VS_INPUT_POS_ONLY input, uint instanceID : SV_InstanceID)
 {
     PS_INPUT output;
     
-    float3 Scale = DataBox[instanceID].Extent;
     //scale = float3(1, 1, 1);
     
-    float4 localPos = mul(float4(input.position.xyz * Scale, 1.f), DataBox[instanceID].WorldMatrix);
+    float4 localPos = mul(float4(input.position.xyz, 1.f), DataBox[instanceID].WorldMatrix);
         
     localPos = mul(localPos, ViewMatrix);
     localPos = mul(localPos, ProjectionMatrix);

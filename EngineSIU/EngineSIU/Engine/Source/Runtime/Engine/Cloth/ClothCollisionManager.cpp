@@ -458,7 +458,7 @@ void FClothCollisionManager::ExtractBoxFromShape(physx::PxShape* Shape, UPrimiti
 	Source.CachedTransform = Component->GetComponentTransform();
 	Source.CachedLocalCenter = FVector(localPose.p.x, localPose.p.y, localPose.p.z);
 	Source.CachedLocalRotation = FQuat(localPose.q.x, localPose.q.y, localPose.q.z, localPose.q.w);  // Store local rotation!
-	Source.CachedExtents = FVector(boxGeom.halfExtents.x * 0.5, boxGeom.halfExtents.y * 0.5, boxGeom.halfExtents.z * 0.5);
+    Source.CachedExtents = FVector(boxGeom.halfExtents.x * 0.5, boxGeom.halfExtents.y * 0.5, boxGeom.halfExtents.z * 0.5);
 	Source.bIsDirty = true;
 	Source.GPUBufferIndex = ColliderSources.Num();
 	
@@ -628,7 +628,7 @@ int32 FClothCollisionManager::RegisterSkeletalCollider(
 		if (Shape->getBoxGeometry(BoxGeom))
 		{
 			Source.CachedLocalCenter = FVector(LocalPos.x, LocalPos.y, LocalPos.z);
-			Source.CachedExtents = FVector(BoxGeom.halfExtents.x * 2, BoxGeom.halfExtents.y * 2, BoxGeom.halfExtents.z * 2);
+			Source.CachedExtents = FVector(BoxGeom.halfExtents.x, BoxGeom.halfExtents.y, BoxGeom.halfExtents.z);
 		}
 		
 		Source.bIsDirty = true;
@@ -665,7 +665,7 @@ void FClothCollisionManager::UpdateSkeletalColliderTransforms(
 		{
 			// Compute new world transform: BoneWorld * LocalOffset
 			FTransform BoneWorldTransform(BoneWorldTransforms[Source.BoneIndex]);
-			FTransform NewWorldTransform = Source.CachedLocalOffset * BoneWorldTransform;
+            FTransform NewWorldTransform = Source.CachedLocalOffset * BoneWorldTransform;
 			
 			// Validate transform for NaN/Inf before using
 			if (!NewWorldTransform.IsValid() || NewWorldTransform.ContainsNaN())

@@ -725,10 +725,10 @@ void FEditorRenderPass::RenderBoxInstanced(uint64 ShowFlag)
                 {
                     FConstantBufferDebugBox b;
                     FMatrix WorldMatrix =
-                        FTransform(GeomAttribute.Rotation, GeomAttribute.Offset, GeomAttribute.Extent / 2.0f).ToMatrixWithScale()
+                        FTransform(GeomAttribute.Rotation, GeomAttribute.Offset, GeomAttribute.Extent).ToMatrixWithScale()
                         * StaticComp->GetWorldMatrix().GetMatrixWithoutScale();
                     b.WorldMatrix = WorldMatrix;
-                    b.Extent = GeomAttribute.Extent / 2.0f;
+                    b.Extent = GeomAttribute.Extent;
                     BufferAll.Add(b);
                 }
             }
@@ -1170,7 +1170,7 @@ void FEditorRenderPass::RenderClothColliders(uint64 ShowFlag)
                 FConstantBufferDebugBox b;
                 
                 // Build local transform from PhysX shape data (rotation + offset)
-                FTransform LocalTransform(Source.CachedLocalRotation, Source.CachedLocalCenter, FVector::OneVector);
+                FTransform LocalTransform(Source.CachedLocalRotation, Source.CachedLocalCenter, Source.CachedExtents);
                 
                 // Compose: LocalTransform * ComponentTransform = World transform with proper rotation and offset
                 FTransform WorldTransform = LocalTransform * Source.CachedTransform;
