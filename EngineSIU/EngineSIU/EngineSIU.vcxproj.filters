@@ -1691,6 +1691,7 @@
     <ClCompile Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshAnalysis.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\TestClothAttachmentActor.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\CharacterClothTest.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\TestClothSkeletalAttachmentActor.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="EngineSIU.natvis" />
@@ -1887,6 +1888,7 @@
     <ClInclude Include="Engine\Source\Runtime\Engine\Cloth\ClothMeshAnalysis.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\TestClothAttachmentActor.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\CharacterClothTest.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\TestClothSkeletalAttachmentActor.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\CompositingShader.hlsl" />
