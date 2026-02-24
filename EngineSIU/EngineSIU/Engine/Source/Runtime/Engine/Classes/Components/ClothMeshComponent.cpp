@@ -80,10 +80,12 @@ void UClothMeshComponent::GetRenderData(FClothRenderData &OutData) const
     OutData = FClothRenderData(); // Use default constructor
     OutData.Material = Materials.Num() > 0 ? Materials[0] : nullptr;
 
-    // Check which mode we're in
+    // Check if we're in PIE simulation mode or Edit mode
     if (bUseBatchedMode && ClothInstanceHandle)
     {
-        // Batched mode - get data from batch manager
+        // PIE MODE: Use simulated particle data from GPU
+        // Particles are already in world space (transformed during upload)
+        
         FClothBatchManager *batchMgr = ClothInstanceHandle->GetBatchManager();
         if (!batchMgr || !batchMgr->GetSolver())
             return;
@@ -99,34 +101,34 @@ void UClothMeshComponent::GetRenderData(FClothRenderData &OutData) const
         OutData.UnifiedIndexBuffer = batchedSolver->GetUnifiedIndexBuffer();
 
         // Set instance-specific offsets and counts (simulation mesh)
-        // CRITICAL FIX: ParticleOffset = 0 because indices in unified buffer are ALREADY global
-        // They were converted to global during upload (localIdx + ParticleOffset)
-        // Adding offset again in shader would cause double offset bug
         OutData.ParticleOffset = 0;
         OutData.NumVertices = metadata.ParticleCount;
-        OutData.IndexOffset = metadata.TriangleOffset * 3; // Convert triangle offset to index offset
+        OutData.IndexOffset = metadata.TriangleOffset * 3;
         OutData.NumTriangles = metadata.TriangleCount;
 
-        // FIXED: Always apply component's world transform
-        // Particles are stored in local space, so we need to transform them to world space for rendering
-        // This fixes the issue where cloth was rendered at double the offset position
-        OutData.WorldTransform = GetWorldMatrix();
+        // Particles are already in world space - use identity transform
+        if (bIsSimulationActive) {
+            OutData.WorldTransform = FMatrix::Identity;
+        }
+        else {
+            OutData.WorldTransform = GetWorldMatrix();
+        }
 
         // Mark as batched mode
         OutData.bIsBatchedMode = true;
 
-        // No per-instance index buffer in batched mode (indices are in unified buffer)
+        // No per-instance index buffer in batched mode
         OutData.Indices = nullptr;
         OutData.IndexBufferSRV = nullptr;
         
-        // NEW: Production rendering - populate render mesh data if available
+        // Production rendering data if available
         if (GeneratedClothAsset && GeneratedClothAsset->bUseRenderMesh)
         {
             OutData.bUseProductionRendering = true;
-            OutData.UnifiedRenderVertexBuffer = batchedSolver->GetUnifiedRenderVertexBuffer();  // NEW: Actual vertex buffer
+            OutData.UnifiedRenderVertexBuffer = batchedSolver->GetUnifiedRenderVertexBuffer();
             OutData.UnifiedRenderIndexBuffer = batchedSolver->GetUnifiedRenderIndexBuffer();
-            OutData.SkinningWeightBufferSRV = batchedSolver->GetSkinningWeightBufferSRV();  // Legacy K-nearest neighbor weights (t16)
-            OutData.TriangleSkinningWeightBufferSRV = batchedSolver->GetTriangleSkinningWeightBufferSRV();  // NEW: Triangle-based weights (t17)
+            OutData.SkinningWeightBufferSRV = batchedSolver->GetSkinningWeightBufferSRV();
+            OutData.TriangleSkinningWeightBufferSRV = batchedSolver->GetTriangleSkinningWeightBufferSRV();
             OutData.RenderVertexOffset = metadata.RenderVertexOffset;
             OutData.RenderVertexCount = metadata.RenderVertexCount;
             OutData.RenderIndexOffset = metadata.RenderIndexOffset;
@@ -136,6 +138,18 @@ void UClothMeshComponent::GetRenderData(FClothRenderData &OutData) const
         {
             OutData.bUseProductionRendering = false;
         }
+    }
+    else if (GeneratedClothAsset)
+    {
+        // EDIT MODE: Use rest positions from asset (in local space)
+        // Apply current WorldMatrix to transform to world space for rendering
+        // This allows transform manipulation to be reflected immediately
+        
+        //OutData.bIsBatchedMode = false;
+        //OutData.bUseProductionRendering = false;
+        
+        // Note: In Edit Mode, the renderer will need to apply WorldTransform
+        // to the asset's RestPositions (which are in local space)
     }
 }
 

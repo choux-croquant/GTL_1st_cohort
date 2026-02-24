@@ -13,6 +13,7 @@
 #include "World/World.h"
 #include "Container/Map.h"
 #include "Engine/UserInterface/Console.h"
+#include "Components/ClothMeshComponent.h"
 
 // Global configuration for cloth system mode
 static EClothSystemMode GClothSystemMode = EClothSystemMode::Batched;
@@ -222,10 +223,24 @@ FClothInstanceHandle *FClothWorld::RegisterClothInstanceBatched(UClothComponent 
                Params.RenderRestPositions.Num(), Params.RestPositions.Num(), Params.TriangleSkinningWeights.Num());
     }
 
-    // FIXED: Use identity transform to keep particles in local space
-    // The world transform will be applied during rendering in GetRenderData()
-    // This prevents double-transformation when regenerating assets
-    Params.WorldTransform = FTransform(FMatrix::Identity);
+    // FIX: Use component's spawn transform (captured at BeginPlay)
+    // This ensures particles are initialized at the position set in Edit Mode
+    // Particles in the asset are in local space, so we transform them to world space
+    UClothMeshComponent* ClothMeshComp = Cast<UClothMeshComponent>(Component);
+    if (ClothMeshComp)
+    {
+        Params.WorldTransform = FTransform(ClothMeshComp->GetSpawnTransform());
+        
+        UE_LOG(ELogLevel::Display, TEXT("ClothWorld: Registering cloth at spawn position: (%f, %f, %f)"),
+               Params.WorldTransform.GetTranslation().X,
+               Params.WorldTransform.GetTranslation().Y,
+               Params.WorldTransform.GetTranslation().Z);
+    }
+    else
+    {
+        // Fallback for non-ClothMeshComponent types
+        Params.WorldTransform = Component->GetComponentTransform();
+    }
 
     // Add instance to batch
     FClothInstanceHandle *Handle = BatchMgr->AddInstance(Params);
