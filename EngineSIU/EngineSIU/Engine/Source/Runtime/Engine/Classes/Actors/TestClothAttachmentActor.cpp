@@ -28,7 +28,7 @@ ATestClothAttachmentActor::ATestClothAttachmentActor()
     , InitialPole2Location(FVector::ZeroVector)
     , InitialSphereLocation(FVector::ZeroVector)
     , DropTimer(0.0f)
-    , DropInterval(4.0f)
+    , DropInterval(5.0f)
     , DropHeight(150.0f)
     , bInitialized(false)
 {
@@ -756,8 +756,8 @@ void ATestClothAttachmentActor::ResetDropCloth()
     if (!ClothDropComponent)
         return;
 
+    //FVector DropLocation = GetActorLocation() + FVector(92.0f, -60.0f, 30.0f);
     FVector DropLocation = GetActorLocation() + FVector(0.0f, 0.0f, 0.0f);
-
     // Position cloth above torus before resetting simulation
     ClothDropComponent->SetWorldLocation(DropLocation);
     ClothDropComponent->SetWorldRotation(FRotator::ZeroRotator);

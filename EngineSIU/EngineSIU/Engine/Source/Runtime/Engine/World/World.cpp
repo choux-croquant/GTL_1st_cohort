@@ -83,12 +83,12 @@ void UWorld::BeginPlay()
         BatchedClothTest->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));
         UE_LOG(ELogLevel::Display, TEXT("World: Spawned TestBatchedClothActor for batched simulation testing"));
     }*/
-    ATestClothAttachmentActor *ClothTest = this->SpawnActor<ATestClothAttachmentActor>();
+    /*ATestClothAttachmentActor *ClothTest = this->SpawnActor<ATestClothAttachmentActor>();
     if (ClothTest)
     {
         ClothTest->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));
         UE_LOG(ELogLevel::Display, TEXT("World: Spawned TestBatchedClothActor for batched simulation testing"));
-    }
+    }*/
     /*ATestClothSkeletalAttachmentActor* SkeletalTest = this->SpawnActor<ATestClothSkeletalAttachmentActor>();
     if (SkeletalTest)
     {
