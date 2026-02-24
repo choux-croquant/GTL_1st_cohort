@@ -1140,10 +1140,10 @@ void FClothBatchedSolver::SimulateSubstep(float SubstepDeltaTime)
     DispatchCollisionSDF(UsedParticleCount);
     
     // Edge-based collision (NEW: Prevents edge penetration in low-resolution meshes)
-    if (UsedEdgeCollisionCount > 0)
+    /*if (UsedEdgeCollisionCount > 0)
     {
         DispatchEdgeCollisionSDF(UsedEdgeCollisionCount);
-    }
+    }*/
 
     for (int32 iter = 0; iter < Config.NumIterations; ++iter)
     {

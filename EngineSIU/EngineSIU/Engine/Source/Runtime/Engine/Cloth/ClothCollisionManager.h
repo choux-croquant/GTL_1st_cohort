@@ -28,6 +28,7 @@ enum class EClothColliderType : uint32
 	Sphere = 0,
 	Capsule = 1,
 	Box = 2,
+	Torus = 3,
 	Count
 };
 
@@ -126,6 +127,15 @@ public:
 	 * Manually add a box collider
 	 */
 	void AddBoxCollider(const FVector& WorldCenter, const FVector& Extents, const FRotator& Rotation);
+	
+	/**
+	 * Manually add a torus collider
+	 * @param WorldCenter - Torus center in world space
+	 * @param Axis - Torus up vector (will be normalized)
+	 * @param MajorRadius - Distance from center to tube center
+	 * @param MinorRadius - Tube radius
+	 */
+	void AddTorusCollider(const FVector& WorldCenter, const FVector& Axis, float MajorRadius, float MinorRadius);
 	
 	/**
 	 * NEW: Register colliders from a skeletal mesh bone

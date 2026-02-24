@@ -2,6 +2,7 @@
 #include "Engine/UserInterface/Console.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/TorusComponent.h"
 #include "PhysicsEngine/PhysicsAsset.h"
 #include "Cloth/ClothGPUStructs.h"
 #include <cstring>
@@ -58,23 +59,56 @@ int32 FClothCollisionManager::RegisterCollider(UPrimitiveComponent* Component, b
 	
 	int32 NumRegistered = 0;
 	
-	// Get BodySetup from component
-	UBodySetup* BodySetup = Component->GetBodySetup();
-	if (BodySetup)
+	// Special handling for UTorusComponent (not a PhysX shape)
+	if (UTorusComponent* TorusComp = Cast<UTorusComponent>(Component))
 	{
-		int32 BeforeCount = ColliderSources.Num();
-		ExtractCollidersFromBodySetup(BodySetup, Component);
-		NumRegistered = ColliderSources.Num() - BeforeCount;
+		FClothColliderSource Source;
+		Source.Type = EClothColliderType::Torus;
+		Source.Component = Component;
+		Source.ElementIndex = 0;
+		Source.CachedTransform = Component->GetComponentTransform();
+		Source.CachedLocalCenter = FVector::ZeroVector;  // Center at component origin
+		// Store axis in LOCAL component space (will be transformed to world in ConvertToGPU)
+		Source.CachedLocalAxis = TorusComp->GetTorusAxis().GetSafeNormal();
+		Source.CachedRadius = TorusComp->GetMinorRadius();
+		Source.CachedExtents = FVector(TorusComp->GetMajorRadius(), 0, 0);
+		Source.bIsDirty = true;
+		Source.GPUBufferIndex = ColliderSources.Num();
+		
+		ColliderSources.Add(Source);
+		
+		// Track component mapping
+		TArray<int32> NewColliderIndices;
+		NewColliderIndices.Add(Source.GPUBufferIndex);
+		ComponentToColliderMap.Add(Component, NewColliderIndices);
+		
+		NumRegistered = 1;
+		bGPUDirty = true;
+		
+		UE_LOG(ELogLevel::Display, TEXT("ClothCollisionManager: Registered torus collider from component %s (MajorR=%.2f, MinorR=%.2f, Axis=(%.2f,%.2f,%.2f))"),
+			*Component->GetName(), TorusComp->GetMajorRadius(), TorusComp->GetMinorRadius(),
+			Source.CachedLocalAxis.X, Source.CachedLocalAxis.Y, Source.CachedLocalAxis.Z);
+	}
+	else
+	{
+		// Get BodySetup from component (for PhysX-based shapes)
+		UBodySetup* BodySetup = Component->GetBodySetup();
+		if (BodySetup)
+		{
+			int32 BeforeCount = ColliderSources.Num();
+			ExtractCollidersFromBodySetup(BodySetup, Component);
+			NumRegistered = ColliderSources.Num() - BeforeCount;
+		}
+		
+		if (NumRegistered > 0)
+		{
+			UE_LOG(ELogLevel::Display, TEXT("ClothCollisionManager: Registered %d colliders from component %s"),
+				NumRegistered, *Component->GetName());
+			bGPUDirty = true;
+		}
 	}
 	
 	// TODO: Handle bIncludeChildren if component has child components
-	
-	if (NumRegistered > 0)
-	{
-		UE_LOG(ELogLevel::Display, TEXT("ClothCollisionManager: Registered %d colliders from component %s"), 
-			NumRegistered, *Component->GetName());
-		bGPUDirty = true;
-	}
 	
 	return NumRegistered;
 }
@@ -168,6 +202,27 @@ void FClothCollisionManager::AddBoxCollider(const FVector& WorldCenter, const FV
 	
 	ColliderSources.Add(Source);
 	bGPUDirty = true;
+}
+
+void FClothCollisionManager::AddTorusCollider(const FVector& WorldCenter, const FVector& Axis, float MajorRadius, float MinorRadius)
+{
+	FClothColliderSource Source;
+	Source.Type = EClothColliderType::Torus;
+	Source.Component = nullptr;  // Manual collider
+	Source.ElementIndex = -1;
+	Source.CachedTransform = FTransform::Identity;
+	Source.CachedLocalCenter = WorldCenter;
+	Source.CachedLocalAxis = Axis.GetSafeNormal();
+	Source.CachedRadius = MinorRadius;  // Tube radius
+	Source.CachedExtents = FVector(MajorRadius, 0, 0);  // Major radius in X
+	Source.bIsDirty = true;
+	Source.GPUBufferIndex = ColliderSources.Num();
+	
+	ColliderSources.Add(Source);
+	bGPUDirty = true;
+	
+	UE_LOG(ELogLevel::Display, TEXT("ClothCollisionManager: Added torus collider at (%.2f, %.2f, %.2f), MajorR=%.2f, MinorR=%.2f"),
+		WorldCenter.X, WorldCenter.Y, WorldCenter.Z, MajorRadius, MinorRadius);
 }
 
 void FClothCollisionManager::UpdateTransforms()
@@ -509,6 +564,36 @@ FClothColliderGPU FClothCollisionManager::ConvertToGPU(const FClothColliderSourc
 		// TODO: Store rotation properly - may need to extend structure
 		// For now, axis represents forward vector
 		GPU.Axis = Source.CachedTransform.GetRotation().GetForwardVector();
+	}
+	else if (Source.Type == EClothColliderType::Torus)
+	{
+		// Transform center and axis to world space
+		FVector WorldCenter = Source.CachedTransform.TransformPosition(Source.CachedLocalCenter);
+		FVector WorldAxis = Source.CachedTransform.TransformVector(Source.CachedLocalAxis).GetSafeNormal();
+		
+		GPU.Center = WorldCenter;
+		GPU.Axis = WorldAxis;
+		GPU.Radius = Source.CachedRadius;  // Minor radius (tube)
+		GPU.HalfHeight = Source.CachedExtents.X;  // Major radius (ring)
+		GPU.Extents = FVector::ZeroVector;  // Unused for torus
+		
+		// EXTENSIVE DEBUG LOGGING
+		UE_LOG(ELogLevel::Display, TEXT("=== TORUS GPU UPLOAD DEBUG ==="));
+		UE_LOG(ELogLevel::Display, TEXT("  Type: %u (should be 3)"), GPU.Type);
+		UE_LOG(ELogLevel::Display, TEXT("  Center: (%.2f, %.2f, %.2f)"), GPU.Center.X, GPU.Center.Y, GPU.Center.Z);
+		UE_LOG(ELogLevel::Display, TEXT("  Axis: (%.2f, %.2f, %.2f) [length=%.4f]"),
+			GPU.Axis.X, GPU.Axis.Y, GPU.Axis.Z, GPU.Axis.Size());
+		UE_LOG(ELogLevel::Display, TEXT("  MajorRadius (HalfHeight): %.2f"), GPU.HalfHeight);
+		UE_LOG(ELogLevel::Display, TEXT("  MinorRadius (Radius): %.2f"), GPU.Radius);
+		UE_LOG(ELogLevel::Display, TEXT("  Struct size: %zu bytes (should be 64)"), sizeof(FClothColliderGPU));
+		UE_LOG(ELogLevel::Display, TEXT("  Memory layout:"));
+		UE_LOG(ELogLevel::Display, TEXT("    Type offset: %zu"), offsetof(FClothColliderGPU, Type));
+		UE_LOG(ELogLevel::Display, TEXT("    Radius offset: %zu"), offsetof(FClothColliderGPU, Radius));
+		UE_LOG(ELogLevel::Display, TEXT("    HalfHeight offset: %zu"), offsetof(FClothColliderGPU, HalfHeight));
+		UE_LOG(ELogLevel::Display, TEXT("    Center offset: %zu"), offsetof(FClothColliderGPU, Center));
+		UE_LOG(ELogLevel::Display, TEXT("    Axis offset: %zu"), offsetof(FClothColliderGPU, Axis));
+		UE_LOG(ELogLevel::Display, TEXT("    Extents offset: %zu"), offsetof(FClothColliderGPU, Extents));
+		UE_LOG(ELogLevel::Display, TEXT("=============================="));
 	}
 	
 	return GPU;

@@ -1692,6 +1692,8 @@
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\TestClothAttachmentActor.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\CharacterClothTest.cpp" />
     <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\TestClothSkeletalAttachmentActor.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Actors\TorusColliderActor.cpp" />
+    <ClCompile Include="Engine\Source\Runtime\Engine\Classes\Components\TorusComponent.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="EngineSIU.natvis" />
@@ -1889,6 +1891,8 @@
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\TestClothAttachmentActor.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\CharacterClothTest.h" />
     <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\TestClothSkeletalAttachmentActor.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Actors\TorusColliderActor.h" />
+    <ClInclude Include="Engine\Source\Runtime\Engine\Classes\Components\TorusComponent.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\CompositingShader.hlsl" />

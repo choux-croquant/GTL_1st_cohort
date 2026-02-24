@@ -21,7 +21,7 @@ struct FClothConfig
 {
     // Global simulation settings
     //FVector Gravity = {0.0f, 0.0f, -980.0f};
-    FVector Gravity = { 0.0f, 0.0f, -700.0f };
+    FVector Gravity = { 0.0f, 0.0f, -0.0f };
     float Mass = 1.0f;
     float Damping = 5.0f;
 
