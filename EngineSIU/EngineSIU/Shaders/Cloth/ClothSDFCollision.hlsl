@@ -65,6 +65,35 @@ float sdBox(float3 pos, float3 center, float3 extents)
     return length(max(q, 0.0f)) + min(max(q.x, max(q.y, q.z)), 0.0f);
 }
 
+float sdTorus(float3 pos, float3 center, float3 axis, float majorRadius, float minorRadius)
+{
+    // Validate inputs
+    if (majorRadius <= 0.0f || minorRadius <= 0.0f)
+        return 1e10f;  // Return large positive distance (no collision)
+    
+    // Ensure axis is normalized
+    float axisLen = length(axis);
+    if (axisLen < EPSILON)
+        return 1e10f;  // Invalid axis
+    
+    float3 normalizedAxis = axis / axisLen;
+    
+    // Transform to torus local space
+    float3 localPos = pos - center;
+    
+    // Project onto torus plane (perpendicular to axis)
+    float axisProj = dot(localPos, normalizedAxis);
+    float3 planePos = localPos - normalizedAxis * axisProj;
+    
+    // Distance from center in plane
+    float distInPlane = length(planePos);
+    
+    // 2D distance in (radial, vertical) space
+    float2 q = float2(distInPlane - majorRadius, axisProj);
+    
+    return length(q) - minorRadius;
+}
+
 /**
  * Query SDF for a single collider
  * Returns: signed distance (negative = inside)
@@ -123,6 +152,46 @@ float QueryColliderSDF(FClothCollider collider, float3 pos, out float3 normal)
             float3 interiorNormal = sign(localPos) * step(q.yzx, q.xyz) * step(q.zxy, q.xyz);
             normal = SafeNormalizeWithFallback(interiorNormal, float3(0, 1, 0));
         }
+    }
+    else if (collider.Type == 3)  // Torus
+    {
+        float majorRadius = collider.HalfHeight;  // Reuse HalfHeight field for major radius
+        float minorRadius = collider.Radius;
+        
+        // Validate radii
+        if (majorRadius <= 0.0f || minorRadius <= 0.0f)
+        {
+            dist = 1e10f;  // No collision
+            normal = float3(0, 1, 0);
+            return dist;
+        }
+        
+        dist = sdTorus(pos, collider.Center, collider.Axis, majorRadius, minorRadius);
+        
+        // FIX 3: Axis singularity guard in normal computation
+        float3 normalizedAxis = SafeNormalizeWithFallback(collider.Axis, float3(0, 0, 1));
+        float3 localPos = pos - collider.Center;
+        float axisProj = dot(localPos, normalizedAxis);
+        float3 planePos = localPos - normalizedAxis * axisProj;
+        float distInPlane = length(planePos);
+        
+        // Radial direction in torus plane (handle axis singularity)
+        float3 radialDir = float3(0, 0, 0);
+        if (distInPlane > EPSILON)
+        {
+            radialDir = planePos / distInPlane;  // Normalized radial direction
+        }
+        else
+        {
+            radialDir = float3(1, 0, 0);  // Fallback when particle is on axis
+        }
+        
+        // Point on major circle (torus ring) closest to query point
+        float3 torusRingPoint = radialDir * majorRadius;
+        float3 toNormal = localPos - torusRingPoint;
+        
+        // If toNormal is near zero (particle on torus surface ring), fall back to axis
+        normal = SafeNormalizeWithFallback(toNormal, normalizedAxis);
     }
 
     return dist;
@@ -200,11 +269,17 @@ void SolveCollisionsCS(uint3 DTid : SV_DispatchThreadID)
     for (uint i = 0; i < NumColliders; i++)
     {
         FClothCollider collider = Colliders[i];
+        
+        // Validate collider type
+        if (collider.Type > 3)
+        {
+            continue;
+        }
 
+        // Query SDF distance
         float3 normal;
         float dist = QueryColliderSDF(collider, position, normal);
 
-        // Check for penetration (dist < collision thickness)
         float penetration = CollisionThickness - dist;
 
         if (penetration > 0.0f)
