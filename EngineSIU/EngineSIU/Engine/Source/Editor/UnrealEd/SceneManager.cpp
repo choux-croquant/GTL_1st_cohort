@@ -224,7 +224,11 @@ FSceneData SceneManager::WorldToSceneData(const UWorld& InWorld)
             componentData.ComponentID = Component->GetName();
             componentData.ComponentClass = Component->GetClass()->GetName();
             
-            //TMap<FString, FString> InProperties;
+            // GetProperties() is called on each component to serialize its data.
+            // This works for all component types including:
+            // - UStaticMeshComponent, ULightComponent, etc.
+            // - UTorusComponent (saves MajorRadius, MinorRadius, TorusAxisX/Y/Z)
+            // - Any custom component that implements GetProperties()
             Component->GetProperties(componentData.Properties);
             
             // 컴포넌트의 속성들을 JSON으로 변환하여 저장
@@ -370,7 +374,11 @@ bool SceneManager::LoadWorldFromData(const FSceneData& sceneData, UWorld* target
             if (TargetComponent)
             {
                 // 1.4. 컴포넌트 속성 설정 (공통 로직)
-                //ApplyComponentProperties(TargetComponent, componentData.Properties);
+                // SetProperties() restores all component-specific data including:
+                // - Transform (RelativeLocation, RelativeRotation, RelativeScale3D)
+                // - UTorusComponent: MajorRadius, MinorRadius, TorusAxisX/Y/Z
+                // - UStaticMeshComponent: Mesh reference, materials, etc.
+                // - Any custom component properties
                 TargetComponent->SetProperties( componentData.Properties); // 태그 설정 (ID로 사용)
 
                 // 1.5. *** 수정: 복합 키를 사용하여 컴포넌트 맵에 추가 ***

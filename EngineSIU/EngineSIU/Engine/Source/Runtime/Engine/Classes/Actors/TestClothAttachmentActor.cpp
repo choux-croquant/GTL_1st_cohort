@@ -6,6 +6,7 @@
 #include "TestClothAttachmentActor.h"
 #include "Components/ClothMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/TorusComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/ClothAsset.h"
 #include "Classes/Engine/FObjLoader.h"
@@ -21,10 +22,14 @@ ATestClothAttachmentActor::ATestClothAttachmentActor()
     , ClothComponent3(nullptr)
     , PoleComponent3(nullptr)
     , ClothComponent4(nullptr)
+    , ClothDropComponent(nullptr)
     , AnimationTime(0.0f)
     , InitialPoleLocation(FVector::ZeroVector)
     , InitialPole2Location(FVector::ZeroVector)
     , InitialSphereLocation(FVector::ZeroVector)
+    , DropTimer(0.0f)
+    , DropInterval(4.0f)
+    , DropHeight(150.0f)
     , bInitialized(false)
 {
 }
@@ -618,6 +623,36 @@ void ATestClothAttachmentActor::PostSpawnInitialize()
     // Store initial second pole location for oscillation
     InitialPole3Location = PoleComponent3->GetComponentLocation();
 
+    ClothDropComponent = AddComponent<UClothMeshComponent>(TEXT("ClothDropComponent"));
+    if (!ClothDropComponent)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("TestClothAttachmentActor: Failed to create cloth drop component"));
+        return;
+    }
+
+    // Reuse first cloth mesh for dropping sample
+    ClothDropComponent->SourceStaticMesh = ClothSourceMesh;
+    ClothDropComponent->SimulationMeshReductionRatio = 0.25f;
+    ClothDropComponent->bPreserveBoundaryEdges = true;
+    ClothDropComponent->bPreserveUVSeams = true;
+    ClothDropComponent->DecimationMethod = EClothDecimationMethod::Voronoi;
+
+    // Physics parameters
+    ClothDropComponent->bGenerateDistanceConstraints = true;
+    ClothDropComponent->bGenerateBendConstraints = true;
+    ClothDropComponent->bGenerateAreaConstraints = true;
+    ClothDropComponent->bGenerateEdgeCollisions = true;
+
+    // Simulation parameters
+    ClothDropComponent->StretchStiffness = 0.85f;
+    ClothDropComponent->BendStiffness = 0.1f;
+    ClothDropComponent->AreaStiffness = 0.001f;
+    ClothDropComponent->TotalMass = 1.0f;
+
+    // First drop setup
+    ResetDropCloth();
+    UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Cloth drop sample initialized"));
+
     bInitialized = true;
 }
 
@@ -703,4 +738,46 @@ void ATestClothAttachmentActor::Tick(float DeltaTime)
 
     PoleComponent3->SetWorldLocation(NewLocation4);
     PoleComponent3->SetWorldRotation(NewRotation4);
+
+    // ===== Torus cloth drop loop =====
+    /*if (ClothDropComponent)
+    {
+        DropTimer += DeltaTime;
+        if (DropTimer >= DropInterval)
+        {
+            DropTimer = 0.0f;
+            ResetDropCloth();
+        }
+    }*/
+}
+
+void ATestClothAttachmentActor::ResetDropCloth()
+{
+    if (!ClothDropComponent)
+        return;
+
+    FVector DropLocation = GetActorLocation() + FVector(0.0f, 0.0f, 0.0f);
+
+    // Position cloth above torus before resetting simulation
+    ClothDropComponent->SetWorldLocation(DropLocation);
+    ClothDropComponent->SetWorldRotation(FRotator::ZeroRotator);
+
+    // Reset simulation state by unregistering and re-registering
+    // This resets the simulation without regenerating the ClothAsset (avoiding hitch)
+    ClothDropComponent->UnregisterFromClothWorld();
+    
+    // Only generate asset if it doesn't exist yet (first time)
+    if (!ClothDropComponent->GeneratedClothAsset)
+    {
+        ClothDropComponent->GenerateClothAsset();
+        if (!ClothDropComponent->GeneratedClothAsset)
+        {
+            UE_LOG(ELogLevel::Error, TEXT("TestClothAttachmentActor: Failed to generate drop cloth asset"));
+            return;
+        }
+    }
+
+    ClothDropComponent->RegisterWithClothWorld();
+
+    UE_LOG(ELogLevel::Display, TEXT("TestClothAttachmentActor: Dropping cloth at %s onto torus"), *DropLocation.ToString());
 }
