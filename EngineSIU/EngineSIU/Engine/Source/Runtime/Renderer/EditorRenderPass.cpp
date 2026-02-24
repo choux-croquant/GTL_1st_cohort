@@ -14,6 +14,7 @@
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SphereComponent.h"
+#include "Components/TorusComponent.h"
 #include "D3D11RHI/GraphicDevice.h"
 #include "Engine/FObjLoader.h"
 #include "Engine/SkeletalMesh.h"
@@ -76,6 +77,7 @@ void FEditorRenderPass::CreateShaders()
     AddShaderSet(L"Sphere", "SphereVS", "SpherePS", LayoutPosOnly, ARRAYSIZE(LayoutPosOnly));
     AddShaderSet(L"Box", "BoxVS", "BoxPS", LayoutPosOnly, ARRAYSIZE(LayoutPosOnly));
     AddShaderSet(L"Capsule", "CapsuleVS", "CapsulePS", LayoutPosOnly, ARRAYSIZE(LayoutPosOnly));
+    AddShaderSet(L"Torus", "TorusVS", "TorusPS", LayoutPosOnly, ARRAYSIZE(LayoutPosOnly));
 }
 
 void FEditorRenderPass::CreateBuffers()
@@ -233,6 +235,62 @@ void FEditorRenderPass::CreateBuffers()
 
     Resources.Primitives.Sphere.VertexInfo = OutVertexInfo;
     Resources.Primitives.Sphere.IndexInfo = OutIndexInfo;
+    
+    ////////////////////////////////////
+    // Torus buffer generation
+    TArray<FVector> TorusVertices;
+    TArray<uint32> TorusIndices;
+    
+    const int MajorSegments = 32;  // Around the ring
+    const int MinorSegments = 16;  // Around the tube
+    
+    // Generate vertices (unit torus with major radius 1.0, minor radius 0.25)
+    // Z-up coordinate system: torus ring in XY plane, tube extends in Z direction
+    for (int i = 0; i <= MajorSegments; ++i)
+    {
+        float theta = (float)i / MajorSegments * 2.0f * PI;
+        float cosTheta = cosf(theta);
+        float sinTheta = sinf(theta);
+        
+        for (int j = 0; j <= MinorSegments; ++j)
+        {
+            float phi = (float)j / MinorSegments * 2.0f * PI;
+            float cosPhi = cosf(phi);
+            float sinPhi = sinf(phi);
+            
+            // Torus parametric equation for Z-up system
+            // Ring in XY plane, tube extends in Z direction
+            float x = (1.0f + 0.25f * cosPhi) * cosTheta;
+            float y = (1.0f + 0.25f * cosPhi) * sinTheta;
+            float z = 0.25f * sinPhi;
+            
+            TorusVertices.Add(FVector(x, y, z));
+        }
+    }
+    
+    // Generate line indices (wireframe)
+    for (int i = 0; i < MajorSegments; ++i)
+    {
+        for (int j = 0; j < MinorSegments; ++j)
+        {
+            int current = i * (MinorSegments + 1) + j;
+            int next = current + MinorSegments + 1;
+            
+            // Major circle lines
+            TorusIndices.Add(current);
+            TorusIndices.Add(next);
+            
+            // Minor circle lines
+            TorusIndices.Add(current);
+            TorusIndices.Add(current + 1);
+        }
+    }
+    
+    BufferManager->CreateVertexBuffer<FVector>(TEXT("TorusVertexBuffer"), TorusVertices, OutVertexInfo, D3D11_USAGE_IMMUTABLE, 0);
+    BufferManager->CreateIndexBuffer<uint32>(TEXT("TorusIndexBuffer"), TorusIndices, OutIndexInfo);
+    
+    Resources.Primitives.Torus.VertexInfo = OutVertexInfo;
+    Resources.Primitives.Torus.IndexInfo = OutIndexInfo;
 }
 
 void FEditorRenderPass::CreateConstantBuffers()
@@ -244,6 +302,7 @@ void FEditorRenderPass::CreateConstantBuffers()
     BufferManager->CreateBufferGeneric<FConstantBufferDebugGrid>("GridConstantBuffer", nullptr, sizeof(FConstantBufferDebugGrid), D3D11_BIND_CONSTANT_BUFFER, D3D11_USAGE_DYNAMIC, D3D11_CPU_ACCESS_WRITE);
     BufferManager->CreateBufferGeneric<FConstantBufferDebugIcon>("IconConstantBuffer", nullptr, sizeof(FConstantBufferDebugIcon), D3D11_BIND_CONSTANT_BUFFER, D3D11_USAGE_DYNAMIC, D3D11_CPU_ACCESS_WRITE);
     BufferManager->CreateBufferGeneric<FConstantBufferDebugArrow>("ArrowConstantBuffer", nullptr, sizeof(FConstantBufferDebugArrow) * ConstantBufferSizeArrow, D3D11_BIND_CONSTANT_BUFFER, D3D11_USAGE_DYNAMIC, D3D11_CPU_ACCESS_WRITE);
+    BufferManager->CreateBufferGeneric<FConstantBufferDebugTorus>("TorusConstantBuffer", nullptr, sizeof(FConstantBufferDebugTorus) * ConstantBufferSizeTorus, D3D11_BIND_CONSTANT_BUFFER, D3D11_USAGE_DYNAMIC, D3D11_CPU_ACCESS_WRITE);
 }
 
 void FEditorRenderPass::BindRenderTarget(const std::shared_ptr<FEditorViewportClient>& Viewport) const
@@ -338,6 +397,11 @@ void FEditorRenderPass::PrepareRenderArr()
                 {
                     Resources.Components.CapsuleComponents.Add(CapsuleComponent);
                 }
+                
+                if (UTorusComponent* TorusComponent = Cast<UTorusComponent>(Component))
+                {
+                    Resources.Components.TorusComponents.Add(TorusComponent);
+                }
             }
         }
     }
@@ -350,6 +414,7 @@ void FEditorRenderPass::ClearRenderArr()
     Resources.Components.Fog.Empty();
     Resources.Components.SphereComponents.Empty();
     Resources.Components.CapsuleComponents.Empty();
+    Resources.Components.TorusComponents.Empty();
     Resources.Components.BoxComponents.Empty();
 
     PreviewMesh.Empty();
@@ -420,6 +485,7 @@ void FEditorRenderPass::Render(const std::shared_ptr<FEditorViewportClient>& Vie
             RenderBoxInstanced(ShowFlag);
             RenderSphereInstanced(ShowFlag);
             RenderCapsuleInstanced(ShowFlag);
+            RenderTorusInstanced(ShowFlag);
         }
         else {
             RenderClothColliders(ShowFlag);
@@ -1014,6 +1080,119 @@ void FEditorRenderPass::RenderCapsuleInstanced(uint64 ShowFlag)
     }
 }
 
+void FEditorRenderPass::RenderTorusInstanced(uint64 ShowFlag)
+{
+    BindShaderResource(L"TorusVS", L"TorusPS", D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+    BindBuffers(Resources.Primitives.Torus);
+    
+    TArray<FConstantBufferDebugTorus> BufferAll;
+    for (UTorusComponent* TorusComponent : Resources.Components.TorusComponents)
+    {
+        if (ShowFlag & EEngineShowFlags::SF_CollisionSelectedOnly)
+        {
+            AActor* Actor = Cast<UEditorEngine>(GEngine)->GetSelectedActor();
+            if (Actor && Actor->GetComponents().Contains(TorusComponent))
+            {
+                FConstantBufferDebugTorus b;
+                
+                FVector WorldCenter = TorusComponent->GetComponentLocation();
+                FVector WorldAxis = TorusComponent->GetTorusAxis();
+                float MajorRadius = TorusComponent->GetMajorRadius();
+                float MinorRadius = TorusComponent->GetMinorRadius();
+                
+                // Create rotation to align torus with axis (Z-up coordinate system)
+                // Torus geometry: ring in XY plane, tube extends in Z direction
+                // We need to rotate so that the geometry's Z-axis aligns with WorldAxis
+                FVector ZAxis = WorldAxis;
+                FVector XAxis = (FMath::Abs(ZAxis.Z) < 0.999f) ? FVector::CrossProduct(FVector::UpVector, ZAxis).GetSafeNormal() : FVector::RightVector;
+                FVector YAxis = FVector::CrossProduct(ZAxis, XAxis).GetSafeNormal();
+                
+                // Build rotation matrix manually (Z-up system)
+                FMatrix RotMatrix = FMatrix::Identity;
+                RotMatrix.M[0][0] = XAxis.X; RotMatrix.M[0][1] = XAxis.Y; RotMatrix.M[0][2] = XAxis.Z;
+                RotMatrix.M[1][0] = YAxis.X; RotMatrix.M[1][1] = YAxis.Y; RotMatrix.M[1][2] = YAxis.Z;
+                RotMatrix.M[2][0] = ZAxis.X; RotMatrix.M[2][1] = ZAxis.Y; RotMatrix.M[2][2] = ZAxis.Z;
+                
+                FQuat Rotation = RotMatrix.ToQuat();
+                // Unit torus has major=1.0, minor=0.25, so scale appropriately
+                // X,Y scale the ring (major radius), Z scales the tube (minor radius)
+                FVector Scale(MajorRadius, MajorRadius, MinorRadius / 0.25f);
+                
+                FTransform TorusTransform(Rotation, WorldCenter, Scale);
+                b.WorldMatrix = TorusTransform.ToMatrixWithScale();
+                b.Axis = WorldAxis;
+                b.MajorRadius = MajorRadius;
+                b.MinorRadius = MinorRadius;
+                
+                BufferAll.Add(b);
+            }
+        }
+        else
+        {
+            FConstantBufferDebugTorus b;
+            
+            FVector WorldCenter = TorusComponent->GetComponentLocation();
+            FVector WorldAxis = TorusComponent->GetTorusAxis();
+            float MajorRadius = TorusComponent->GetMajorRadius();
+            float MinorRadius = TorusComponent->GetMinorRadius();
+            
+            // Create rotation to align torus with axis
+            FVector ZAxis = WorldAxis;
+            FVector XAxis = (FMath::Abs(ZAxis.Z) < 0.999f) ? FVector::CrossProduct(FVector::UpVector, ZAxis).GetSafeNormal() : FVector::RightVector;
+            FVector YAxis = FVector::CrossProduct(ZAxis, XAxis).GetSafeNormal();
+
+            // Build rotation matrix manually (Z-up system)
+            FMatrix RotMatrix = FMatrix::Identity;
+            RotMatrix.M[0][0] = XAxis.X; RotMatrix.M[0][1] = XAxis.Y; RotMatrix.M[0][2] = XAxis.Z;
+            RotMatrix.M[1][0] = YAxis.X; RotMatrix.M[1][1] = YAxis.Y; RotMatrix.M[1][2] = YAxis.Z;
+            RotMatrix.M[2][0] = ZAxis.X; RotMatrix.M[2][1] = ZAxis.Y; RotMatrix.M[2][2] = ZAxis.Z;
+
+            FQuat Rotation = RotMatrix.ToQuat();
+            // Unit torus has major=1.0, minor=0.25, so scale appropriately
+            // X,Y scale the ring (major radius), Z scales the tube (minor radius)
+            FVector Scale(MajorRadius, MajorRadius, MinorRadius / 0.25f);
+            
+            FTransform TorusTransform(Rotation, WorldCenter, Scale);
+            b.WorldMatrix = TorusTransform.ToMatrixWithScale();
+            b.Axis = WorldAxis;
+            b.MajorRadius = MajorRadius;
+            b.MinorRadius = MinorRadius;
+            
+            BufferAll.Add(b);
+        }
+    }
+    
+    if (BufferAll.Num() > 0)
+    {
+        BufferManager->BindConstantBuffer("TorusConstantBuffer", 11, EShaderStage::Vertex);
+        int BufferIndex = 0;
+        for (uint32 i = 0; i < (1 + BufferAll.Num() / ConstantBufferSizeTorus) * ConstantBufferSizeTorus; ++i)
+        {
+            TArray<FConstantBufferDebugTorus> SubBuffer;
+            for (uint32 j = 0; j < ConstantBufferSizeTorus; ++j)
+            {
+                if (BufferIndex < BufferAll.Num())
+                {
+                    SubBuffer.Add(BufferAll[BufferIndex]);
+                    ++BufferIndex;
+                }
+                else
+                {
+                    break;
+                }
+            }
+            
+            if (SubBuffer.Num() > 0)
+            {
+                BufferManager->UpdateConstantBuffer<FConstantBufferDebugTorus>(TEXT("TorusConstantBuffer"), SubBuffer);
+                Graphics->DeviceContext->DrawIndexedInstanced(
+                    Resources.Primitives.Torus.IndexInfo.NumIndices,
+                    SubBuffer.Num(), 0, 0, 0);
+            }
+        }
+    }
+}
+
 void FEditorRenderPass::RenderClothColliders(uint64 ShowFlag)
 {
     // Only render in PIE mode where cloth simulation is active
@@ -1205,6 +1384,84 @@ void FEditorRenderPass::RenderClothColliders(uint64 ShowFlag)
                 {
                     BufferManager->UpdateConstantBuffer<FConstantBufferDebugBox>(TEXT("BoxConstantBuffer"), SubBuffer);
                     Graphics->DeviceContext->DrawIndexedInstanced(Resources.Primitives.Box.IndexInfo.NumIndices, SubBuffer.Num(), 0, 0, 0);
+                }
+            }
+        }
+    }
+    
+    // Render torus colliders
+    {
+        BindShaderResource(L"TorusVS", L"TorusPS", D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+        BindBuffers(Resources.Primitives.Torus);
+        
+        TArray<FConstantBufferDebugTorus> BufferAll;
+        for (const FClothColliderSource& Source : Colliders)
+        {
+            if (Source.Type == EClothColliderType::Torus)
+            {
+                FConstantBufferDebugTorus b;
+                
+                // Transform center and axis to world space
+                FVector WorldCenter = Source.CachedTransform.TransformPosition(Source.CachedLocalCenter);
+                FVector WorldAxis = Source.CachedTransform.TransformVector(Source.CachedLocalAxis).GetSafeNormal();
+                
+                float MajorRadius = Source.CachedExtents.X;
+                float MinorRadius = Source.CachedRadius;
+                
+                // Create rotation to align torus with axis (Z-up coordinate system)
+                // Torus geometry: ring in XY plane, tube extends in Z direction
+                // We need to rotate so that the geometry's Z-axis aligns with WorldAxis
+                FVector ZAxis = WorldAxis;
+                FVector XAxis = (FMath::Abs(ZAxis.Z) < 0.999f) ? FVector::CrossProduct(FVector::UpVector, ZAxis).GetSafeNormal() : FVector::RightVector;
+                FVector YAxis = FVector::CrossProduct(ZAxis, XAxis).GetSafeNormal();
+                
+                // Build rotation matrix manually (Z-up system)
+                FMatrix RotMatrix = FMatrix::Identity;
+                RotMatrix.M[0][0] = XAxis.X; RotMatrix.M[0][1] = XAxis.Y; RotMatrix.M[0][2] = XAxis.Z;
+                RotMatrix.M[1][0] = YAxis.X; RotMatrix.M[1][1] = YAxis.Y; RotMatrix.M[1][2] = YAxis.Z;
+                RotMatrix.M[2][0] = ZAxis.X; RotMatrix.M[2][1] = ZAxis.Y; RotMatrix.M[2][2] = ZAxis.Z;
+                
+                FQuat Rotation = RotMatrix.ToQuat();
+                // Unit torus has major=1.0, minor=0.25, so scale appropriately
+                // X,Y scale the ring (major radius), Z scales the tube (minor radius)
+                FVector Scale(MajorRadius, MajorRadius, MinorRadius / 0.25f);
+                
+                FTransform TorusTransform(Rotation, WorldCenter, Scale);
+                b.WorldMatrix = TorusTransform.ToMatrixWithScale();
+                b.Axis = WorldAxis;
+                b.MajorRadius = MajorRadius;
+                b.MinorRadius = MinorRadius;
+                
+                BufferAll.Add(b);
+            }
+        }
+        
+        if (BufferAll.Num() > 0)
+        {
+            BufferManager->BindConstantBuffer("TorusConstantBuffer", 11, EShaderStage::Vertex);
+            int BufferIndex = 0;
+            for (int i = 0; i < (1 + BufferAll.Num() / ConstantBufferSizeTorus) * ConstantBufferSizeTorus; ++i)
+            {
+                TArray<FConstantBufferDebugTorus> SubBuffer;
+                for (int j = 0; j < ConstantBufferSizeTorus; ++j)
+                {
+                    if (BufferIndex < BufferAll.Num())
+                    {
+                        SubBuffer.Add(BufferAll[BufferIndex]);
+                        ++BufferIndex;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                
+                if (SubBuffer.Num() > 0)
+                {
+                    BufferManager->UpdateConstantBuffer<FConstantBufferDebugTorus>(TEXT("TorusConstantBuffer"), SubBuffer);
+                    Graphics->DeviceContext->DrawIndexedInstanced(
+                        Resources.Primitives.Torus.IndexInfo.NumIndices,
+                        SubBuffer.Num(), 0, 0, 0);
                 }
             }
         }

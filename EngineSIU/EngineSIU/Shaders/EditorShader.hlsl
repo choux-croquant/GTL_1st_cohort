@@ -774,3 +774,25 @@ float4 CapsulePS(PS_INPUT input) : SV_Target
 {
     return float4(0, 1, 0, 1);
 }
+
+/////////////////////////////////////////////
+// Torus
+PS_INPUT TorusVS(VS_INPUT_POS_ONLY input, uint instanceID : SV_InstanceID)
+{
+    PS_INPUT output;
+    
+    // Transform vertex by instance world matrix
+    float4 localPos = mul(float4(input.position.xyz, 1.0f), DataTorus[instanceID].WorldMatrix);
+    localPos = mul(localPos, ViewMatrix);
+    localPos = mul(localPos, ProjectionMatrix);
+    
+    output.position = localPos;
+    output.color = float4(0.0f, 1.0f, 1.0f, 1.0f);  // Cyan color for torus
+    
+    return output;
+}
+
+float4 TorusPS(PS_INPUT input) : SV_Target
+{
+    return input.color;
+}

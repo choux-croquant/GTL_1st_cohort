@@ -212,6 +212,15 @@ struct FConstantBufferDebugCapsule
     float Radius;
 };
 
+struct FConstantBufferDebugTorus
+{
+    FMatrix WorldMatrix;
+    FVector Axis;
+    float MajorRadius;
+    float MinorRadius;
+    float Padding[3];
+};
+
 struct alignas(16) FConstantBufferCameraFade
 {
     FLinearColor FadeColor = FLinearColor(0.0f, 0.0f, 0.0f, 1.0f);

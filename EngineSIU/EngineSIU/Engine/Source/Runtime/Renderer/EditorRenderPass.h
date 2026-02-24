@@ -45,6 +45,7 @@ private:
     void RenderBoxInstanced(uint64 ShowFlag);
     void RenderSphereInstanced(uint64 ShowFlag);
     void RenderCapsuleInstanced(uint64 ShowFlag);
+    void RenderTorusInstanced(uint64 ShowFlag);
     void RenderClothColliders(uint64 ShowFlag);
 
     // Grid
@@ -59,4 +60,5 @@ private:
     static constexpr UINT32 ConstantBufferSizeCone = 100;
     static constexpr UINT32 ConstantBufferSizeArrow = 100;
     static constexpr UINT32 ConstantBufferSizeCapsule = 100;
+    static constexpr UINT32 ConstantBufferSizeTorus = 100;
 };
