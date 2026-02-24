@@ -7,6 +7,7 @@ enum class EShapeType : uint8
     Box,
     Sphere,
     Capsule,
+    Torus,
 
     Max,
 };

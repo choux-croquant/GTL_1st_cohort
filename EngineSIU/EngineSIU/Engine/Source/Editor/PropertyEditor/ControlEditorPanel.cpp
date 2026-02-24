@@ -48,7 +48,7 @@
 
 #include "Actors/ClothActor.h"
 #include "Actors/CharacterClothTest.h"
-
+#include "Actors/TorusColliderActor.h"
 
 ControlEditorPanel::ControlEditorPanel()
 {
@@ -382,6 +382,7 @@ void ControlEditorPanel::CreateModifyButton(const ImVec2 ButtonSize, ImFont* Ico
             { .Label = "Enemy",             .OBJ = OBJ_ENEMY},
             {.Label = "TestCharacter",      .OBJ = OBJ_TEST_CHARACTER},
             { .Label = "Cloth",             .OBJ = OBJ_CLOTH},
+            {.Label = "Torus",             .OBJ = OBJ_TORUS},
             { .Label = "Camera",           .OBJ = OBJ_CAMERA},
         };
 
@@ -519,6 +520,11 @@ void ControlEditorPanel::CreateModifyButton(const ImVec2 ButtonSize, ImFont* Ico
                 {
                     SpawnedActor = World->SpawnActor<AClothActor>();
                     SpawnedActor->SetActorTickInEditor(true);
+                    break;
+                }
+                case OBJ_TORUS:
+                {
+                    SpawnedActor = World->SpawnActor<ATorusColliderActor>();
                     break;
                 }
                 case OBJ_PLAYER:
