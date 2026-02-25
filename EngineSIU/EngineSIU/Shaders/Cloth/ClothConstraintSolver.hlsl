@@ -92,7 +92,7 @@ void SolveDistanceConstraintsCS(uint3 DTid : SV_DispatchThreadID)
     }
     else
     {
-        // === PBD PATH (legacy) ===
+        // === PBD PATH ===
         // Direct stiffness scaling - simple but time-step dependent
         
         // Combine stiffness: global (constant buffer), per-instance, per-constraint
@@ -104,18 +104,16 @@ void SolveDistanceConstraintsCS(uint3 DTid : SV_DispatchThreadID)
         corr1 = -corr * w1;
     }
     
-    // Atomic accumulation (scaled to int for InterlockedAdd)
-    // Note: Jacobi-style accumulation - averaged in ApplyDeltas pass
     int3 delta0Int = int3(corr0 * kScale);
     int3 delta1Int = int3(corr1 * kScale);
 
     InterlockedAdd(PositionDelta[i0].x, delta0Int.x);
     InterlockedAdd(PositionDelta[i0].y, delta0Int.y);
     InterlockedAdd(PositionDelta[i0].z, delta0Int.z);
-    InterlockedAdd(PositionWeight[i0], 1);  // Count constraints
+    InterlockedAdd(PositionWeight[i0], 1);
 
     InterlockedAdd(PositionDelta[i1].x, delta1Int.x);
     InterlockedAdd(PositionDelta[i1].y, delta1Int.y);
     InterlockedAdd(PositionDelta[i1].z, delta1Int.z);
-    InterlockedAdd(PositionWeight[i1], 1);  // Count constraints
+    InterlockedAdd(PositionWeight[i1], 1);
 }
