@@ -32,7 +32,6 @@ bool FClothAssetGenerator::GenerateClothAssetFromStaticMesh(
     
     FString error;
     
-    // Step 1: Extract render mesh data
     FClothRenderMeshData renderMesh;
     if (!ExtractRenderMeshData(SourceMesh, renderMesh, error))
     {
@@ -43,7 +42,6 @@ bool FClothAssetGenerator::GenerateClothAssetFromStaticMesh(
     OutResult.RenderVertexCount = renderMesh.GetVertexCount();
     OutResult.RenderTriangleCount = renderMesh.GetTriangleCount();
     
-    // Step 2: Generate simulation mesh via QEM decimation
     FClothSimulationMeshData simMesh;
     if (!GenerateSimulationMesh(renderMesh, Params.DecimationParams, simMesh, error))
     {
@@ -54,7 +52,6 @@ bool FClothAssetGenerator::GenerateClothAssetFromStaticMesh(
     OutResult.SimVertexCount = simMesh.GetVertexCount();
     OutResult.SimTriangleCount = simMesh.GetTriangleCount();
     
-    // Step 3: Generate physics constraints
     TArray<FClothDistanceConstraint> distanceConstraints;
     TArray<FClothBendConstraint> bendConstraints;
     TArray<FClothAreaConstraint> areaConstraints;
@@ -73,7 +70,6 @@ bool FClothAssetGenerator::GenerateClothAssetFromStaticMesh(
     OutResult.AreaConstraintCount = areaConstraints.Num();
     OutResult.EdgeCollisionCount = edgeCollisions.Num();
     
-    // Step 4: Calculate skinning weights
     FClothSkinningData skinningData;
     if (!CalculateSkinningWeights(renderMesh, simMesh, Params.SkinningParams, 
                                    skinningData, error))
@@ -82,7 +78,6 @@ bool FClothAssetGenerator::GenerateClothAssetFromStaticMesh(
         return false;
     }
     
-    // Step 5: Package into asset
     OutResult.Asset = PackageIntoAsset(renderMesh, simMesh, skinningData,
                                         distanceConstraints, bendConstraints,
                                         areaConstraints, edgeCollisions, SourceMesh);
@@ -418,7 +413,6 @@ bool FClothAssetGenerator::CalculateSkinningWeights(
     FClothSkinningData& OutSkinningData,
     FString& OutError)
 {
-    // NEW: Use triangle-based skinning weights (fixes edge curling and UV distortion)
     TArray<FClothSkinningWeightTriangle> triangleWeights;
     FString error;
     
@@ -436,7 +430,6 @@ bool FClothAssetGenerator::CalculateSkinningWeights(
     
     OutSkinningData.TriangleWeights = triangleWeights;
     
-    // Also generate legacy K-nearest neighbor weights for backward compatibility
     FClothSkinningResult result;
     if (!FClothSkinningWeightGenerator::GenerateSkinningWeights(
         RenderMesh.Positions,
@@ -490,36 +483,9 @@ UClothAsset* FClothAssetGenerator::PackageIntoAsset(
         asset->AddEdgeCollision(constraint);
     }
     
-    // TEST: Attachment points - store in LOCAL space
-    // WorldPosition attachments will be transformed during BuildKinematicAttachmentData
-    // based on the component's world transform at registration time
-    
-    //FClothAttachmentData attachment1;
-    //attachment1.ClothVertexIndex = 0;
-    //attachment1.Type = EClothAttachmentType::WorldPosition;
-    //attachment1.Stiffness = 1.0f;
-    //attachment1.bIsKinematic = true;
-    //attachment1.AttachDistance = 0.0f;
-    //// Store in LOCAL space - will be transformed to world space during registration
-    //attachment1.WorldPosition = FVector(10, -10, 0);
-    //asset->AddAttachmentData(attachment1);
-
-    //// Attach second endpoint
-    //FClothAttachmentData attachment2;
-    //attachment2.ClothVertexIndex = 3;
-    //attachment2.Type = EClothAttachmentType::WorldPosition;
-    //attachment2.Stiffness = 1.0f;
-    //attachment2.bIsKinematic = true;
-    //attachment2.AttachDistance = 0.0f;
-    //// Store in LOCAL space - will be transformed to world space during registration
-    //attachment1.WorldPosition = FVector(0, 0, 0);
-    //asset->AddAttachmentData(attachment2);
-
     // Set source mesh reference
     asset->SourceMesh = SourceMesh;
     
-    // CRITICAL FIX: Store render mesh data and skinning weights
-    // This populates the render mesh arrays that are checked in ClothBatchManager::AddInstance()
     asset->bUseRenderMesh = true;
     asset->RenderRestPositions = RenderMesh.Positions;
     asset->RenderNormals = RenderMesh.Normals;
@@ -527,7 +493,6 @@ UClothAsset* FClothAssetGenerator::PackageIntoAsset(
     asset->RenderIndices = RenderMesh.Indices;
     asset->SkinningWeights = SkinningData.Weights;  // Legacy K-nearest neighbor weights
     
-    // NEW: Store triangle-based skinning weights (fixes edge curling and UV distortion)
     asset->bUseTriangleSkinning = true;
     asset->TriangleSkinningWeights = SkinningData.TriangleWeights;
     

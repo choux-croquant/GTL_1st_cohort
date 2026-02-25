@@ -8,13 +8,11 @@
 #include "UObject/WeakObjectPtr.h"
 #include <d3d11.h>
 
-// Forward declarations
 class UPrimitiveComponent;
 class UBodySetup;
 struct FKAggregateGeom;
 struct FClothColliderGPU;
 
-// PhysX forward declarations
 namespace physx
 {
 	class PxShape;
@@ -78,11 +76,6 @@ struct FClothColliderSource
 /**
  * Collision Manager
  * Manages world-space colliders for cloth collision
- * 
- * DESIGN:
- * - Registration-based: Colliders are explicitly registered, not world-scanned
- * - Dirty tracking: Only updates GPU when transforms change
- * - Unified buffer: All collider types in single GPU buffer
  */
 class FClothCollisionManager
 {
@@ -129,7 +122,6 @@ public:
 	void AddBoxCollider(const FVector& WorldCenter, const FVector& Extents, const FRotator& Rotation);
 	
 	/**
-	 * Manually add a torus collider
 	 * @param WorldCenter - Torus center in world space
 	 * @param Axis - Torus up vector (will be normalized)
 	 * @param MajorRadius - Distance from center to tube center
@@ -138,7 +130,6 @@ public:
 	void AddTorusCollider(const FVector& WorldCenter, const FVector& Axis, float MajorRadius, float MinorRadius);
 	
 	/**
-	 * NEW: Register colliders from a skeletal mesh bone
 	 * @param SkeletalMesh - The skeletal mesh component
 	 * @param BoneIndex - Index of the bone
 	 * @param BodySetup - Physics geometry for this bone
@@ -151,7 +142,6 @@ public:
 	);
 	
 	/**
-	 * NEW: Update transforms for all colliders belonging to a skeletal mesh
 	 * @param SkeletalMesh - The skeletal mesh component
 	 * @param BoneWorldTransforms - World-space transforms for each bone
 	 */
@@ -202,7 +192,6 @@ private:
 	TArray<FClothColliderSource> ColliderSources;
 	TMap<UPrimitiveComponent*, TArray<int32>> ComponentToColliderMap;  // Component -> ColliderSource indices
 	
-	// P3 OPTIMIZATION: Pre-allocated staging buffer (reused every frame)
 	TArray<FClothColliderGPU> StagingColliders;
 	
 	bool bGPUDirty;  // Global dirty flag

@@ -1,13 +1,6 @@
 /**
  * Cloth Mesh Decimator - Voronoi/Lloyd Implementation
  * Voronoi Clustering with Lloyd's Algorithm for Cloth Simulation
- * 
- * PERFORMANCE OPTIMIZATIONS:
- * - FPS with distance caching: O(N×K²) → O(N×K) = 150× faster
- * - Spatial hash for nearest seed: O(N×K) → O(N×27) = 55× faster
- * - Spatial hash for projection: 60K triangles → ~500 triangles = 120× faster
- * - Reduced iterations: 30 → 10 with early termination = 3× faster
- * - Overall: ~120 seconds → ~0.5-1.0 seconds = 100-200× faster
  */
 
 #include "ClothMeshDecimator.h"
@@ -243,10 +236,6 @@ struct FTriangleSpatialHash
 // Voronoi/Lloyd Decimation Implementation
 // ============================================================================
 
-/**
- * OPTIMIZED: Initialize seeds using Farthest Point Sampling with distance caching
- * Complexity: O(N×K) instead of O(N×K²) = 150× faster
- */
 void FClothMeshDecimator::InitializeSeedsWithFPS(
     const TArray<FVector> &Positions,
     int32 NumSeeds,
@@ -260,7 +249,6 @@ void FClothMeshDecimator::InitializeSeedsWithFPS(
     // Ensure we don't request more seeds than vertices
     NumSeeds = FMath::Min(NumSeeds, Positions.Num());
     
-    // OPTIMIZATION: Distance cache - tracks each vertex's min distance to ANY seed
     TArray<float> minDistances;
     minDistances.SetNum(Positions.Num());
     for (int32 i = 0; i < Positions.Num(); i++)
@@ -449,10 +437,6 @@ FVector FClothMeshDecimator::ClosestPointOnTriangle(
     return A + ab * v + ac * w; // = u*A + v*B + w*C, u = va * denom = 1.0f - v - w
 }
 
-/**
- * OPTIMIZED: Project point to closest point on mesh surface using spatial hash
- * Complexity: O(T) → O(27) = 120× faster
- */
 void FClothMeshDecimator::ProjectPointToMesh(
     const FVector &Point,
     const TArray<FVector> &Positions,
@@ -465,7 +449,6 @@ void FClothMeshDecimator::ProjectPointToMesh(
     float minDist = FLT_MAX;
     FVector closestPoint = Point;
     
-    // Check all triangles (brute force - optimized version uses spatial hash)
     uint32 numTriangles = Indices.Num() / 3;
     for (uint32 i = 0; i < numTriangles; i++)
     {
@@ -494,10 +477,6 @@ void FClothMeshDecimator::ProjectPointToMesh(
     OutProjectedPoint = closestPoint;
 }
 
-/**
- * OPTIMIZED: Perform one iteration of Lloyd's algorithm using spatial hash
- * Complexity: O(N×K) → O(N×27) = 55× faster
- */
 void FClothMeshDecimator::PerformLloydIteration(
     const TArray<FVector> &Positions,
     const TArray<uint32> &Indices,
@@ -545,7 +524,6 @@ void FClothMeshDecimator::PerformLloydIteration(
     TArray<TArray<int32>> regions;
     regions.SetNum(numSeeds);
     
-    // Step 1: OPTIMIZED Voronoi assignment using spatial hash
     for (int32 i = 0; i < Positions.Num(); i++)
     {
         int32 nearestSeed = seedGrid.FindNearest(Positions[i], InOutSeeds);
@@ -555,7 +533,6 @@ void FClothMeshDecimator::PerformLloydIteration(
         }
     }
     
-    // Step 2: Compute centroids and project to surface
     TArray<FVector> newSeeds;
     newSeeds.SetNum(numSeeds);
     
@@ -576,7 +553,6 @@ void FClothMeshDecimator::PerformLloydIteration(
         }
         centroid /= static_cast<float>(regions[s].Num());
         
-        // OPTIMIZED: Project using triangle spatial hash
         FVector projected;
         triHash.ProjectPointFast(centroid, Positions, Indices, projected);
         newSeeds[s] = projected;
@@ -585,9 +561,6 @@ void FClothMeshDecimator::PerformLloydIteration(
     InOutSeeds = newSeeds;
 }
 
-/**
- * OPTIMIZED: Triangulate seeds with simplified deduplication
- */
 void FClothMeshDecimator::TriangulateSeeds(
     const TArray<FVector> &Seeds,
     const TArray<FVector> &OriginalPositions,
@@ -632,7 +605,6 @@ void FClothMeshDecimator::TriangulateSeeds(
         if (s0 < 0 || s1 < 0 || s2 < 0)
             continue;
         
-        // OPTIMIZED: Simplified triangle key using min/max (no sorting needed)
         int32 minIdx = FMath::Min3(s0, s1, s2);
         int32 maxIdx = FMath::Max3(s0, s1, s2);
         int32 midIdx = s0 + s1 + s2 - minIdx - maxIdx;
@@ -652,10 +624,6 @@ void FClothMeshDecimator::TriangulateSeeds(
     }
 }
 
-/**
- * OPTIMIZED: Main Voronoi decimation function using Lloyd's algorithm
- * With all performance optimizations: ~100-200× faster than naive implementation
- */
 bool FClothMeshDecimator::DecimateMeshVoronoi(
     const TArray<FVector> &SourcePositions,
     const TArray<uint32> &SourceIndices,
@@ -694,7 +662,6 @@ bool FClothMeshDecimator::DecimateMeshVoronoi(
         return true;
     }
     
-    // Step 1: Initialize seeds (OPTIMIZED with distance caching)
     TArray<FVector> seeds;
     if (Params.bUseFarthestPointSampling)
     {
@@ -726,7 +693,6 @@ bool FClothMeshDecimator::DecimateMeshVoronoi(
     float meshSize = FVector::Dist(minBound, maxBound);
     float convergenceThreshold = meshSize * Params.ConvergenceThreshold;
     
-    // Step 2: OPTIMIZED Lloyd iterations with early termination
     for (int32 iter = 0; iter < Params.LloydIterations; iter++)
     {
         TArray<FVector> oldSeeds = seeds;
@@ -748,11 +714,9 @@ bool FClothMeshDecimator::DecimateMeshVoronoi(
         }
     }
     
-    // Step 3: Triangulate seeds (OPTIMIZED with simplified deduplication)
     TArray<int32> vertexMapping;
     TriangulateSeeds(seeds, SourcePositions, SourceIndices, OutResult.Indices, vertexMapping);
     
-    // Step 4: Set output positions to seed positions
     OutResult.Positions = seeds;
     OutResult.VertexMapping = vertexMapping;
     

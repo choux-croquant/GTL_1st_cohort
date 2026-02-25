@@ -31,7 +31,6 @@ void FClothCollisionManager::Initialize(uint32 MaxColliders)
 
 void FClothCollisionManager::Release()
 {
-	// Release D3D11 resources
 	if (ColliderBufferSRV)
 	{
 		ColliderBufferSRV->Release();
@@ -44,7 +43,6 @@ void FClothCollisionManager::Release()
 		ColliderBuffer = nullptr;
 	}
 	
-	// Clear CPU data
 	ColliderSources.Empty();
 	ComponentToColliderMap.Empty();
 	bGPUDirty = false;
@@ -59,7 +57,6 @@ int32 FClothCollisionManager::RegisterCollider(UPrimitiveComponent* Component, b
 	
 	int32 NumRegistered = 0;
 	
-	// Special handling for UTorusComponent (not a PhysX shape)
 	if (UTorusComponent* TorusComp = Cast<UTorusComponent>(Component))
 	{
 		FClothColliderSource Source;
@@ -67,8 +64,7 @@ int32 FClothCollisionManager::RegisterCollider(UPrimitiveComponent* Component, b
 		Source.Component = Component;
 		Source.ElementIndex = 0;
 		Source.CachedTransform = Component->GetComponentTransform();
-		Source.CachedLocalCenter = FVector::ZeroVector;  // Center at component origin
-		// Store axis in LOCAL component space (will be transformed to world in ConvertToGPU)
+		Source.CachedLocalCenter = FVector::ZeroVector;
 		Source.CachedLocalAxis = TorusComp->GetTorusAxis().GetSafeNormal();
 		Source.CachedRadius = TorusComp->GetMinorRadius();
 		Source.CachedExtents = FVector(TorusComp->GetMajorRadius(), 0, 0);
@@ -331,10 +327,9 @@ void FClothCollisionManager::UploadToGPU(ID3D11Device* Device, ID3D11DeviceConte
 		}
 	}
 	
-	// P3 OPTIMIZATION: Reuse pre-allocated buffer (NO allocation in hot path)
 	// Clear array but keep allocated capacity to avoid reallocations
 	int32 CurrentCapacity = StagingColliders.Max();
-	StagingColliders.Empty(ColliderSources.Num());  // Clear and reserve in one call
+	StagingColliders.Empty(ColliderSources.Num());
 	
 	// Fill buffer
 	for (const FClothColliderSource& Source : ColliderSources)
@@ -477,10 +472,8 @@ void FClothCollisionManager::ExtractCapsuleFromShape(physx::PxShape* Shape, UPri
 	Source.CachedLocalCenter = FVector(localPose.p.x, localPose.p.y, localPose.p.z);
 	Source.CachedLocalRotation = FQuat(localPose.q.x, localPose.q.y, localPose.q.z, localPose.q.w);  // Store local rotation!
 	
-	// PhysX capsule axis is along X by default
 	physx::PxQuat quat = localPose.q;
-	FVector axis = FVector(1, 0, 0); // Default axis along X
-	// Rotate by local pose quaternion
+	FVector axis = FVector(1, 0, 0);
 	physx::PxVec3 pxAxis = quat.rotate(physx::PxVec3(1, 0, 0));
 	Source.CachedLocalAxis = FVector(pxAxis.x, pxAxis.y, pxAxis.z).GetSafeNormal();
 	Source.CachedRadius = capsuleGeom.radius;
@@ -576,30 +569,11 @@ FClothColliderGPU FClothCollisionManager::ConvertToGPU(const FClothColliderSourc
 		GPU.Radius = Source.CachedRadius;  // Minor radius (tube)
 		GPU.HalfHeight = Source.CachedExtents.X;  // Major radius (ring)
 		GPU.Extents = FVector::ZeroVector;  // Unused for torus
-		
-		// EXTENSIVE DEBUG LOGGING
-		UE_LOG(ELogLevel::Display, TEXT("=== TORUS GPU UPLOAD DEBUG ==="));
-		UE_LOG(ELogLevel::Display, TEXT("  Type: %u (should be 3)"), GPU.Type);
-		UE_LOG(ELogLevel::Display, TEXT("  Center: (%.2f, %.2f, %.2f)"), GPU.Center.X, GPU.Center.Y, GPU.Center.Z);
-		UE_LOG(ELogLevel::Display, TEXT("  Axis: (%.2f, %.2f, %.2f) [length=%.4f]"),
-			GPU.Axis.X, GPU.Axis.Y, GPU.Axis.Z, GPU.Axis.Size());
-		UE_LOG(ELogLevel::Display, TEXT("  MajorRadius (HalfHeight): %.2f"), GPU.HalfHeight);
-		UE_LOG(ELogLevel::Display, TEXT("  MinorRadius (Radius): %.2f"), GPU.Radius);
-		UE_LOG(ELogLevel::Display, TEXT("  Struct size: %zu bytes (should be 64)"), sizeof(FClothColliderGPU));
-		UE_LOG(ELogLevel::Display, TEXT("  Memory layout:"));
-		UE_LOG(ELogLevel::Display, TEXT("    Type offset: %zu"), offsetof(FClothColliderGPU, Type));
-		UE_LOG(ELogLevel::Display, TEXT("    Radius offset: %zu"), offsetof(FClothColliderGPU, Radius));
-		UE_LOG(ELogLevel::Display, TEXT("    HalfHeight offset: %zu"), offsetof(FClothColliderGPU, HalfHeight));
-		UE_LOG(ELogLevel::Display, TEXT("    Center offset: %zu"), offsetof(FClothColliderGPU, Center));
-		UE_LOG(ELogLevel::Display, TEXT("    Axis offset: %zu"), offsetof(FClothColliderGPU, Axis));
-		UE_LOG(ELogLevel::Display, TEXT("    Extents offset: %zu"), offsetof(FClothColliderGPU, Extents));
-		UE_LOG(ELogLevel::Display, TEXT("=============================="));
 	}
 	
 	return GPU;
 }
 
-// NEW: Register colliders from skeletal mesh bone
 int32 FClothCollisionManager::RegisterSkeletalCollider(
 	USkeletalMeshComponent* SkeletalMesh,
 	int32 BoneIndex,
@@ -736,7 +710,6 @@ int32 FClothCollisionManager::RegisterSkeletalCollider(
 	return NumRegistered;
 }
 
-// NEW: Update transforms for skeletal mesh colliders
 void FClothCollisionManager::UpdateSkeletalColliderTransforms(
 	USkeletalMeshComponent* SkeletalMesh,
 	const TArray<FMatrix>& BoneWorldTransforms)

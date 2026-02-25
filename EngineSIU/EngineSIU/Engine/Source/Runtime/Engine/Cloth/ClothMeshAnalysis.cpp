@@ -163,7 +163,6 @@ bool FClothMeshAnalysis::ValidateSelfCollisionSetup(
 {
 	bool bValid = true;
 	
-	// Check 1: Cell size should be >= 1.5× collision radius
 	float minCellSize = CollisionRadius * 1.5f;
 	if (CellSize < minCellSize)
 	{
@@ -173,7 +172,6 @@ bool FClothMeshAnalysis::ValidateSelfCollisionSetup(
 		bValid = false;
 	}
 	
-	// Check 2: Grid should cover mesh bounds
 	FVector extent = GridMax - GridMin;
 	FVector computedExtent = FVector(
 		GridDimX * CellSize,
@@ -191,7 +189,6 @@ bool FClothMeshAnalysis::ValidateSelfCollisionSetup(
 		bValid = false;
 	}
 	
-	// Check 3: Estimate if MaxParticlesPerCell is sufficient
 	uint32 totalCells = GridDimX * GridDimY * GridDimZ;
 	uint32 avgPerCell = EstimateAverageParticlesPerCell(
 		ParticleCount, GridDimX, GridDimY, GridDimZ);
@@ -203,7 +200,6 @@ bool FClothMeshAnalysis::ValidateSelfCollisionSetup(
 			MaxParticlesPerCell, avgPerCell, avgPerCell * 3);
 	}
 	
-	// Check 4: Grid dimensions reasonable
 	if (GridDimX > 128 || GridDimY > 128 || GridDimZ > 128)
 	{
 		float memoryMB = (totalCells * sizeof(uint32) + totalCells * MaxParticlesPerCell * sizeof(uint32)) / (1024.0f * 1024.0f);

@@ -1,7 +1,5 @@
 /**
  * Cloth Mesh Decimator
- * QEM-Based Mesh Decimation for Cloth Simulation
- * Reference: Garland & Heckbert 1997 - "Surface Simplification Using Quadric Error Metrics"
  */
 
 #pragma once

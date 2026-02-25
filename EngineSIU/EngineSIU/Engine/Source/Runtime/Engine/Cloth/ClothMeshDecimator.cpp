@@ -458,22 +458,6 @@ bool FClothMeshDecimator::DecimateMeshQEM(
     TMap<uint64, bool> isUVSeam; // Keep empty - UV seams not needed for simulation
     DetectBoundariesAndSeams(indices, SourceUVs, positions.Num(), connectivity, isBoundary, isUVSeam);
 
-    // PERFORMANCE OPTIMIZATION: Heap-based decimation (O(E log E) instead of O(N²))
-    //
-    // OLD ALGORITHM (O(N²)):
-    // - Build static collapse queue once
-    // - Sort it once
-    // - Process linearly with queueIndex
-    // - ExecuteEdgeCollapse did global index scan + full connectivity rebuild = O(N) per collapse
-    // - K collapses × O(N) per collapse = O(K×N) ≈ O(N²) worst case
-    //
-    // NEW ALGORITHM (O(E log E)):
-    // - Use dynamic min-heap for collapse queue
-    // - ExecuteEdgeCollapse does local updates only
-    // - After each collapse, recompute only affected edges
-    // - E edge operations × log(E) heap operations = O(E log E)
-    // - Expected speedup: 300-1000× for typical meshes
-
     // Build initial heap from all edges
     TArray<FEdgeCollapse> collapseHeap;
     collapseHeap.Reserve(connectivity.EdgeToTriangles.Num());
@@ -580,12 +564,6 @@ bool FClothMeshDecimator::DecimateMeshQEM(
     auto endTime = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
 
-// Debug logging (can be removed or made conditional)
-#if !UE_BUILD_SHIPPING
-    // In debug builds, log performance metrics
-    // UE_LOG would go here if using Unreal logging system
-#endif
-
     // Validation (relaxed for simulation mesh)
     if (Params.bValidateResult)
     {
@@ -600,9 +578,6 @@ bool FClothMeshDecimator::DecimateMeshQEM(
         // Manifold check is optional - simulation meshes can handle non-manifold topology
         if (Params.bPreserveTopology && !ValidateManifold(OutResult.Indices, OutResult.Positions.Num()))
         {
-            // Log warning but don't fail - non-manifold meshes are ok for simulation
-            // OutResult.ErrorMessage = "Result is not a manifold mesh";
-            // return false;
         }
     }
 
@@ -670,10 +645,6 @@ void FClothMeshDecimator::DetectBoundariesAndSeams(
             OutIsBoundary.Add(edgeKey, true);
         }
     }
-
-    // UV seam detection DISABLED for simulation mesh
-    // Simulation meshes don't need UVs - the high-res render mesh handles all texturing
-    // This removes unnecessary constraints and allows better decimation for physics
 }
 
 void FClothMeshDecimator::BuildEdgeCollapseQueue(
@@ -740,27 +711,13 @@ bool FClothMeshDecimator::ExecuteEdgeCollapse(
     TArray<uint8> &ValidVertices,
     FMeshConnectivity &Connectivity)
 {
-    // OPTIMIZED VERSION: Local updates only (O(degree) instead of O(N))
-    //
-    // OLD APPROACH (O(N) per collapse):
-    // - Scan entire Indices array to find v1 references
-    // - Rebuild entire Indices array to remove degenerates
-    // - Rebuild ALL connectivity from scratch
-    //
-    // NEW APPROACH (O(degree) per collapse):
-    // - Update only triangles incident to v1 (using connectivity)
-    // - Remove only degenerate triangles locally
-    // - Update connectivity incrementally
-
     uint32 v0 = Collapse.V0;
     uint32 v1 = Collapse.V1;
 
-    // Step 1: Update position and quadrics
     Positions[v0] = Collapse.OptimalPosition;
     Quadrics[v0] = Quadrics[v0] + Quadrics[v1];
     ValidVertices[v1] = false;
 
-    // Step 2: Get triangles incident to v1 (LOCAL lookup, not global scan)
     TArray<uint32> *v1Triangles = Connectivity.VertexToTriangles.Find(v1);
     if (!v1Triangles)
     {
@@ -772,7 +729,6 @@ bool FClothMeshDecimator::ExecuteEdgeCollapse(
     // Copy triangle list since we'll be modifying connectivity
     TArray<uint32> trianglesToUpdate = *v1Triangles;
 
-    // Step 3: Update triangles and detect degenerates (LOCAL update)
     TArray<uint32> degenerateTriangles;
 
     for (uint32 triIdx : trianglesToUpdate)
@@ -798,7 +754,6 @@ bool FClothMeshDecimator::ExecuteEdgeCollapse(
         }
     }
 
-    // Step 4: Remove degenerate triangles from connectivity
     for (uint32 triIdx : degenerateTriangles)
     {
         Connectivity.RemoveTriangleReferences(triIdx, Indices);
@@ -812,7 +767,6 @@ bool FClothMeshDecimator::ExecuteEdgeCollapse(
         }
     }
 
-    // Step 5: Merge connectivity from v1 to v0 (incremental update)
     Connectivity.MergeVertexConnectivity(v0, v1);
 
     return true;
@@ -959,10 +913,6 @@ bool FClothMeshDecimator::HasDegenerateTriangles(
         {
             return true; // Critical error - compaction failed to filter degenerates
         }
-
-        // Area check DISABLED for simulation mesh
-        // Small triangles are perfectly valid for physics simulation
-        // Physics solver can handle any non-degenerate triangle regardless of area
     }
 
     return false;

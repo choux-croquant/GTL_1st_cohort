@@ -131,12 +131,10 @@ private:
     FDXDBufferManager *BufferManager;
     FDXDShaderManager *ShaderManager;
 
-    // NEW: Component deduplication for GPU-based kinematic targets (P1 optimization)
-    TMap<USceneComponent *, uint32> ComponentIndexMap;        // Component -> Index mapping
-    TArray<TWeakObjectPtr<USceneComponent>> UniqueComponents; // Deduplicated component list
-    bool bAttachmentDataDirty;                                // Needs rebuild when attachments change
+    TMap<USceneComponent *, uint32> ComponentIndexMap;
+    TArray<TWeakObjectPtr<USceneComponent>> UniqueComponents;
+    bool bAttachmentDataDirty;
 
-    // NEW: Skeletal mesh bone tracking for bone attachments
     TMap<USkeletalMeshComponent*, TArray<FBoneAttachmentInfo>> SkeletalMeshBoneMap;
 
     bool bIsInitialized;
