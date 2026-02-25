@@ -1,7 +1,6 @@
 /**
  * Cloth World Implementation
  * Central manager for all cloth simulations in a world
- * Now supports both Legacy and Batched modes
  */
 
 #include "ClothWorld.h"
@@ -21,7 +20,6 @@ static EClothSystemMode GClothSystemMode = EClothSystemMode::Batched;
 FClothWorld::FClothWorld()
     : Graphics(nullptr), BufferManager(nullptr), ShaderManager(nullptr), SystemMode(GClothSystemMode), SharedCollisionManager(nullptr), bIsInitialized(false)
 {
-    // Initialize batch manager array to nullptr
     for (int32 i = 0; i < static_cast<int32>(EClothLODLevel::Max); ++i)
     {
         LODBatches[i] = nullptr;
@@ -131,8 +129,6 @@ void FClothWorld::SimulateAllBatches(float DeltaTime)
     }
 }
 
-// ==================== BATCHED MODE METHODS ====================
-
 FClothInstanceHandle *FClothWorld::RegisterClothInstanceBatched(UClothComponent *Component, UClothAsset *Asset, EClothLODLevel InitialLOD)
 {
     if (!bIsInitialized || !Component || !Asset)
@@ -163,28 +159,23 @@ FClothInstanceHandle *FClothWorld::RegisterClothInstanceBatched(UClothComponent 
     // Get simulation mesh data from asset (in LOCAL space)
     Params.RestPositions = Asset->GetRestPositions();
     
-    // NEW: Use component's RuntimeInvMasses if available (per-instance), otherwise use asset's BaseInvMasses
     if (Component->GetRuntimeInvMasses().Num() > 0)
     {
         Params.InvMasses = Component->GetRuntimeInvMasses();
     }
     else
     {
-        // Fallback to asset's BaseInvMasses (backward compatibility)
         Params.InvMasses = Asset->GetBaseInvMasses();
     }
     
     Params.Indices = Asset->GetIndices();
     Params.Constraints = Asset->GetDistanceConstraints();
     Params.BendConstraints = Asset->GetBendConstraints();
-    Params.AreaConstraints = Asset->GetAreaConstraints();  // Area constraints
-    Params.EdgeCollisions = Asset->GetEdgeCollisions();    // Edge collision constraints
+    Params.AreaConstraints = Asset->GetAreaConstraints();
+    Params.EdgeCollisions = Asset->GetEdgeCollisions();
     
-    // NEW: Use component's AttachmentBindings if available (per-instance), otherwise use asset's deprecated data
     if (Component->GetAttachmentBindings().Num() > 0)
     {
-        // Convert bindings to old format for now (will be refactored in batch manager)
-        // This is temporary - batch manager will read bindings directly
         Params.Attachments.Empty();
         for (const FClothAttachmentBinding& binding : Component->GetAttachmentBindings())
         {
@@ -202,13 +193,7 @@ FClothInstanceHandle *FClothWorld::RegisterClothInstanceBatched(UClothComponent 
             Params.Attachments.Add(oldFormat);
         }
     }
-    else
-    {
-        // Fallback to asset's deprecated AttachmentsData (backward compatibility)
-        //Params.Attachments = Asset->GetAttachmentData();
-    }
 
-    // NEW: Get render mesh data from asset if available (for production rendering)
     if (Asset->bUseRenderMesh)
     {
         Params.bUseRenderMesh = true;
@@ -216,16 +201,13 @@ FClothInstanceHandle *FClothWorld::RegisterClothInstanceBatched(UClothComponent 
         Params.RenderNormals = Asset->RenderNormals;
         Params.RenderUVs = Asset->RenderUVs;
         Params.RenderIndices = Asset->RenderIndices;
-        Params.SkinningWeights = Asset->SkinningWeights;  // Legacy K-nearest neighbor weights
-        Params.TriangleSkinningWeights = Asset->TriangleSkinningWeights;  // NEW: Triangle-based weights
+        Params.SkinningWeights = Asset->SkinningWeights;
+        Params.TriangleSkinningWeights = Asset->TriangleSkinningWeights;
         
         UE_LOG(ELogLevel::Display, TEXT("ClothWorld: Registering cloth with production rendering - RenderVerts: %d, SimVerts: %d, TriangleWeights: %d"),
                Params.RenderRestPositions.Num(), Params.RestPositions.Num(), Params.TriangleSkinningWeights.Num());
     }
 
-    // FIX: Use component's spawn transform (captured at BeginPlay)
-    // This ensures particles are initialized at the position set in Edit Mode
-    // Particles in the asset are in local space, so we transform them to world space
     UClothMeshComponent* ClothMeshComp = Cast<UClothMeshComponent>(Component);
     if (ClothMeshComp)
     {
@@ -238,7 +220,6 @@ FClothInstanceHandle *FClothWorld::RegisterClothInstanceBatched(UClothComponent 
     }
     else
     {
-        // Fallback for non-ClothMeshComponent types
         Params.WorldTransform = Component->GetComponentTransform();
     }
 

@@ -2,8 +2,6 @@
  * Cloth World - Centralized cloth simulation manager
  * Manages all cloth instances and runs simulation once per frame
  * Similar to PhysicsManager for physics bodies
- *
- * Now supports both Legacy (per-instance solver) and Batched (LOD-based batching) modes
  */
 
 #pragma once
@@ -23,10 +21,6 @@ class FClothBatchManager;
 class FClothInstanceHandle;
 class FClothCollisionManager;
 
-/**
- * Cloth World - Central manager for cloth simulations
- * Per-world singleton that owns and updates all cloth instances
- */
 class FClothWorld
 {
 public:

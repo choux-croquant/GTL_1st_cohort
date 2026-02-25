@@ -628,7 +628,6 @@ bool FClothSkinningWeightGenerator::GenerateTriangleSkinningWeights(
         const FVector& renderPos = RenderPositions[renderIdx];
         FClothSkinningWeightTriangle& weight = OutWeights[renderIdx];
         
-        // 1. Find closest simulation triangle
         FVector closestPoint;
         float minDist;
         int32 closestTriIdx = FindClosestTriangleBruteForce(
@@ -655,21 +654,17 @@ bool FClothSkinningWeightGenerator::GenerateTriangleSkinningWeights(
         FVector v1 = SimPositions[i1];
         FVector v2 = SimPositions[i2];
         
-        // 3. Compute barycentric coordinates of closest point
         FVector bary = ComputeBarycentricCoordinates(closestPoint, v0, v1, v2);
         
-        // 4. Compute tangent frame (rest pose)
         FVector tangent, bitangent, normal;
         ComputeTangentFrame(v0, v1, v2, tangent, bitangent, normal);
         
-        // 5. Compute offset in tangent space
         FVector offsetWorld = renderPos - closestPoint;
         FVector offsetTangent;
         offsetTangent.X = FVector::DotProduct(offsetWorld, tangent);
         offsetTangent.Y = FVector::DotProduct(offsetWorld, bitangent);
         offsetTangent.Z = FVector::DotProduct(offsetWorld, normal);
         
-        // 6. Store result
         weight.SimTriangleIndices[0] = i0;
         weight.SimTriangleIndices[1] = i1;
         weight.SimTriangleIndices[2] = i2;
