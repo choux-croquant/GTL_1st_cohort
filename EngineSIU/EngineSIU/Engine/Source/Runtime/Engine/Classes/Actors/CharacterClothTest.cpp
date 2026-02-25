@@ -27,7 +27,7 @@ void ACharacterClothTest::PostSpawnInitialize()
 
     // SetActorTickInEditor(true);
     USkeletalMeshComponent* SkeletalMeshComponent = AddComponent<USkeletalMeshComponent>("SkeletalMeshComponent");
-    SkeletalMeshComponent->SetRelativeScale3D(FVector(0.3f, 0.3f, 0.3f));
+    SkeletalMeshComponent->SetRelativeScale3D(FVector(0.1f, 0.1f, 0.1f));
 
     SkeletalMeshComponent->SetSkeletalMeshAsset(UAssetManager::Get().GetSkeletalMesh(FName("Contents/GameJamEnemy/GameJamEnemy")));
     SkeletalMeshComponent->StateMachineFileName = TEXT("LuaScripts/Animations/EnemyStateMachine.lua");
@@ -42,8 +42,9 @@ void ACharacterClothTest::PostSpawnInitialize()
     }
 
     SkeletalMeshComponent->bSimulate = true;
-
+    // first = "Contents/Run/Armature|mixamo.com.001"
     UAnimSequence* IdleAnim = Cast<UAnimSequence>(UAssetManager::Get().GetAnimation(FString("Contents/Enemy_Idle/Armature|Enemy_Idle")));
+    //UAnimSequence* RunAnim = Cast<UAnimSequence>(UAssetManager::Get().GetAnimation(FString("Contents/Human/SlowRun")));
     UAnimSequence* ReactionAnim = Cast<UAnimSequence>(UAssetManager::Get().GetAnimation(FString("Contents/Enemy_Impact/Armature|Enemy_Impact")));
 
     UAnimSequence* Horizontal1 = Cast<UAnimSequence>(UAssetManager::Get().GetAnimation(FString("Contents/Horizontal1/Armature|Horizontal1")));
@@ -59,7 +60,7 @@ void ACharacterClothTest::PostSpawnInitialize()
     }
 
     // Load cloth source mesh
-    FString ClothMeshName = "Contents/TestClothMesh/TestClothMesh.obj";
+    FString ClothMeshName = "Contents/Cape2/Cape2.obj";
     UStaticMesh* ClothSourceMesh = FObjManager::GetStaticMesh(ClothMeshName.ToWideString());
     if (!ClothSourceMesh)
     {
@@ -69,7 +70,7 @@ void ACharacterClothTest::PostSpawnInitialize()
 
     // Configure cloth mesh component
     CapeCloth->SourceStaticMesh = ClothSourceMesh;
-    CapeCloth->SimulationMeshReductionRatio = 0.20f;  // Reduce to ~400 vertices
+    CapeCloth->SimulationMeshReductionRatio = 0.50f;  // Reduce to ~400 vertices
     CapeCloth->bPreserveBoundaryEdges = true;
     CapeCloth->bPreserveUVSeams = true;
     CapeCloth->DecimationMethod = EClothDecimationMethod::Voronoi;
@@ -226,6 +227,9 @@ UObject* ACharacterClothTest::Duplicate(UObject* InOuter)
     ACharacterClothTest* NewActor = Cast<ACharacterClothTest>(Super::Duplicate(InOuter));
 
     USkeletalMeshComponent* SkeletalMeshComponent = NewActor->GetComponentByClass<USkeletalMeshComponent>();
+    SkeletalMeshComponent->SetRelativeLocation(FVector(-1.5f, 1.0f, -6.5f));
+    SkeletalMeshComponent->SetRelativeRotation(FRotator(0.0f, 90.0f, 0.0f));
+
     UClothMeshComponent* CapeCloth = NewActor->AddComponent<UClothMeshComponent>(TEXT("CapeCloth"));
     if (!CapeCloth)
     {
@@ -234,7 +238,7 @@ UObject* ACharacterClothTest::Duplicate(UObject* InOuter)
     }
 
     // Load cloth source mesh
-    FString ClothMeshName = "Contents/TestClothMesh/TestClothMesh.obj";
+    FString ClothMeshName = "Contents/Cape2/Cape2.obj";
     UStaticMesh* ClothSourceMesh = FObjManager::GetStaticMesh(ClothMeshName.ToWideString());
     if (!ClothSourceMesh)
     {
@@ -244,7 +248,7 @@ UObject* ACharacterClothTest::Duplicate(UObject* InOuter)
 
     // Configure cloth mesh component
     CapeCloth->SourceStaticMesh = ClothSourceMesh;
-    CapeCloth->SimulationMeshReductionRatio = 0.50f;  // Reduce to ~400 vertices
+    CapeCloth->SimulationMeshReductionRatio = 0.80f;  // Reduce to ~400 vertices
     CapeCloth->bPreserveBoundaryEdges = true;
     CapeCloth->bPreserveUVSeams = true;
     CapeCloth->DecimationMethod = EClothDecimationMethod::Voronoi;
@@ -285,31 +289,31 @@ UObject* ACharacterClothTest::Duplicate(UObject* InOuter)
         return NewActor;
     }
 
-    // Find vertices to attach (top 10% of vertices by Y coordinate)
+    // Find vertices to attach (top vertices by Z coordinate)
     TArray<uint32> TopVertices;
-    float MaxY = -FLT_MAX;
-    float MinY = FLT_MAX;
+    float MaxZ = -FLT_MAX;
+    float MinZ = FLT_MAX;
 
-    // Find Y range
+    // Find Z range
     for (const FVector& Pos : CapeAsset->RestPositions)
     {
-        MaxY = FMath::Max(MaxY, Pos.Y);
-        MinY = FMath::Min(MinY, Pos.Y);
+        MaxZ = FMath::Max(MaxZ, Pos.Z);
+        MinZ = FMath::Min(MinZ, Pos.Z);
     }
 
-    float YRange = MaxY - MinY;
-    float AttachThreshold = MaxY - (YRange * 0.10f);  // Top 10%
+    float ZRange = MaxZ - MinZ;
+    float AttachThreshold = MaxZ - (ZRange * 0.10f);  // Top 10% by Z
 
     // Collect top vertices
     for (int32 i = 0; i < CapeAsset->RestPositions.Num(); ++i)
     {
-        if (CapeAsset->RestPositions[i].Y >= AttachThreshold)
+        if (CapeAsset->RestPositions[i].Z >= AttachThreshold)
         {
             TopVertices.Add(i);
         }
     }
 
-    UE_LOG(ELogLevel::Display, TEXT("TestClothSkeletalAttachmentActor: Found %d vertices to attach (Y >= %.2f)"),
+    UE_LOG(ELogLevel::Display, TEXT("TestClothSkeletalAttachmentActor: Found %d vertices to attach (Z >= %.2f)"),
         TopVertices.Num(), AttachThreshold);
 
     if (TopVertices.Num() == 0)
@@ -319,141 +323,57 @@ UObject* ACharacterClothTest::Duplicate(UObject* InOuter)
         return NewActor;
     }
 
-    TopVertices.Sort([&CapeAsset](const uint32& A, const uint32& B) {
-        const FVector& PosA = CapeAsset->RestPositions[A];
-        const FVector& PosB = CapeAsset->RestPositions[B];
-        return PosA.X < PosB.X;  // Ascending order by X
-        });
+    // Try to find Neck bone
+    FName NeckBoneName = FName(TEXT("mixamorig:Neck"));
+    int32 NeckBoneIndex = SkeletalMeshComponent->GetBoneIndex(NeckBoneName);
 
-    //// Try to find valid bones in the skeletal mesh
-    //TArray<FName> BoneNamesToTry;
-    //BoneNamesToTry.Add(FName(TEXT("mixamorig:Neck")));
-
-    //FName ValidBoneName = NAME_None;
-    //int32 ValidBoneIndex = INDEX_NONE;
-
-    //// Try to find a valid bone
-    //for (FName BoneName : BoneNamesToTry)
-    //{
-    //    int32 BoneIndex = SkeletalMeshComponent->GetBoneIndex(BoneName);
-    //    if (BoneIndex != INDEX_NONE)
-    //    {
-    //        ValidBoneName = BoneName;
-    //        ValidBoneIndex = BoneIndex;
-    //        UE_LOG(ELogLevel::Display, TEXT("TestClothSkeletalAttachmentActor: Found valid bone '%s' (index %d)"),
-    //            *BoneName.ToString(), BoneIndex);
-    //        break;
-    //    }
-    //}
-
-    //// Attach vertices
-    //if (ValidBoneName != NAME_None)
-    //{
-    //    // BONE ATTACHMENT MODE: Attach to skeletal mesh bone
-    //    UE_LOG(ELogLevel::Display, TEXT("TestClothSkeletalAttachmentActor: Using BONE ATTACHMENT mode"));
-
-    //    float i = 0.0f;
-    //    float n = float(TopVertices.Num());
-    //    for (uint32 VertexIndex : TopVertices)
-    //    {
-    //        // Create attachment with local offset
-    //        FTransform LocalTransform;
-    //        FVector LocalOffset = FVector(-50.0f + (i / n) * 100.0f, 0.0f, -25.0f);
-    //        i++;
-    //        LocalTransform.SetTranslation(LocalOffset);
-    //        LocalTransform.SetRotation(FQuat::Identity);
-    //        LocalTransform.SetScale3D(FVector::OneVector);
-
-    //        // Bind attachment to bone
-    //        CapeCloth->BindAttachmentToBone(
-    //            VertexIndex,
-    //            SkeletalMeshComponent,
-    //            ValidBoneName,
-    //            LocalTransform,
-    //            1.0f,   // Stiffness (1.0 = hard constraint)
-    //            0.0f    // AttachDistance (0.0 = kinematic, no stretch)
-    //        );
-    //    }
-
-    //    UE_LOG(ELogLevel::Display, TEXT("TestClothSkeletalAttachmentActor: Successfully attached %d vertices to bone '%s'"),
-    //        TopVertices.Num(), *ValidBoneName.ToString());
-    //}
-    //else
-    //{
-    //    UE_LOG(ELogLevel::Display, TEXT("TestClothSkeletalAttachmentActor: Failed to attach, Bone not defined (fallback)"),
-    //        TopVertices.Num());
-    //}
-
-    // Try to find shoulder bones
-    int32 LeftShoulderIndex = SkeletalMeshComponent->GetBoneIndex(FName(TEXT("mixamorig:LeftArm")));
-    int32 RightShoulderIndex = SkeletalMeshComponent->GetBoneIndex(FName(TEXT("mixamorig:RightArm")));
-
-    FName LeftShoulderName = (LeftShoulderIndex != INDEX_NONE) ? FName(TEXT("mixamorig:LeftArm")) : NAME_None;
-    FName RightShoulderName = (RightShoulderIndex != INDEX_NONE) ? FName(TEXT("mixamorig:RightArm")) : NAME_None;
-
-    if (LeftShoulderName == NAME_None || RightShoulderName == NAME_None || TopVertices.Num() == 0)
+    if (NeckBoneIndex == INDEX_NONE)
     {
         UE_LOG(ELogLevel::Warning,
-            TEXT("TestClothSkeletalAttachmentActor: Shoulder bones not found or no TopVertices, skipping attachment"));
+            TEXT("TestClothSkeletalAttachmentActor: Neck bone not found, skipping attachment"));
     }
     else
     {
         UE_LOG(ELogLevel::Display,
-            TEXT("TestClothSkeletalAttachmentActor: Using BONE ATTACHMENT mode (Shoulders, 2 anchor points)"));
+            TEXT("TestClothSkeletalAttachmentActor: Using BONE ATTACHMENT mode (Neck bone)"));
 
-        // Index 0 -> LeftShoulder
+        // Get the neck bone transform to calculate proper local offsets
+        FTransform NeckBoneTransform = SkeletalMeshComponent->GetBoneTransform(NeckBoneIndex);
+        FMatrix NeckBoneMatrix = NeckBoneTransform.ToMatrixWithScale();
+        FMatrix InverseNeckBoneMatrix = FMatrix::Inverse(NeckBoneMatrix);
+
+        // Attach all top vertices to the Neck bone with local offsets that preserve rest shape
+        for (uint32 VertexIndex : TopVertices)
         {
-            uint32 VertexIndex = TopVertices[0];
+            // Get the vertex rest position in world space (assuming cloth is at origin initially)
+            FVector VertexRestPos = CapeAsset->RestPositions[VertexIndex];
+            
+            // Transform vertex position to bone local space
+            // This preserves the original shape by calculating the offset from the bone
+            FVector LocalOffset = InverseNeckBoneMatrix.TransformPosition(VertexRestPos);
 
-            FVector LocalOffset(
-                -5.0f,  // left side
-                0.0f,   // a bit behind
-                -5.0f   // slightly below
-            );
+            FQuat LocalRotation = NeckBoneTransform.GetRotation().Inverse();
 
             FTransform LocalTransform;
             LocalTransform.SetTranslation(LocalOffset);
-            LocalTransform.SetRotation(FQuat::Identity);
+            //LocalTransform.SetTranslation(FVector::OneVector);
+            //LocalTransform.SetRotation(FQuat::Identity);
+            LocalTransform.SetRotation(LocalRotation);
             LocalTransform.SetScale3D(FVector::OneVector);
 
             CapeCloth->BindAttachmentToBone(
                 VertexIndex,
                 SkeletalMeshComponent,
-                LeftShoulderName,
+                NeckBoneName,
                 LocalTransform,
-                1.0f,
-                0.0f
-            );
-        }
-
-        // Last index -> RightShoulder (if there is more than one vertex)
-        if (TopVertices.Num() > 1)
-        {
-            uint32 VertexIndex = TopVertices.Last();
-
-            FVector LocalOffset(
-                5.0f,   // right side
-                0.0f,   // a bit behind
-                -5.0f   // slightly below
-            );
-
-            FTransform LocalTransform;
-            LocalTransform.SetTranslation(LocalOffset);
-            LocalTransform.SetRotation(FQuat::Identity);
-            LocalTransform.SetScale3D(FVector::OneVector);
-
-            CapeCloth->BindAttachmentToBone(
-                VertexIndex,
-                SkeletalMeshComponent,
-                RightShoulderName,
-                LocalTransform,
-                1.0f,
-                0.0f
+                1.0f,   // Stiffness (1.0 = hard constraint)
+                0.0f    // AttachDistance (0.0 = kinematic, no stretch)
             );
         }
 
         UE_LOG(ELogLevel::Display,
-            TEXT("TestClothSkeletalAttachmentActor: Attached TopVertices[0] to LeftShoulder and TopVertices[last] to RightShoulder"));
+            TEXT("TestClothSkeletalAttachmentActor: Successfully attached %d vertices to Neck bone with shape-preserving offsets"),
+            TopVertices.Num());
     }
 
     UE_LOG(ELogLevel::Display, TEXT("TestClothSkeletalAttachmentActor: Total attachments: %d"),
