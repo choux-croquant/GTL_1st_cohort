@@ -212,3 +212,9 @@ enum class EClothSystemMode : uint8
 {
     Batched // New batched system
 };
+
+struct FBoneAttachmentInfo
+{
+    int32 BoneIndex;
+    uint32 TransformSlot; // Index in ComponentTransforms buffer
+};

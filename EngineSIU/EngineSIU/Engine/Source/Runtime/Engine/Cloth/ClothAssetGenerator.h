@@ -1,7 +1,6 @@
 /**
  * Cloth Asset Generator
  * High-level cloth asset generation orchestrator
- * Coordinates: QEM decimation → Constraint generation → Skinning weight calculation
  */
 
 #pragma once
@@ -74,7 +73,6 @@ struct FClothAssetGenerationParams
     float UniformMass = 1.0f;  // Total mass of cloth
     bool bUseUniformMass = true;
     
-    // NEW: ClothMaterial reference
     UClothMaterial* ClothMaterial = nullptr;  // Optional material override
     
     // Helper: Build from ClothMaterial

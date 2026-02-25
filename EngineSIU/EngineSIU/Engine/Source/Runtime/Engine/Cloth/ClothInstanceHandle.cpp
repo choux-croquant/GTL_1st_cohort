@@ -25,8 +25,6 @@ void FClothInstanceHandle::SetParameters(const FClothInstanceParameters &Params)
         FClothInstanceMetadata &batchMetadata = const_cast<FClothInstanceMetadata &>(BatchManager->GetInstanceMetadata(MetadataIndex));
         batchMetadata.bIsActive = (Params.IsActive != 0);
 
-        // Sync the parameters' offset/count fields with metadata
-        // (These are set during AddInstance and shouldn't change)
         Parameters.ParticleOffset = batchMetadata.ParticleOffset;
         Parameters.ParticleCount = batchMetadata.ParticleCount;
         Parameters.ConstraintOffset = batchMetadata.ConstraintOffset;

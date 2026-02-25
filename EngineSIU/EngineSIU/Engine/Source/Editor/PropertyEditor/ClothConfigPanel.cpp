@@ -150,12 +150,6 @@ void ClothConfigPanel::RenderClothConfig()
             ImGui::SetTooltip("Simulation substeps per frame");
         }
 
-        /*bConfigChanged |= ImGui::SliderInt("Max Substeps/Frame", &Config.MaxSubstepsPerFrame, 1, 20);
-        if (ImGui::IsItemHovered())
-        {
-            ImGui::SetTooltip("Safety limit to prevent performance issues");
-        }*/
-
         bConfigChanged |= ImGui::SliderFloat("Max Speed", &Config.MaxSpeed, 100.0f, 5000.0f, "%.0f cm/s");
         if (ImGui::IsItemHovered())
         {

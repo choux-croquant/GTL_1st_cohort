@@ -11,6 +11,9 @@
 #include "Classes/Engine/ClothAsset.h"
 #include "Classes/Components/ClothComponent.h"
 #include "Classes/Components/SceneComponent.h"
+#include "Classes/Components/SkeletalMeshComponent.h"
+#include "UObject/Casts.h"
+#include "Core/Math/Matrix.h"
 #include "Windows/D3D11RHI/GraphicDevice.h"
 #include "Windows/D3D11RHI/DXDBufferManager.h"
 #include "Windows/D3D11RHI/DXDShaderManager.h"
@@ -49,16 +52,16 @@ void FClothBatchManager::Initialize(FGraphicsDevice *InGraphics,
     BatchedSolver = new FClothBatchedSolver();
     BatchedSolver->Initialize(Graphics, BufferManager, ShaderManager, CollisionMgr);
 
-    // Initial buffer allocation (generous estimate to avoid reallocation)
+    // TEMP : Initial buffer allocation (generous estimate to avoid reallocation)
     // Increased to handle large batches without needing dynamic reallocation
-    uint32 initialParticles = 200000;    // ~500 instances @ 400 particles
-    uint32 initialConstraints = 8000000; // ~40 constraints per particle
+    uint32 initialParticles = 200000;
+    uint32 initialConstraints = 8000000;
     uint32 initialBendConstraints = 50000;
     uint32 initialKinematicTargets = 20000;
-    uint32 initialTriangles = 5000000;        // CRITICAL: 5M triangles = 15M indices
+    uint32 initialTriangles = 5000000;
     uint32 initialInstances = 512;
-    uint32 initialAreaConstraints = 10000000; // NEW: 2 area constraints per triangle
-    uint32 initialEdgeCollisions = 15000000;  // NEW: ~3 edges per triangle
+    uint32 initialAreaConstraints = 10000000;
+    uint32 initialEdgeCollisions = 15000000;
 
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Allocating buffers - Triangles: %u (Indices: %u), Particles: %u"),
            static_cast<int32>(LODLevel), initialTriangles, initialTriangles * 3, initialParticles);
@@ -250,9 +253,6 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
     BatchedSolver->SetUsedCounts(TotalParticleCount, TotalConstraintCount, TotalBendConstraintCount, TotalAttachmentCount,
                                  TotalTriangleCount, Instances.Num(), TotalAreaConstraintCount, TotalEdgeCollisionCount); // NEW
 
-    // ===== UPLOAD INSTANCE DATA TO GPU BUFFERS =====
-
-    // 1. Transform particle positions from LOCAL space to WORLD space
     // This ensures each instance simulates at its correct world location
     TArray<FVector> worldSpacePositions;
     worldSpacePositions.Reserve(particleCount);
@@ -275,7 +275,6 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
            static_cast<int32>(LODLevel), Instances.Num(), metadata.ParticleOffset, metadata.ParticleCount,
            metadata.ConstraintOffset, TotalParticleCount - particleCount);
 
-    // 2. Upload particle data with instance IDs
     TArray<uint32> instanceIDs;
     instanceIDs.SetNum(particleCount);
     for (uint32 i = 0; i < particleCount; ++i)
@@ -283,7 +282,6 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         instanceIDs[i] = metadata.InstanceParameterIndex; // All particles belong to this instance
     }
 
-    // NEW: Use per-instance RuntimeInvMasses instead of asset InvMasses
     // This enables per-instance attachment isolation
     const TArray<float>& runtimeInvMasses = Params.OwnerComponent ?
         Params.OwnerComponent->GetRuntimeInvMasses() : Params.InvMasses;
@@ -295,7 +293,6 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         instanceIDs,
         metadata.ParticleOffset);
 
-    // 3. Upload distance constraints with global particle indices
     if (Params.Constraints.Num() > 0)
     {
         TArray<FClothDistanceConstraintGPU> constraintsGPU;
@@ -313,19 +310,6 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
             gpu.RestLength = c.RestLength;
             gpu.Stiffness = c.Stiffness;
 
-            // XPBD compliance calculation:
-            // Compliance determines how much the constraint can "give" under force.
-            // Lower compliance = stiffer constraint, higher compliance = softer constraint.
-            //
-            // Convert authoring-time stiffness (0-1) to XPBD compliance:
-            // - Very stiff (stiffness ~1.0) → very low compliance (approaching 0)
-            // - Soft (stiffness ~0.0) → high compliance
-            //
-            // Formula: compliance = (1 - stiffness^4) * scale
-            // - Use stiffness^4 to keep constraints stiff even at moderate stiffness values
-            // - Scale factor controls absolute compliance range
-            //
-            // If constraint already has compliance set (from asset), use it; otherwise compute from stiffness
             if (c.Compliance > 0.0f)
             {
                 // Use pre-authored compliance value (advanced usage)
@@ -360,7 +344,6 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         BatchedSolver->UploadConstraintData(constraintsGPU, metadata.ConstraintOffset);
     }
 
-    // 4. Upload bend constraints with global particle indices
     if (Params.BendConstraints.Num() > 0)
     {
         TArray<FClothBendConstraintGPU> bendConstraintsGPU;
@@ -385,7 +368,6 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         BatchedSolver->UploadBendConstraintData(bendConstraintsGPU, metadata.BendConstraintOffset);
     }
 
-    // NEW: Upload area constraints with global particle indices
     if (Params.AreaConstraints.Num() > 0)
     {
         TArray<FClothAreaConstraintGPU> areaConstraintsGPU;
@@ -412,7 +394,6 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         BatchedSolver->UploadAreaConstraintData(areaConstraintsGPU, metadata.AreaConstraintOffset);
     }
 
-    // NEW: Upload edge collision constraints with global particle indices
     if (Params.EdgeCollisions.Num() > 0)
     {
         TArray<FClothEdgeCollisionConstraintGPU> edgeCollisionsGPU;
@@ -433,7 +414,6 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         BatchedSolver->UploadEdgeCollisionData(edgeCollisionsGPU, metadata.EdgeCollisionOffset);
     }
 
-    // 5. Upload triangle indices with global particle indices
     if (Params.Indices.Num() > 0)
     {
         TArray<uint32> globalIndices;
@@ -453,7 +433,6 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
 
         uint32 indexOffset = metadata.TriangleOffset * 3; // Convert triangles to indices
 
-        // CRITICAL VALIDATION: Verify index buffer has enough space
         uint32 requiredIndexCapacity = indexOffset + globalIndices.Num();
         uint32 allocatedIndexCapacity = AllocatedTriangleCapacity * 3;
 
@@ -463,10 +442,9 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
                    static_cast<int32>(LODLevel), requiredIndexCapacity, allocatedIndexCapacity, Instances.Num());
             UE_LOG(ELogLevel::Error, TEXT("  IndexOffset: %u, IndexCount: %u, TotalTriangles: %u"),
                    indexOffset, globalIndices.Num(), TotalTriangleCount);
-            return nullptr; // ABORT - would cause rendering corruption
+            return nullptr;
         }
 
-        // ENHANCED INDEX VALIDATION: Verify indices reference correct particle range
         UE_LOG(ELogLevel::Display, TEXT("  Global index range: [%u-%u], Expected particle range: [%u-%u]"),
                minGlobalIdx, maxGlobalIdx,
                metadata.ParticleOffset, metadata.ParticleOffset + metadata.ParticleCount - 1);
@@ -485,7 +463,6 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         BatchedSolver->UploadIndexData(globalIndices, indexOffset);
     }
 
-    // NEW: 7. Upload render mesh data if production rendering is enabled
     if (Params.bUseRenderMesh && Params.RenderRestPositions.Num() > 0)
     {
         uint32 renderVertexCount = Params.RenderRestPositions.Num();
@@ -556,7 +533,6 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
         // Upload legacy K-nearest neighbor skinning weights
         BatchedSolver->UploadSkinningWeights(globalSkinningWeights, metadata.RenderVertexOffset);
         
-        // NEW: Upload triangle-based skinning weights (fixes edge curling and UV distortion)
         if (Params.TriangleSkinningWeights.Num() > 0)
         {
             // Convert triangle skinning weights to use global simulation vertex indices
@@ -592,10 +568,8 @@ FClothInstanceHandle *FClothBatchManager::AddInstance(const FClothInstanceCreati
                static_cast<int32>(LODLevel), renderVertexCount, renderIndexCount);
     }
 
-    // 8. Update instance parameters
     UpdateInstanceParameterBuffer();
 
-    // NEW: Mark attachment data dirty so GPU-based kinematic targets are rebuilt
     bAttachmentDataDirty = true;
 
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Added instance - %d particles, %d constraints, Total instances: %d, Total particles: %d"),
@@ -620,15 +594,6 @@ void FClothBatchManager::RemoveInstance(FClothInstanceHandle *Instance)
     int32 metadataIndex = *MetadataIndexPtr;
     const FClothInstanceMetadata &metadata = InstanceMetadata[metadataIndex];
 
-    // CRITICAL FIX: DO NOT decrement totals when removing instance
-    // This preserves buffer offsets for remaining instances
-    // Gaps will be handled by compaction later
-    //
-    // OLD BUGGY CODE (caused offset corruption):
-    // TotalParticleCount -= metadata.ParticleCount;  // ❌ This breaks offsets!
-    //
-    // NEW APPROACH: Keep totals stable, mark instance as inactive
-
     // Remove from tracking
     Instances.Remove(Instance);
     InstanceToMetadataIndex.Remove(Instance);
@@ -636,10 +601,6 @@ void FClothBatchManager::RemoveInstance(FClothInstanceHandle *Instance)
     // Invalidate metadata to prevent stale access
     FClothInstanceMetadata& metadataRef = InstanceMetadata[metadataIndex];
     metadataRef.bIsActive = false;
-    
-    // IMPORTANT: Keep offsets and counts intact for now
-    // This allows other instances to maintain their correct buffer positions
-    // The space will be reclaimed during compaction
     
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Deactivated instance at index %d (offsets preserved)"),
            static_cast<int32>(LODLevel), metadataIndex);
@@ -741,7 +702,6 @@ void FClothBatchManager::SimulateFixedTimestep(float DeltaTime)
 	// Accumulate time
 	FixedTimestepState.AccumulatedTime += clampedDT;
 
-	// If we're falling too far behind, reset accumulator
 	if (FixedTimestepState.AccumulatedTime > FixedTimestepState.FixedTimestep * 10.0f)
 	{
 		UE_LOG(ELogLevel::Warning, TEXT("ClothBatchManager[LOD%d]: Simulation falling behind - resetting accumulator"),
@@ -819,7 +779,7 @@ void FClothBatchManager::CompactBuffers()
     if (utilization > 0.7f)
     {
         bNeedsCompaction = false;
-        return; // Good utilization, don't compact
+        return;
     }
 
     UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Compacting buffers - Utilization: %.1f%%"),
@@ -862,14 +822,15 @@ void FClothBatchManager::UpdateInstanceParameterBuffer()
     }
 }
 
-// NEW: GPU-based kinematic target computation (P1 optimization - saves ~2ms)
 void FClothBatchManager::BuildKinematicAttachmentData()
 {
     ComponentIndexMap.Empty();
     UniqueComponents.Empty();
+    SkeletalMeshBoneMap.Empty(); // NEW: Clear bone tracking
     TArray<FKinematicAttachmentGPU> attachmentData;
+    
+    uint32 NextTransformSlot = 0;
 
-    // NEW: Collect all attachments from per-instance bindings (not asset)
     for (FClothInstanceHandle *Handle : Instances)
     {
         if (!Handle || !Handle->GetOwnerComponent())
@@ -878,7 +839,6 @@ void FClothBatchManager::BuildKinematicAttachmentData()
         const FClothInstanceMetadata &metadata = Handle->GetMetadata();
         UClothComponent *owner = Handle->GetOwnerComponent();
         
-        // NEW: Read from component's AttachmentBindings instead of asset's AttachmentsData
         const TArray<FClothAttachmentBinding> &bindings = owner->GetAttachmentBindings();
 
         for (const FClothAttachmentBinding &binding : bindings)
@@ -898,7 +858,7 @@ void FClothBatchManager::BuildKinematicAttachmentData()
 
                 if (!ComponentIndexPtr)
                 {
-                    ComponentIndex = UniqueComponents.Num();
+                    ComponentIndex = NextTransformSlot++;
                     ComponentIndexMap.Add(target.DriverComponent, ComponentIndex);
                     UniqueComponents.Add(target.DriverComponent);
                 }
@@ -920,9 +880,6 @@ void FClothBatchManager::BuildKinematicAttachmentData()
                 attachmentData.Add(gpuAttachment);
             }
             else if (target.Type == EClothAttachmentType::WorldPosition) {
-                // FIXED: WorldPosition attachments are in absolute world space
-                // Since particles are now in local space, we need to transform the world position
-                // to local space so the shader can compare them correctly
                 FTransform componentTransform = owner->GetComponentTransform();
                 FTransform invComponentTransform = componentTransform.Inverse();
                 FVector localPosition = invComponentTransform.TransformPosition(target.WorldPosition);
@@ -939,29 +896,53 @@ void FClothBatchManager::BuildKinematicAttachmentData()
                 attachmentData.Add(gpuAttachment);
             }
             else if (target.Type == EClothAttachmentType::SkeletalBone) {
-                // NEW: Support for skeletal bone attachments
-                if (!target.DriverComponent)
+                USkeletalMeshComponent* SkelMesh = Cast<USkeletalMeshComponent>(target.DriverComponent);
+                if (!SkelMesh || target.BoneIndex == INDEX_NONE)
                     continue;
+                
+                // Get or create bone tracking for this skeletal mesh
+                TArray<FBoneAttachmentInfo>* BoneInfoArrayPtr = SkeletalMeshBoneMap.Find(SkelMesh);
+                if (!BoneInfoArrayPtr)
+                {
+                    // First time seeing this skeletal mesh - add to unique components
+                    uint32 ComponentIndex = NextTransformSlot++;
+                    ComponentIndexMap.Add(SkelMesh, ComponentIndex);
+                    UniqueComponents.Add(SkelMesh);
                     
-                // Get or create component index (deduplication!)
-                uint32 *ComponentIndexPtr = ComponentIndexMap.Find(target.DriverComponent);
-                uint32 ComponentIndex;
-
-                if (!ComponentIndexPtr)
-                {
-                    ComponentIndex = UniqueComponents.Num();
-                    ComponentIndexMap.Add(target.DriverComponent, ComponentIndex);
-                    UniqueComponents.Add(target.DriverComponent);
+                    // Create bone tracking array
+                    TArray<FBoneAttachmentInfo> BoneInfoArray;
+                    SkeletalMeshBoneMap.Add(SkelMesh, BoneInfoArray);
+                    BoneInfoArrayPtr = SkeletalMeshBoneMap.Find(SkelMesh);
                 }
-                else
+                
+                // Find or add this bone to the tracking list
+                uint32 BoneTransformSlot = NextTransformSlot;
+                bool bFoundBone = false;
+                
+                for (const FBoneAttachmentInfo& BoneInfo : *BoneInfoArrayPtr)
                 {
-                    ComponentIndex = *ComponentIndexPtr;
+                    if (BoneInfo.BoneIndex == target.BoneIndex)
+                    {
+                        BoneTransformSlot = BoneInfo.TransformSlot;
+                        bFoundBone = true;
+                        break;
+                    }
+                }
+                
+                if (!bFoundBone)
+                {
+                    // New bone - allocate transform slot
+                    FBoneAttachmentInfo NewBoneInfo;
+                    NewBoneInfo.BoneIndex = target.BoneIndex;
+                    NewBoneInfo.TransformSlot = NextTransformSlot++;
+                    BoneInfoArrayPtr->Add(NewBoneInfo);
+                    BoneTransformSlot = NewBoneInfo.TransformSlot;
                 }
 
-                // Build GPU attachment data (similar to ActorTransform but with bone offset)
+                // Build GPU attachment data
                 FKinematicAttachmentGPU gpuAttachment;
-                gpuAttachment.Type = 1; // Use same type as ActorTransform for now
-                gpuAttachment.ComponentIndex = ComponentIndex;
+                gpuAttachment.Type = 1; // Use Type 1 (component transform) - bone transform uploaded to ComponentTransforms
+                gpuAttachment.ComponentIndex = BoneTransformSlot; // Use bone's transform slot
                 gpuAttachment.ParticleIndex = binding.SimVertexIndex + metadata.ParticleOffset;
                 gpuAttachment.Stiffness = binding.Stiffness;
                 gpuAttachment.AttachDistance = binding.AttachDistance;
@@ -985,12 +966,6 @@ void FClothBatchManager::BuildKinematicAttachmentData()
 
     float dedupPercent = attachmentData.Num() > 0 ? (1.0f - (float)UniqueComponents.Num() / attachmentData.Num()) * 100.0f : 0.0f;
 
-   /* UE_LOG(ELogLevel::Display, TEXT("ClothBatchManager[LOD%d]: Built kinematic attachments - %d attachments, %d unique components (%.1f%% dedup)"),
-           static_cast<int32>(LODLevel),
-           attachmentData.Num(),
-           UniqueComponents.Num(),
-           dedupPercent);*/
-
     bAttachmentDataDirty = false;
 }
 
@@ -1008,22 +983,58 @@ void FClothBatchManager::UpdateKinematicTargetsGPU(float DeltaTime)
         BuildKinematicAttachmentData();
     }
 
-    // Collect component transforms (ONLY unique components - 10-50 instead of 2,500!)
     TArray<FMatrix> componentTransforms;
-    componentTransforms.Reserve(UniqueComponents.Num());
+    componentTransforms.Reserve(UniqueComponents.Num() + SkeletalMeshBoneMap.Num() * 10); // Reserve extra for bones
 
     {
         QUICK_SCOPE_CYCLE_COUNTER(UpdateKinematicTargets_CollectTransforms);
+        
+        // First, upload regular component transforms
         for (const TWeakObjectPtr<USceneComponent> &Component : UniqueComponents)
         {
             if (Component.IsValid())
             {
-                componentTransforms.Add(Component->GetWorldMatrix());
+                USkeletalMeshComponent* SkelMesh = Cast<USkeletalMeshComponent>(Component.Get());
+                
+                if (SkelMesh && SkeletalMeshBoneMap.Contains(SkelMesh))
+                {
+                    // This is a skeletal mesh with bone attachments
+                    // Upload component transform first (for the skeletal mesh itself)
+                    componentTransforms.Add(SkelMesh->GetWorldMatrix());
+                }
+                else
+                {
+                    // Regular component transform
+                    componentTransforms.Add(Component->GetWorldMatrix());
+                }
             }
             else
             {
                 // Component destroyed - add identity
                 componentTransforms.Add(FMatrix::Identity);
+            }
+        }
+        
+        for (const auto& Pair : SkeletalMeshBoneMap)
+        {
+            USkeletalMeshComponent* SkelMesh = Pair.Key;
+            const TArray<FBoneAttachmentInfo>& BoneInfos = Pair.Value;
+            
+            if (!SkelMesh)
+                continue;
+            
+            // Get all bone transforms for this skeletal mesh
+            for (const FBoneAttachmentInfo& BoneInfo : BoneInfos)
+            {
+                // Ensure we're adding at the correct slot
+                while (componentTransforms.Num() < static_cast<int32>(BoneInfo.TransformSlot))
+                {
+                    componentTransforms.Add(FMatrix::Identity);
+                }
+                
+                // Get bone world transform
+                FTransform BoneTransform = SkelMesh->GetBoneTransform(BoneInfo.BoneIndex);
+                componentTransforms.Add(BoneTransform.ToMatrixWithScale());
             }
         }
     }
@@ -1052,8 +1063,6 @@ uint32 FClothBatchManager::CalculateNewCapacity(uint32 CurrentCapacity, uint32 R
 
     return newCapacity;
 }
-
-// NEW: Phase 3 - Runtime attachment update methods
 
 void FClothBatchManager::UpdateInstanceInvMass(FClothInstanceHandle* Instance)
 {
@@ -1128,11 +1137,9 @@ void FClothBatchManager::UpdateInstanceAttachments(FClothInstanceHandle* Instanc
         return;
     }
 
-    // NEW: Immediately rebuild attachment data instead of just marking dirty
     // This ensures TotalAttachmentCount is updated before next simulation frame
     BuildKinematicAttachmentData();
 
-    // CRITICAL: Update solver's UsedAttachmentCount so kinematic constraints are applied
     if (BatchedSolver)
     {
         BatchedSolver->SetUsedCounts(

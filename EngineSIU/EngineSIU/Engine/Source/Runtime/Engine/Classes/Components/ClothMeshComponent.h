@@ -125,6 +125,7 @@ public:
     // Transform
     void SetWorldTransform(const FMatrix &Transform) { WorldTransform = Transform; }
     const FMatrix &GetWorldTransform() const { return WorldTransform; }
+    const FMatrix &GetSpawnTransform() const { return SpawnTransform; }
     
     // Debug visualization
     void SetDebugDrawMode(EClothDebugDrawMode Mode) { DebugDrawMode = Mode; }

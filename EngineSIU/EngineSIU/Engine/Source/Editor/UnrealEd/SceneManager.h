@@ -17,6 +17,13 @@ public:
 
     /**
      * Json형식으로 저장된 World파일을 불러옵니다.
+     *
+     * Supports all actor and component types including:
+     * - Static Mesh Actors and Components
+     * - Light Actors and Components
+     * - Torus Collider Actors and Torus Components
+     * - And any other actor/component that implements GetProperties/SetProperties
+     *
      * @param FilePath Json형식으로 World정보가 저장된 파일의 경로
      * @param OutWorld 생성된 World
      */
@@ -24,6 +31,13 @@ public:
 
     /**
      * World를 Json형식으로 저장합니다.
+     *
+     * Saves all actors and components including:
+     * - Static Mesh Actors and Components
+     * - Light Actors and Components
+     * - Torus Collider Actors and Torus Components (with MajorRadius, MinorRadius, TorusAxis)
+     * - And any other actor/component that implements GetProperties/SetProperties
+     *
      * @param FilePath World를 저장할 파일 경로
      * @param InWorld 저장할 World
      * @return 성공적으로 저장되었는지 여부

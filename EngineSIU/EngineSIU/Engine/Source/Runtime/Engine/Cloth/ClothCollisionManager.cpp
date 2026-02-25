@@ -1,7 +1,9 @@
 #include "ClothCollisionManager.h"
 #include "Engine/UserInterface/Console.h"
 #include "Components/PrimitiveComponent.h"
-#include "Classes/PhysicsEngine/PhysicsAsset.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/TorusComponent.h"
+#include "PhysicsEngine/PhysicsAsset.h"
 #include "Cloth/ClothGPUStructs.h"
 #include <cstring>
 #include <PxPhysicsAPI.h>
@@ -29,7 +31,6 @@ void FClothCollisionManager::Initialize(uint32 MaxColliders)
 
 void FClothCollisionManager::Release()
 {
-	// Release D3D11 resources
 	if (ColliderBufferSRV)
 	{
 		ColliderBufferSRV->Release();
@@ -42,7 +43,6 @@ void FClothCollisionManager::Release()
 		ColliderBuffer = nullptr;
 	}
 	
-	// Clear CPU data
 	ColliderSources.Empty();
 	ComponentToColliderMap.Empty();
 	bGPUDirty = false;
@@ -57,23 +57,54 @@ int32 FClothCollisionManager::RegisterCollider(UPrimitiveComponent* Component, b
 	
 	int32 NumRegistered = 0;
 	
-	// Get BodySetup from component
-	UBodySetup* BodySetup = Component->GetBodySetup();
-	if (BodySetup)
+	if (UTorusComponent* TorusComp = Cast<UTorusComponent>(Component))
 	{
-		int32 BeforeCount = ColliderSources.Num();
-		ExtractCollidersFromBodySetup(BodySetup, Component);
-		NumRegistered = ColliderSources.Num() - BeforeCount;
+		FClothColliderSource Source;
+		Source.Type = EClothColliderType::Torus;
+		Source.Component = Component;
+		Source.ElementIndex = 0;
+		Source.CachedTransform = Component->GetComponentTransform();
+		Source.CachedLocalCenter = FVector::ZeroVector;
+		Source.CachedLocalAxis = TorusComp->GetTorusAxis().GetSafeNormal();
+		Source.CachedRadius = TorusComp->GetMinorRadius();
+		Source.CachedExtents = FVector(TorusComp->GetMajorRadius(), 0, 0);
+		Source.bIsDirty = true;
+		Source.GPUBufferIndex = ColliderSources.Num();
+		
+		ColliderSources.Add(Source);
+		
+		// Track component mapping
+		TArray<int32> NewColliderIndices;
+		NewColliderIndices.Add(Source.GPUBufferIndex);
+		ComponentToColliderMap.Add(Component, NewColliderIndices);
+		
+		NumRegistered = 1;
+		bGPUDirty = true;
+		
+		UE_LOG(ELogLevel::Display, TEXT("ClothCollisionManager: Registered torus collider from component %s (MajorR=%.2f, MinorR=%.2f, Axis=(%.2f,%.2f,%.2f))"),
+			*Component->GetName(), TorusComp->GetMajorRadius(), TorusComp->GetMinorRadius(),
+			Source.CachedLocalAxis.X, Source.CachedLocalAxis.Y, Source.CachedLocalAxis.Z);
+	}
+	else
+	{
+		// Get BodySetup from component (for PhysX-based shapes)
+		UBodySetup* BodySetup = Component->GetBodySetup();
+		if (BodySetup)
+		{
+			int32 BeforeCount = ColliderSources.Num();
+			ExtractCollidersFromBodySetup(BodySetup, Component);
+			NumRegistered = ColliderSources.Num() - BeforeCount;
+		}
+		
+		if (NumRegistered > 0)
+		{
+			UE_LOG(ELogLevel::Display, TEXT("ClothCollisionManager: Registered %d colliders from component %s"),
+				NumRegistered, *Component->GetName());
+			bGPUDirty = true;
+		}
 	}
 	
 	// TODO: Handle bIncludeChildren if component has child components
-	
-	if (NumRegistered > 0)
-	{
-		UE_LOG(ELogLevel::Display, TEXT("ClothCollisionManager: Registered %d colliders from component %s"), 
-			NumRegistered, *Component->GetName());
-		bGPUDirty = true;
-	}
 	
 	return NumRegistered;
 }
@@ -169,12 +200,39 @@ void FClothCollisionManager::AddBoxCollider(const FVector& WorldCenter, const FV
 	bGPUDirty = true;
 }
 
+void FClothCollisionManager::AddTorusCollider(const FVector& WorldCenter, const FVector& Axis, float MajorRadius, float MinorRadius)
+{
+	FClothColliderSource Source;
+	Source.Type = EClothColliderType::Torus;
+	Source.Component = nullptr;  // Manual collider
+	Source.ElementIndex = -1;
+	Source.CachedTransform = FTransform::Identity;
+	Source.CachedLocalCenter = WorldCenter;
+	Source.CachedLocalAxis = Axis.GetSafeNormal();
+	Source.CachedRadius = MinorRadius;  // Tube radius
+	Source.CachedExtents = FVector(MajorRadius, 0, 0);  // Major radius in X
+	Source.bIsDirty = true;
+	Source.GPUBufferIndex = ColliderSources.Num();
+	
+	ColliderSources.Add(Source);
+	bGPUDirty = true;
+	
+	UE_LOG(ELogLevel::Display, TEXT("ClothCollisionManager: Added torus collider at (%.2f, %.2f, %.2f), MajorR=%.2f, MinorR=%.2f"),
+		WorldCenter.X, WorldCenter.Y, WorldCenter.Z, MajorRadius, MinorRadius);
+}
+
 void FClothCollisionManager::UpdateTransforms()
 {
 	// Iterate backwards to allow safe removal of stale entries
 	for (int32 i = ColliderSources.Num() - 1; i >= 0; --i)
 	{
 		FClothColliderSource& Source = ColliderSources[i];
+		
+		// NEW: Skip skeletal mesh colliders (updated via UpdateSkeletalColliderTransforms)
+		if (Source.BoneIndex >= 0 && Source.SkeletalMeshComponent.IsValid())
+		{
+			continue;  // Handled separately
+		}
 		
 		// Check if this is a component-based collider
 		if (Source.Component.IsValid())
@@ -269,10 +327,9 @@ void FClothCollisionManager::UploadToGPU(ID3D11Device* Device, ID3D11DeviceConte
 		}
 	}
 	
-	// P3 OPTIMIZATION: Reuse pre-allocated buffer (NO allocation in hot path)
 	// Clear array but keep allocated capacity to avoid reallocations
 	int32 CurrentCapacity = StagingColliders.Max();
-	StagingColliders.Empty(ColliderSources.Num());  // Clear and reserve in one call
+	StagingColliders.Empty(ColliderSources.Num());
 	
 	// Fill buffer
 	for (const FClothColliderSource& Source : ColliderSources)
@@ -415,10 +472,8 @@ void FClothCollisionManager::ExtractCapsuleFromShape(physx::PxShape* Shape, UPri
 	Source.CachedLocalCenter = FVector(localPose.p.x, localPose.p.y, localPose.p.z);
 	Source.CachedLocalRotation = FQuat(localPose.q.x, localPose.q.y, localPose.q.z, localPose.q.w);  // Store local rotation!
 	
-	// PhysX capsule axis is along X by default
 	physx::PxQuat quat = localPose.q;
-	FVector axis = FVector(1, 0, 0); // Default axis along X
-	// Rotate by local pose quaternion
+	FVector axis = FVector(1, 0, 0);
 	physx::PxVec3 pxAxis = quat.rotate(physx::PxVec3(1, 0, 0));
 	Source.CachedLocalAxis = FVector(pxAxis.x, pxAxis.y, pxAxis.z).GetSafeNormal();
 	Source.CachedRadius = capsuleGeom.radius;
@@ -451,7 +506,7 @@ void FClothCollisionManager::ExtractBoxFromShape(physx::PxShape* Shape, UPrimiti
 	Source.CachedTransform = Component->GetComponentTransform();
 	Source.CachedLocalCenter = FVector(localPose.p.x, localPose.p.y, localPose.p.z);
 	Source.CachedLocalRotation = FQuat(localPose.q.x, localPose.q.y, localPose.q.z, localPose.q.w);  // Store local rotation!
-	Source.CachedExtents = FVector(boxGeom.halfExtents.x, boxGeom.halfExtents.y, boxGeom.halfExtents.z);
+    Source.CachedExtents = FVector(boxGeom.halfExtents.x * 0.5, boxGeom.halfExtents.y * 0.5, boxGeom.halfExtents.z * 0.5);
 	Source.bIsDirty = true;
 	Source.GPUBufferIndex = ColliderSources.Num();
 	
@@ -503,6 +558,193 @@ FClothColliderGPU FClothCollisionManager::ConvertToGPU(const FClothColliderSourc
 		// For now, axis represents forward vector
 		GPU.Axis = Source.CachedTransform.GetRotation().GetForwardVector();
 	}
+	else if (Source.Type == EClothColliderType::Torus)
+	{
+		// Transform center and axis to world space
+		FVector WorldCenter = Source.CachedTransform.TransformPosition(Source.CachedLocalCenter);
+		FVector WorldAxis = Source.CachedTransform.TransformVector(Source.CachedLocalAxis).GetSafeNormal();
+		
+		GPU.Center = WorldCenter;
+		GPU.Axis = WorldAxis;
+		GPU.Radius = Source.CachedRadius;  // Minor radius (tube)
+		GPU.HalfHeight = Source.CachedExtents.X;  // Major radius (ring)
+		GPU.Extents = FVector::ZeroVector;  // Unused for torus
+	}
 	
 	return GPU;
+}
+
+int32 FClothCollisionManager::RegisterSkeletalCollider(
+	USkeletalMeshComponent* SkeletalMesh,
+	int32 BoneIndex,
+	UBodySetup* BodySetup)
+{
+	if (!SkeletalMesh || !BodySetup || BoneIndex < 0)
+		return 0;
+	
+	int32 NumRegistered = 0;
+	
+	// Extract spheres
+	for (int32 i = 0; i < BodySetup->AggGeom.SphereElems.Num(); ++i)
+	{
+		physx::PxShape* Shape = BodySetup->AggGeom.SphereElems[i];
+		if (!Shape)
+			continue;
+		
+		FClothColliderSource Source;
+		Source.Type = EClothColliderType::Sphere;
+		Source.Component = SkeletalMesh;
+		Source.SkeletalMeshComponent = SkeletalMesh;
+		Source.BoneIndex = BoneIndex;
+		Source.ElementIndex = i;
+		
+		// Extract local offset from PhysX shape
+		physx::PxVec3 LocalPos = Shape->getLocalPose().p;
+		Source.CachedLocalOffset = FTransform(
+			FQuat::Identity,
+			FVector(LocalPos.x, LocalPos.y, LocalPos.z)
+		);
+		
+		// Extract radius
+		physx::PxSphereGeometry SphereGeom;
+		if (Shape->getSphereGeometry(SphereGeom))
+		{
+			Source.CachedRadius = SphereGeom.radius;
+			Source.CachedLocalCenter = FVector(LocalPos.x, LocalPos.y, LocalPos.z);
+		}
+		
+		Source.bIsDirty = true;
+		ColliderSources.Add(Source);
+		NumRegistered++;
+	}
+	
+	// Extract capsules
+	for (int32 i = 0; i < BodySetup->AggGeom.CapsuleElems.Num(); ++i)
+	{
+		physx::PxShape* Shape = BodySetup->AggGeom.CapsuleElems[i];
+		if (!Shape)
+			continue;
+		
+		FClothColliderSource Source;
+		Source.Type = EClothColliderType::Capsule;
+		Source.Component = SkeletalMesh;
+		Source.SkeletalMeshComponent = SkeletalMesh;
+		Source.BoneIndex = BoneIndex;
+		Source.ElementIndex = i;
+		
+		// Extract local offset from PhysX shape
+		physx::PxVec3 LocalPos = Shape->getLocalPose().p;
+		physx::PxQuat LocalRot = Shape->getLocalPose().q;
+		Source.CachedLocalOffset = FTransform(
+			FQuat(LocalRot.x, LocalRot.y, LocalRot.z, LocalRot.w),
+			FVector(LocalPos.x, LocalPos.y, LocalPos.z)
+		);
+		
+		// Extract capsule geometry
+		physx::PxCapsuleGeometry CapsuleGeom;
+		if (Shape->getCapsuleGeometry(CapsuleGeom))
+		{
+			Source.CachedRadius = CapsuleGeom.radius;
+			float HalfHeight = CapsuleGeom.halfHeight;
+			
+			// Capsule axis in local space (PhysX capsules are along X-axis)
+			FVector LocalAxis = Source.CachedLocalOffset.GetRotation().GetRightVector();
+			Source.CachedLocalCenter = FVector(LocalPos.x, LocalPos.y, LocalPos.z);
+			Source.CachedLocalAxis = LocalAxis;
+			Source.CachedExtents = FVector(HalfHeight, 0.0f, 0.0f);
+		}
+		
+		Source.bIsDirty = true;
+		ColliderSources.Add(Source);
+		NumRegistered++;
+	}
+	
+	// Extract boxes
+	for (int32 i = 0; i < BodySetup->AggGeom.BoxElems.Num(); ++i)
+	{
+		physx::PxShape* Shape = BodySetup->AggGeom.BoxElems[i];
+		if (!Shape)
+			continue;
+		
+		FClothColliderSource Source;
+		Source.Type = EClothColliderType::Box;
+		Source.Component = SkeletalMesh;
+		Source.SkeletalMeshComponent = SkeletalMesh;
+		Source.BoneIndex = BoneIndex;
+		Source.ElementIndex = i;
+		
+		// Extract local offset from PhysX shape
+		physx::PxVec3 LocalPos = Shape->getLocalPose().p;
+		physx::PxQuat LocalRot = Shape->getLocalPose().q;
+		Source.CachedLocalOffset = FTransform(
+			FQuat(LocalRot.x, LocalRot.y, LocalRot.z, LocalRot.w),
+			FVector(LocalPos.x, LocalPos.y, LocalPos.z)
+		);
+		Source.CachedLocalRotation = FQuat(LocalRot.x, LocalRot.y, LocalRot.z, LocalRot.w);
+		
+		// Extract box geometry
+		physx::PxBoxGeometry BoxGeom;
+		if (Shape->getBoxGeometry(BoxGeom))
+		{
+			Source.CachedLocalCenter = FVector(LocalPos.x, LocalPos.y, LocalPos.z);
+			// TEMP : x2 for skeletalmesh
+            /*Source.CachedExtents = FVector(BoxGeom.halfExtents.x * 2.0f, BoxGeom.halfExtents.y * 2.0f, BoxGeom.halfExtents.z * 2.0f);*/
+            Source.CachedExtents = FVector(BoxGeom.halfExtents.x * 2.0f * SkeletalMesh->GetComponentScale3D().X,
+                BoxGeom.halfExtents.y * 2.0f * SkeletalMesh->GetComponentScale3D().Y,
+                BoxGeom.halfExtents.z * 2.0f * SkeletalMesh->GetComponentScale3D().Z);
+        }
+		
+		Source.bIsDirty = true;
+		ColliderSources.Add(Source);
+		NumRegistered++;
+	}
+	
+	if (NumRegistered > 0)
+	{
+		bGPUDirty = true;
+		UE_LOG(ELogLevel::Display,
+			TEXT("ClothCollisionManager: Registered %d skeletal colliders for bone index %d"),
+			NumRegistered, BoneIndex);
+	}
+	
+	return NumRegistered;
+}
+
+void FClothCollisionManager::UpdateSkeletalColliderTransforms(
+	USkeletalMeshComponent* SkeletalMesh,
+	const TArray<FMatrix>& BoneWorldTransforms)
+{
+	if (!SkeletalMesh)
+		return;
+	
+	// Iterate through all colliders
+	for (FClothColliderSource& Source : ColliderSources)
+	{
+		// Check if this is a collider from this skeletal mesh
+		if (Source.SkeletalMeshComponent.Get() == SkeletalMesh &&
+			Source.BoneIndex >= 0 &&
+			Source.BoneIndex < BoneWorldTransforms.Num())
+		{
+			// Compute new world transform: BoneWorld * LocalOffset
+			FTransform BoneWorldTransform(BoneWorldTransforms[Source.BoneIndex]);
+            FTransform NewWorldTransform = Source.CachedLocalOffset * BoneWorldTransform;
+			
+			// Validate transform for NaN/Inf before using
+			if (!NewWorldTransform.IsValid() || NewWorldTransform.ContainsNaN())
+			{
+				UE_LOG(ELogLevel::Warning,
+					TEXT("ClothCollisionManager: Invalid transform for skeletal collider bone %d"),
+					Source.BoneIndex);
+				continue;
+			}
+			
+			// Check if changed
+			if (!NewWorldTransform.Equals(Source.CachedTransform))
+			{
+				Source.CachedTransform = NewWorldTransform;
+				Source.bIsDirty = true;
+				bGPUDirty = true;
+			}
+		}
+	}
 }

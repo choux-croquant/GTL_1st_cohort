@@ -12,6 +12,7 @@ class UClothMeshComponent;
 class UStaticMeshComponent;
 class UStaticMesh;
 class UClothAsset;
+class UTorusComponent;
 
 /**
  * Test actor that creates a cloth attached to a moving pole
@@ -36,6 +37,7 @@ private:
     UClothMeshComponent* ClothComponent3;  // Third cloth with single vertex attachment
     UStaticMeshComponent* PoleComponent3;
     UClothMeshComponent* ClothComponent4;
+    UClothMeshComponent* ClothDropComponent; // Cloth repeatedly dropped onto torus
 
     // Animation
     float AnimationTime;
@@ -43,6 +45,14 @@ private:
     FVector InitialPole2Location;   // Store initial location for second pole oscillation
     FVector InitialPole3Location;   // Store initial location for second pole oscillation
     FVector InitialSphereLocation;  // Store initial location for sphere circular motion
+    
+    // Cloth drop loop over torus
+    float DropTimer;
+    float DropInterval;
+    float DropHeight;
+    
+    // Helpers
+    void ResetDropCloth();
     
     // Initialization guard
     bool bInitialized;

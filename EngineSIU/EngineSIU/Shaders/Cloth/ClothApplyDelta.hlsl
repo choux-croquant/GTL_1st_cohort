@@ -1,11 +1,6 @@
 /**
  * Cloth Apply Constraint Deltas
  * Applies accumulated constraint corrections to particle positions
- *
- * VELVET PATTERN (Single Working Buffer):
- * - Reads/writes PredictedBuffer IN-PLACE
- * - Averages accumulated deltas and applies with relaxation
- * - Clears delta accumulation buffers for next iteration
  */
 
 #include "ClothCommon.hlsli"
@@ -30,15 +25,12 @@ void ApplyConstraintDeltasCS(uint3 DTid : SV_DispatchThreadID)
         int3 deltaInt = PositionDelta[idx];
         float3 delta = float3(deltaInt) / kScale;
 
-        // Weight is now constraint count (not invMass sum)
         float weight = (float)weightFixed;
         if (weight > 0.0f)
         {
             // Average the accumulated deltas from all constraints
             float3 avgDelta = delta / weight;
 
-            // Apply relaxation factor only (stiffness already applied in constraint solver)
-            // CRITICAL FIX: Removed double application of StretchStiffness
             PredictedBuffer[idx].Position += avgDelta * RelaxationFactor;
         }
         

@@ -1,6 +1,7 @@
 #define MAX_NUM_CAPSULE  100
 #define MAX_NUM_BOX      100
 #define MAX_NUM_SPHERE   100
+#define MAX_NUM_TORUS    100
 
 struct BoxData
 {
@@ -74,4 +75,18 @@ struct CapsuleData
 cbuffer ConstantBufferDebugCapsule : register(b11)
 {
     CapsuleData DataCapsule[MAX_NUM_CAPSULE];
+}
+
+struct TorusData
+{
+    row_major matrix WorldMatrix;
+    float3 Axis;
+    float MajorRadius;
+    float MinorRadius;
+    float3 Padding;
+};
+
+cbuffer ConstantBufferDebugTorus : register(b11)
+{
+    TorusData DataTorus[MAX_NUM_TORUS];
 }

@@ -62,7 +62,6 @@ void SolveBendConstraintsCS(uint3 DTid : SV_DispatchThreadID)
     float3 pC = PredictedRead[idxC].Position;
     float3 pD = PredictedRead[idxD].Position;
 
-    // === STEP 1: Compute edge and triangle normals ===
     // Shared edge
     float3 e = pB - pA;
     float eLen = length(e);
@@ -88,7 +87,6 @@ void SolveBendConstraintsCS(uint3 DTid : SV_DispatchThreadID)
     float3 n1Norm = n1 / n1Len;
     float3 n2Norm = n2 / n2Len;
 
-    // === STEP 2: Compute signed dihedral angle ===
     // Angle between normals
     float cosAngle = clamp(dot(n1Norm, n2Norm), -1.0f, 1.0f);
     float phi = acos(cosAngle);
@@ -101,10 +99,8 @@ void SolveBendConstraintsCS(uint3 DTid : SV_DispatchThreadID)
     if (angleSign < 0.0f)
         phi = -phi;
 
-    // === STEP 3: Compute constraint error ===
     float C = BendStiffness * (phi - restAngle);
 
-    // === STEP 4: Compute constraint gradients ===
     // Standard dihedral angle gradients (from Macklin/Bender)
     // Gradients for opposite vertices (simple):
     float3 gradC = (eLen / n1LenSq) * n1;
@@ -118,7 +114,6 @@ void SolveBendConstraintsCS(uint3 DTid : SV_DispatchThreadID)
     float3 gradA = -(1.0f - factorC) * gradC + (1.0f - factorD) * gradD;
     float3 gradB = -factorC * gradC + factorD * gradD;
 
-    // === STEP 5: Compute XPBD denominator ===
     float denom =
         wA * dot(gradA, gradA) +
         wB * dot(gradB, gradB) +
@@ -127,7 +122,6 @@ void SolveBendConstraintsCS(uint3 DTid : SV_DispatchThreadID)
 
     if (denom < EPSILON) return;
 
-    // === STEP 6: Pure XPBD update (NO STIFFNESS) ===
     // Compliance term: alpha = compliance / dt^2
     // If compliance = 0, constraint is hard (infinite stiffness)
     float alpha = (constraint.Compliance > EPSILON) 
@@ -147,22 +141,12 @@ void SolveBendConstraintsCS(uint3 DTid : SV_DispatchThreadID)
     // Write back updated lambda for next iteration/frame
     BendConstraints[id].Lambda = lambdaNew;
 
-    // === STEP 7: Compute position corrections ===
     // deltax_i = -w_i * deltaLambda * grad_i
     float3 corrA = -wA * deltaLambda * gradA;
     float3 corrB = -wB * deltaLambda * gradB;
     float3 corrC = -wC * deltaLambda * gradC;
     float3 corrD = -wD * deltaLambda * gradD;
 
-#if DEBUG_BEND
-    if (id == DEBUG_ID)
-    {
-        // Debug: could store values in padding or use debug buffer
-        // For now, just a marker that debug is enabled
-    }
-#endif
-
-    // === STEP 8: Accumulate corrections (fixed-point for atomics) ===
     int3 deltaA = int3(corrA * kScale);
     int3 deltaB = int3(corrB * kScale);
     int3 deltaC = int3(corrC * kScale);

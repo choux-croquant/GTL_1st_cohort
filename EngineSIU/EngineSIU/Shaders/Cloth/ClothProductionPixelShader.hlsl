@@ -38,17 +38,14 @@ float3 ApplyNormalMap(float3 sampledNormal, float3 worldNormal, float4 worldTang
  */
 float4 main(PS_INPUT_ClothMesh Input) : SV_TARGET
 {
-    // 1. Sample base color (albedo)
     float3 baseColor = Material.DiffuseColor;
     if (Material.TextureFlag & TEXTURE_FLAG_DIFFUSE)
     {
         float4 albedoSample = MaterialTextures[TEXTURE_SLOT_DIFFUSE].Sample(SamplerLinearWrap, Input.UV);
         baseColor = SRGBToLinear(albedoSample.rgb);
-        //return float4(Input.UV.x, Input.UV.y, 0.0f, 1.0f);
-        //return albedoSample;
     }
-    //return float4(1.0f, 0.0f, 0.0f, 1.0f);
-    // 2. Sample and apply normal map (with robust fallbacks for zero normals/tangents)
+    
+    // Sample and apply normal map (with robust fallbacks for zero normals/tangents)
     float3 worldNormal = Input.WorldNormal;
     if (!Input.IsFrontFace)
     {
@@ -60,7 +57,9 @@ float4 main(PS_INPUT_ClothMesh Input) : SV_TARGET
     {
         worldNormal = float3(0, 0, 1);
     }
+    
     worldNormal = normalize(worldNormal);
+    
     // Normal map path remains optional; enable when material flag is set.
     if (Material.TextureFlag & TEXTURE_FLAG_NORMAL)
     {
@@ -75,25 +74,23 @@ float4 main(PS_INPUT_ClothMesh Input) : SV_TARGET
             float3 rebuiltTangent = normalize(cross(axis, worldNormal));
             safeTangent = float4(rebuiltTangent, 1.0);
         }
-
-        //worldNormal = ApplyNormalMap(normalSample, worldNormal, safeTangent);
     }
 
-    // 3. Sample metallic
+    // Sample metallic
     float metallic = Material.Metallic;
     if (Material.TextureFlag & TEXTURE_FLAG_METALLIC)
     {
         metallic = MaterialTextures[TEXTURE_SLOT_METALLIC].Sample(SamplerLinearWrap, Input.UV).r;
     }
     
-    // 4. Sample roughness
+    // Sample roughness
     float roughness = Material.Roughness;
     if (Material.TextureFlag & TEXTURE_FLAG_ROUGHNESS)
     {
         roughness = MaterialTextures[TEXTURE_SLOT_ROUGHNESS].Sample(SamplerLinearWrap, Input.UV).r;
     }
     
-    // 5. Sample emissive
+    // Sample emissive
     float3 emissive = Material.EmissiveColor;
     if (Material.TextureFlag & TEXTURE_FLAG_EMISSIVE)
     {
@@ -101,10 +98,9 @@ float4 main(PS_INPUT_ClothMesh Input) : SV_TARGET
         emissive = SRGBToLinear(emissiveSample);
     }
     
-    // 6. Calculate lighting using PBR model
+    // Calculate lighting using PBR model
     float baseAlpha = 1.0; // Cloth is typically opaque
     
-       // Simplified directional lighting for cloth (no shadows, no tile culling)
     float3 accumulatedDiffuse = float3(0.0, 0.0, 0.0);
     float3 accumulatedSpecular = float3(0.0, 0.0, 0.0);
 
@@ -136,7 +132,6 @@ float4 main(PS_INPUT_ClothMesh Input) : SV_TARGET
         float FdV = 1.0 + (Fd90 - 1.0) * pow(1.0 - NdotV, 5.0);
         float3 diffuse = (baseColor * (1.0 - metallic) * FdL * FdV) / 3.14159265359;
 
-        // Cook-Torrance Specular (GGX)
         float alpha = max(0.001, roughness2);
         float a2 = alpha * alpha;
         float denom = (NdotH * NdotH) * (a2 - 1.0) + 1.0;
@@ -170,15 +165,7 @@ float4 main(PS_INPUT_ClothMesh Input) : SV_TARGET
     // Combine diffuse and specular
     float4 litColor = float4(accumulatedDiffuse + accumulatedSpecular, baseAlpha);
     
-    // 7. Add emissive contribution
     litColor.rgb += emissive;
     
-    // 8. Two-sided lighting support
-    // If backfacing, flip the normal for lighting (already handled by rasterizer state)
-    // The rasterizer is set to D3D11_CULL_NONE, so both sides render
-    //litColor.rgb = LinearToSRGB(litColor.rgb);
-    
     return litColor;
-    // Shader connection TEST Color;
-    //return float4(1.0f, 0.0f, 0.0f, 1.0f);
 }

@@ -380,27 +380,32 @@ void UClothComponent::BindAttachmentToBone(uint32 SimVertexIndex, USkeletalMeshC
         return;
     }
     
-    // Resolve bone index
-    //int32 boneIndex = SkeletalMesh->GetBoneIndex(BoneName);
-    //if (boneIndex == INDEX_NONE)
-    //{
-    //    UE_LOG(ELogLevel::Error, TEXT("ClothComponent: Bone '%s' not found in skeletal mesh"),
-    //           *BoneName.ToString());
-    //    return;
-    //}
-    //
-    //FClothAttachmentTarget target;
-    //target.Type = EClothAttachmentType::SkeletalBone;
-    //target.DriverComponent = SkeletalMesh;
-    //target.BoneName = BoneName;
-    //target.BoneIndex = boneIndex;
-    //target.LocalOffset = LocalOffset;
-    //
-    //// Get initial world position from bone transform
-    //FTransform boneTransform = SkeletalMesh->GetBoneTransform(boneIndex);
-    //target.WorldPosition = boneTransform.TransformPosition(LocalOffset.GetLocation());
-    //
-    //BindAttachment(SimVertexIndex, target, Stiffness, AttachDistance);
+    // STEP 1: Resolve bone index
+    int32 BoneIndex = SkeletalMesh->GetBoneIndex(BoneName);
+    if (BoneIndex == INDEX_NONE)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ClothComponent: Bone '%s' not found in skeletal mesh"),
+               *BoneName.ToString());
+        return;
+    }
+    
+    // STEP 2: Create attachment target
+    FClothAttachmentTarget Target;
+    Target.Type = EClothAttachmentType::SkeletalBone;
+    Target.DriverComponent = SkeletalMesh;
+    Target.BoneName = BoneName;
+    Target.BoneIndex = BoneIndex;
+    Target.LocalOffset = LocalOffset;
+    
+    // STEP 3: Get initial world position from bone transform
+    FTransform BoneTransform = SkeletalMesh->GetBoneTransform(BoneIndex);
+    Target.WorldPosition = BoneTransform.TransformPosition(LocalOffset.GetTranslation());
+    
+    // STEP 4: Bind attachment using common path
+    BindAttachment(SimVertexIndex, Target, Stiffness, AttachDistance);
+    
+    UE_LOG(ELogLevel::Display, TEXT("ClothComponent: Bound vertex %d to bone '%s' (index %d)"),
+           SimVertexIndex, *BoneName.ToString(), BoneIndex);
 }
 
 bool UClothComponent::UnbindAttachment(uint32 SimVertexIndex)

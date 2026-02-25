@@ -1,6 +1,7 @@
 AnimFSM = {
     currentState = "Idle",
-    idleAnimation = "Contents/Enemy_Idle/Armature|Enemy_Idle",
+    -- idleAnimation = "Contents/Enemy_Idle/Armature|Enemy_Idle",
+    idleAnimation = "Contents/Injured_Idle/Armature|Injured_Idle",
     attackAnimations = {
         "Contents/Horizontal1/Armature|Horizontal1",
         "Contents/Horizontal2/Armature|Horizontal2",

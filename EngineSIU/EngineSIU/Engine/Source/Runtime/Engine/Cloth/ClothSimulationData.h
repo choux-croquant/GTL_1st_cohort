@@ -21,28 +21,24 @@ struct FClothConfig
 {
     // Global simulation settings
     //FVector Gravity = {0.0f, 0.0f, -980.0f};
-    FVector Gravity = { 0.0f, 0.0f, -700.0f };
+    FVector Gravity = { 0.0f, 0.0f, -0.0f };
     float Mass = 1.0f;
     float Damping = 5.0f;
 
-    // Constraint stiffness (0-1)
     float StretchStiffness = 0.9f;
     float BendStiffness = 0.9f;
-    float AreaStiffness = 0.001f; // NEW: Area constraint stiffness (0-1)
+    float AreaStiffness = 0.001f;
     float AttachStiffness = 1.0f;
-    float LongRangeStretchiness = 1.2f; // NEW: LRA slack multiplier (Velvet default)
+    float LongRangeStretchiness = 1.2f;
 
     // Solver settings
     int32 NumIterations = 5;
-    float TimeStep = 0.016f; // Fixed 60fps or variable
-    bool bUseXPBD = false;   // Use XPBD instead of PBD
+    float TimeStep = 0.016f;
+    bool bUseXPBD = false;
 
-    // NEW: Substep settings (Velvet-inspired)
-    int32 NumSubsteps = 5;                  // How many substeps per frame time
-    float FixedSubstepTime = 1.0f / 600.0f; // Target substep dt (120 Hz default)
-    int32 MaxSubstepsPerFrame = 10;         // Safety limit to prevent death spiral
-    float MaxSpeed = 300.0f;               // Velocity clamping (cm/s)
-    float RelaxationFactor = 1.0f;          // Jacobi convergence control
+    int32 NumSubsteps = 5;
+    float MaxSpeed = 300.0f;
+    float RelaxationFactor = 1.0f;
 
     // Wind and drag
     float AirDrag = 1.0f;
@@ -54,7 +50,6 @@ struct FClothConfig
     bool bEnableSelfCollision = true;
     
     // Self-collision parameters (REFACTORED: Now use multipliers for adaptive computation)
-    // MULTIPLIERS (applied to adaptive base values computed from mesh topology)
     float SelfCollisionRadiusMultiplier = 0.75f;      // × (AvgEdgeLength × 0.5)
     float SelfCollisionStiffnessMultiplier = 0.3f;   // × adaptive base stiffness
     float SelfCollisionCellSizeMultiplier = 1.0f;    // × (AvgEdgeLength × 1.5)
@@ -62,13 +57,11 @@ struct FClothConfig
     // Grid capacity (still absolute, but computed adaptively per instance)
     uint32 SelfCollisionMaxPerCell = 32;   // Max particles per cell (safety limit)
     
-    // NEW: Dynamic bounds tracking parameters
     float BoundsUpdateMotionThreshold = 0.15f;  // Trigger update when motion exceeds 15% of bounds size
     uint32 BoundsUpdateMaxFrames = 60;          // Force update every N frames regardless of motion
     bool bEnableDynamicBoundsUpdate = true;     // Enable/disable dynamic bounds tracking
     
     // DEPRECATED (kept for backwards compatibility, but ignored in favor of multipliers)
-    float SelfCollisionRadius = 0.01f;      // DEPRECATED: Use SelfCollisionRadiusMultiplier instead
     float SelfCollisionStiffness = 1.0f;   // DEPRECATED: Use SelfCollisionStiffnessMultiplier instead
     uint32 SelfCollisionGridDim = 32;       // DEPRECATED: Computed adaptively from mesh bounds
     
@@ -86,8 +79,8 @@ struct FClothDistanceConstraint
     uint32 ParticleB;
     float RestLength; // For distance constraints
     float Stiffness;  // Per-constraint stiffness
-    float Compliance; // XPBD용
-    float Lambda;     // XPBD용 상태
+    float Compliance;
+    float Lambda;
 
     FClothDistanceConstraint()
         : ParticleA(0), ParticleB(0), RestLength(0.0f), Stiffness(1.0f), Compliance(0.0f), Lambda(0.0f)
@@ -95,14 +88,14 @@ struct FClothDistanceConstraint
     }
 
     FClothDistanceConstraint(uint32 InA, uint32 InB, float InRestLength, float InStiffness = 1.0f)
-        : ParticleA(InA), ParticleB(InB), RestLength(InRestLength), Stiffness(InStiffness), Compliance(0.0f) // 기본값: hard constraint
+        : ParticleA(InA), ParticleB(InB), RestLength(InRestLength), Stiffness(InStiffness), Compliance(0.0f)
           ,
-          Lambda(0.0f) // 누적값 초기화
+          Lambda(0.0f)
     {
     }
 
     FClothDistanceConstraint(uint32 InA, uint32 InB, float InRestLength, float InStiffness, float InCompliance)
-        : ParticleA(InA), ParticleB(InB), RestLength(InRestLength), Stiffness(InStiffness), Compliance(InCompliance), Lambda(0.0f) // 누적값은 항상 0으로 시작
+        : ParticleA(InA), ParticleB(InB), RestLength(InRestLength), Stiffness(InStiffness), Compliance(InCompliance), Lambda(0.0f)
     {
     }
 };
@@ -128,7 +121,6 @@ struct FClothBendConstraint
     {
     }
 
-    // 선택: XPBD 파라미터를 직접 지정하는 생성자
     FClothBendConstraint(uint32 InA, uint32 InB, uint32 InC, uint32 InD, float InRestAngle, float InStiffness, float InCompliance)
         : ParticleA(InA), ParticleB(InB), ParticleC(InC), ParticleD(InD), RestAngle(InRestAngle), Stiffness(InStiffness), Compliance(InCompliance), Lambda(0.0f)
     {
@@ -435,8 +427,6 @@ inline FArchive &operator<<(FArchive &Ar, FClothConfig &Cfg)
 
     // NEW: Substep parameters
     Ar << Cfg.NumSubsteps;
-    Ar << Cfg.FixedSubstepTime;
-    Ar << Cfg.MaxSubstepsPerFrame;
     Ar << Cfg.MaxSpeed;
     Ar << Cfg.RelaxationFactor;
 
@@ -459,7 +449,6 @@ inline FArchive &operator<<(FArchive &Ar, FClothConfig &Cfg)
     Ar << Cfg.bEnableDynamicBoundsUpdate;
     
     // DEPRECATED: Old absolute values (kept for backwards compatibility)
-    Ar << Cfg.SelfCollisionRadius;
     Ar << Cfg.SelfCollisionStiffness;
     Ar << Cfg.SelfCollisionGridDim;
     

@@ -245,24 +245,31 @@ struct FClothCollisionCapsule
 
 /**
  * Unified collider structure (HLSL)
- * Single structure for all collider types (sphere/capsule/box)
+ * Single structure for all collider types (sphere/capsule/box/torus)
  * Must match FClothColliderGPU in ClothGPUStructs.h
+ *
+ * CRITICAL: HLSL packing rules require explicit padding after float3
+ * to match C++ struct layout (FVector is 12 bytes, but float3 aligns to 16)
  */
 struct FClothCollider
 {
-    uint Type;              // 0=Sphere, 1=Capsule, 2=Box
-    float Radius;
-    float HalfHeight;       // For capsule only
-    float Padding0;
+    uint Type;              // 4 bytes - 0=Sphere, 1=Capsule, 2=Box, 3=Torus
+    float Radius;           // 4 bytes
+    float HalfHeight;       // 4 bytes - Capsule half-height / Torus major radius
+    float Padding0;         // 4 bytes
+    // Subtotal: 16 bytes
     
-    float3 Center;          // World-space center
-    float Padding1;
+    float3 Center;          // 12 bytes - World-space center
+    float Padding1;         // 4 bytes - REQUIRED for C++ alignment
+    // Subtotal: 16 bytes (offset 16)
     
-    float3 Axis;            // Capsule axis (normalized)
-    float Padding2;
+    float3 Axis;            // 12 bytes - Capsule/Torus axis (normalized)
+    float Padding2;         // 4 bytes - REQUIRED for C++ alignment
+    // Subtotal: 16 bytes (offset 32)
     
-    float3 Extents;         // Box half-extents
-    float Padding3;
+    float3 Extents;         // 12 bytes - Box half-extents
+    float Padding3;         // 4 bytes - REQUIRED for C++ alignment
+    // Total: 64 bytes (offset 48)
 };
 
 /**

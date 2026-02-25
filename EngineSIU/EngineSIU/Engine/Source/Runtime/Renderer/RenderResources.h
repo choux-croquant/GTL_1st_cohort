@@ -81,6 +81,7 @@ struct FRenderResourcesDebug
         TArray<class UBoxComponent*> BoxComponents;
         TArray<class USphereComponent*> SphereComponents;
         TArray<class UCapsuleComponent*> CapsuleComponents;
+        TArray<class UTorusComponent*> TorusComponents;
     } Components;
 
     struct FPrimitiveResourceContainer
@@ -90,6 +91,7 @@ struct FRenderResourcesDebug
         FDebugPrimitiveData Cone;
         FDebugPrimitiveData Arrow;
         FDebugPrimitiveData Capsule;
+        FDebugPrimitiveData Torus;
     } Primitives;
 
     TMap<EIconType, std::shared_ptr<FTexture>> IconTextures; // 사용 X

@@ -10,7 +10,7 @@ class ACharacterClothTest : public AActor
 {
     DECLARE_CLASS(ACharacterClothTest, AActor)
 public:
-    ACharacterClothTest() = default;
+    ACharacterClothTest();
 
     virtual void PostSpawnInitialize() override;
 
@@ -22,4 +22,7 @@ public:
   
 public:
     FTransform InitialTransform;
+
+private:
+    bool bInitialized;
 };
