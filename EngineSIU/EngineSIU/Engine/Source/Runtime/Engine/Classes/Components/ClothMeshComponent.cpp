@@ -482,3 +482,141 @@ float UClothMeshComponent::GetEffectiveRestLengthMultiplier() const
 {
     return ClothMaterial ? ClothMaterial->RestLengthMultiplier : RestLengthMultiplier;
 }
+
+// ===== ATTACHMENT PAINTING FUNCTIONS (Phase 2) =====
+
+void UClothMeshComponent::AutoSelectTopVertices()
+{
+    if (!GeneratedClothAsset)
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("AutoSelectTopVertices: No cloth asset generated yet"));
+        return;
+    }
+
+    SelectedVertexIndices.Empty();
+
+    const TArray<FVector>& RestPositions = GeneratedClothAsset->RestPositions;
+    if (RestPositions.Num() == 0)
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("AutoSelectTopVertices: No vertices in cloth asset"));
+        return;
+    }
+
+    // Find Z range
+    float MaxZ = -FLT_MAX;
+    float MinZ = FLT_MAX;
+    for (const FVector& Pos : RestPositions)
+    {
+        MaxZ = FMath::Max(MaxZ, Pos.Z);
+        MinZ = FMath::Min(MinZ, Pos.Z);
+    }
+
+    float ZRange = MaxZ - MinZ;
+    float AttachThreshold = MaxZ - (ZRange * (1.0f - AttachmentZThreshold));
+
+    // Collect vertices above threshold
+    for (int32 i = 0; i < RestPositions.Num(); ++i)
+    {
+        if (RestPositions[i].Z >= AttachThreshold)
+        {
+            SelectedVertexIndices.Add(i);
+        }
+    }
+
+    UE_LOG(ELogLevel::Display, TEXT("AutoSelectTopVertices: Selected %d vertices (Z >= %.2f, threshold=%.2f)"),
+        SelectedVertexIndices.Num(), AttachThreshold, AttachmentZThreshold);
+}
+
+void UClothMeshComponent::AssignBoneToSelection()
+{
+    if (!GeneratedClothAsset)
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("AssignBoneToSelection: No cloth asset generated yet"));
+        return;
+    }
+
+    if (SelectedVertexIndices.Num() == 0)
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("AssignBoneToSelection: No vertices selected. Call AutoSelectTopVertices() first."));
+        return;
+    }
+
+    if (TargetBoneName == NAME_None)
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("AssignBoneToSelection: No target bone specified"));
+        return;
+    }
+
+    // Create or update paint data for selected vertices
+    for (uint32 VertexIndex : SelectedVertexIndices)
+    {
+        // Check if paint data already exists for this vertex
+        FClothAttachmentPaintData* ExistingData = GeneratedClothAsset->AttachmentPaintData.FindByPredicate(
+            [VertexIndex](const FClothAttachmentPaintData& Data)
+            {
+                return Data.SimVertexIndex == VertexIndex;
+            }
+        );
+
+        if (ExistingData)
+        {
+            // Update existing entry
+            ExistingData->BoneName = TargetBoneName;
+            ExistingData->bHasBoneAssignment = true;
+            ExistingData->KinematicWeight = KinematicWeight;
+            ExistingData->Stiffness = AttachmentStiffness;
+            ExistingData->AttachDistance = AttachmentDistance;
+            ExistingData->bIsActive = true;
+        }
+        else
+        {
+            // Create new entry
+            FClothAttachmentPaintData NewData;
+            NewData.SimVertexIndex = VertexIndex;
+            NewData.BoneName = TargetBoneName;
+            NewData.bHasBoneAssignment = true;
+            NewData.KinematicWeight = KinematicWeight;
+            NewData.Stiffness = AttachmentStiffness;
+            NewData.AttachDistance = AttachmentDistance;
+            NewData.bIsActive = true;
+            NewData.DebugLabel = FString::Printf(TEXT("Vertex_%d"), VertexIndex);
+
+            GeneratedClothAsset->AttachmentPaintData.Add(NewData);
+        }
+    }
+
+    UE_LOG(ELogLevel::Display, TEXT("AssignBoneToSelection: Assigned bone '%s' to %d vertices"),
+        *TargetBoneName.ToString(), SelectedVertexIndices.Num());
+}
+
+void UClothMeshComponent::ApplyAttachmentPaintDataToAsset()
+{
+    if (!GeneratedClothAsset)
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("ApplyAttachmentPaintDataToAsset: No cloth asset generated yet"));
+        return;
+    }
+
+    // Mark asset as modified (for serialization)
+    // In a real engine, you would call MarkPackageDirty() or similar
+    UE_LOG(ELogLevel::Display, TEXT("ApplyAttachmentPaintDataToAsset: Saved %d attachment entries to asset"),
+        GeneratedClothAsset->AttachmentPaintData.Num());
+
+    // Clear selection after applying
+    SelectedVertexIndices.Empty();
+}
+
+void UClothMeshComponent::ClearAttachmentPaintData()
+{
+    if (!GeneratedClothAsset)
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("ClearAttachmentPaintData: No cloth asset generated yet"));
+        return;
+    }
+
+    int32 Count = GeneratedClothAsset->AttachmentPaintData.Num();
+    GeneratedClothAsset->AttachmentPaintData.Empty();
+    SelectedVertexIndices.Empty();
+
+    UE_LOG(ELogLevel::Display, TEXT("ClearAttachmentPaintData: Cleared %d attachment entries"), Count);
+}

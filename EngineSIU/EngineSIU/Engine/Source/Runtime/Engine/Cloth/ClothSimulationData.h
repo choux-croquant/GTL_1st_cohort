@@ -296,6 +296,44 @@ struct FClothAttachmentBinding
 };
 
 /**
+ * EDIT MODE: Attachment paint data (authoring)
+ * Per-vertex attachment data authored in Edit Mode and applied at runtime
+ * Stored in UClothAsset for serialization and PIE apply
+ */
+struct FClothAttachmentPaintData
+{
+    uint32 SimVertexIndex;           // Which simulation vertex
+    
+    // Bone assignment
+    FName BoneName;                  // Target bone name (e.g., "mixamorig:Neck")
+    bool bHasBoneAssignment;         // Whether bone is assigned
+    
+    // Kinematic weight (0.0 = free, 1.0 = fully pinned)
+    float KinematicWeight;           // Paint weight [0.0, 1.0]
+    
+    // Constraint parameters
+    float Stiffness;                 // Attachment stiffness [0.0, 1.0]
+    float AttachDistance;            // LRA distance (0.0 = hard kinematic)
+    
+    // NOTE: LocalOffset is NOT stored - computed at Apply time from RestPosition and BoneTransform
+    // This preserves cloth shape across different transforms
+    
+    // Metadata
+    bool bIsActive;                  // Enable/disable this attachment
+    FString DebugLabel;              // Optional: "LeftShoulder", "Collar", etc.
+    
+    FClothAttachmentPaintData()
+        : SimVertexIndex(0)
+        , BoneName(NAME_None)
+        , bHasBoneAssignment(false)
+        , KinematicWeight(0.0f)
+        , Stiffness(1.0f)
+        , AttachDistance(0.0f)
+        , bIsActive(true)
+    {}
+};
+
+/**
  * DEPRECATED: Old attachment data structure (kept for backward compatibility during migration)
  * Will be removed after full migration to new system
  * Use FClothAttachmentCapability (asset) + FClothAttachmentBinding (instance) instead
@@ -570,6 +608,20 @@ inline FArchive &operator<<(FArchive &Ar, FClothAttachmentBinding &B)
     Ar << B.Stiffness;
     Ar << B.AttachDistance;
     Ar << B.bIsActive;
+    return Ar;
+}
+
+// NEW: Serialization for FClothAttachmentPaintData (edit mode authoring)
+inline FArchive &operator<<(FArchive &Ar, FClothAttachmentPaintData &P)
+{
+    Ar << P.SimVertexIndex;
+    Ar << P.BoneName;
+    Ar << P.bHasBoneAssignment;
+    Ar << P.KinematicWeight;
+    Ar << P.Stiffness;
+    Ar << P.AttachDistance;
+    Ar << P.bIsActive;
+    Ar << P.DebugLabel;
     return Ar;
 }
 

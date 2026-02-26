@@ -281,101 +281,10 @@ UObject* ACharacterClothTest::Duplicate(UObject* InOuter)
 
     UE_LOG(ELogLevel::Display, TEXT("TestClothSkeletalAttachmentActor: Cape registered with cloth world"));
 
-    // ===== STEP 5: Attach top vertices of cape to character bones =====
-    UClothAsset* CapeAsset = CapeCloth->GeneratedClothAsset;
-    if (!CapeAsset)
-    {
-        UE_LOG(ELogLevel::Error, TEXT("TestClothSkeletalAttachmentActor: No cloth asset available for attachment"));
-        return NewActor;
-    }
-
-    // Find vertices to attach (top vertices by Z coordinate)
-    TArray<uint32> TopVertices;
-    float MaxZ = -FLT_MAX;
-    float MinZ = FLT_MAX;
-
-    // Find Z range
-    for (const FVector& Pos : CapeAsset->RestPositions)
-    {
-        MaxZ = FMath::Max(MaxZ, Pos.Z);
-        MinZ = FMath::Min(MinZ, Pos.Z);
-    }
-
-    float ZRange = MaxZ - MinZ;
-    float AttachThreshold = MaxZ - (ZRange * 0.10f);  // Top 10% by Z
-
-    // Collect top vertices
-    for (int32 i = 0; i < CapeAsset->RestPositions.Num(); ++i)
-    {
-        if (CapeAsset->RestPositions[i].Z >= AttachThreshold)
-        {
-            TopVertices.Add(i);
-        }
-    }
-
-    UE_LOG(ELogLevel::Display, TEXT("TestClothSkeletalAttachmentActor: Found %d vertices to attach (Z >= %.2f)"),
-        TopVertices.Num(), AttachThreshold);
-
-    if (TopVertices.Num() == 0)
-    {
-        UE_LOG(ELogLevel::Warning, TEXT("TestClothSkeletalAttachmentActor: No vertices found for attachment"));
-        bInitialized = true;
-        return NewActor;
-    }
-
-    // Try to find Neck bone
-    FName NeckBoneName = FName(TEXT("mixamorig:Neck"));
-    int32 NeckBoneIndex = SkeletalMeshComponent->GetBoneIndex(NeckBoneName);
-
-    if (NeckBoneIndex == INDEX_NONE)
-    {
-        UE_LOG(ELogLevel::Warning,
-            TEXT("TestClothSkeletalAttachmentActor: Neck bone not found, skipping attachment"));
-    }
-    else
-    {
-        UE_LOG(ELogLevel::Display,
-            TEXT("TestClothSkeletalAttachmentActor: Using BONE ATTACHMENT mode (Neck bone)"));
-
-        // Get the neck bone transform to calculate proper local offsets
-        FTransform NeckBoneTransform = SkeletalMeshComponent->GetBoneTransform(NeckBoneIndex);
-        FMatrix NeckBoneMatrix = NeckBoneTransform.ToMatrixWithScale();
-        FMatrix InverseNeckBoneMatrix = FMatrix::Inverse(NeckBoneMatrix);
-
-        // Attach all top vertices to the Neck bone with local offsets that preserve rest shape
-        for (uint32 VertexIndex : TopVertices)
-        {
-            // Get the vertex rest position in world space (assuming cloth is at origin initially)
-            FVector VertexRestPos = CapeAsset->RestPositions[VertexIndex];
-            
-            // Transform vertex position to bone local space
-            // This preserves the original shape by calculating the offset from the bone
-            FVector LocalOffset = InverseNeckBoneMatrix.TransformPosition(VertexRestPos);
-
-            FQuat LocalRotation = NeckBoneTransform.GetRotation().Inverse();
-
-            FTransform LocalTransform;
-            LocalTransform.SetTranslation(LocalOffset);
-            //LocalTransform.SetTranslation(FVector::OneVector);
-            //LocalTransform.SetRotation(FQuat::Identity);
-            LocalTransform.SetRotation(LocalRotation);
-            LocalTransform.SetScale3D(FVector::OneVector);
-
-            CapeCloth->BindAttachmentToBone(
-                VertexIndex,
-                SkeletalMeshComponent,
-                NeckBoneName,
-                LocalTransform,
-                1.0f,   // Stiffness (1.0 = hard constraint)
-                0.0f    // AttachDistance (0.0 = kinematic, no stretch)
-            );
-        }
-
-        UE_LOG(ELogLevel::Display,
-            TEXT("TestClothSkeletalAttachmentActor: Successfully attached %d vertices to Neck bone with shape-preserving offsets"),
-            TopVertices.Num());
-    }
-
+    // ===== STEP 5: Apply attachment data from asset (NEW: Data-Driven) =====
+    // Replace hardcoded Z-threshold and bone assignment with data from AttachmentPaintData
+    ApplyAttachmentPaintData(CapeCloth, SkeletalMeshComponent);
+    
     UE_LOG(ELogLevel::Display, TEXT("TestClothSkeletalAttachmentActor: Total attachments: %d"),
         CapeCloth->GetAttachmentCount());
 
@@ -383,4 +292,103 @@ UObject* ACharacterClothTest::Duplicate(UObject* InOuter)
     UE_LOG(ELogLevel::Display, TEXT("TestClothSkeletalAttachmentActor: Initialization complete!"));
 
     return NewActor;
+}
+
+// ===== NEW: Data-Driven Attachment System =====
+
+void ACharacterClothTest::ApplyAttachmentPaintData(
+    UClothMeshComponent* ClothComp,
+    USkeletalMeshComponent* SkelMeshComp
+)
+{
+    if (!ClothComp || !SkelMeshComp)
+    {
+        UE_LOG(ELogLevel::Error, TEXT("ApplyAttachmentPaintData: Null component passed"));
+        return;
+    }
+
+    UClothAsset* ClothAsset = ClothComp->GetClothAsset();
+    if (!ClothAsset)
+    {
+        UE_LOG(ELogLevel::Warning, TEXT("ApplyAttachmentPaintData: No cloth asset found"));
+        return;
+    }
+
+    if (ClothAsset->AttachmentPaintData.Num() == 0)
+    {
+        UE_LOG(ELogLevel::Display, TEXT("ApplyAttachmentPaintData: No attachment paint data found (cloth will be free)"));
+        return;
+    }
+
+    int32 SuccessCount = 0;
+    int32 SkipCount = 0;
+
+    UE_LOG(ELogLevel::Display, TEXT("ApplyAttachmentPaintData: Processing %d attachment entries"),
+        ClothAsset->AttachmentPaintData.Num());
+
+    for (const FClothAttachmentPaintData& PaintData : ClothAsset->AttachmentPaintData)
+    {
+        // Skip inactive or unassigned attachments
+        if (!PaintData.bIsActive || !PaintData.bHasBoneAssignment)
+        {
+            SkipCount++;
+            continue;
+        }
+
+        // Validate vertex index
+        if (PaintData.SimVertexIndex >= (uint32)ClothAsset->RestPositions.Num())
+        {
+            UE_LOG(ELogLevel::Error, TEXT("ApplyAttachmentPaintData: Invalid vertex index %d (max %d)"),
+                PaintData.SimVertexIndex, ClothAsset->RestPositions.Num());
+            SkipCount++;
+            continue;
+        }
+
+        // Validate bone exists
+        int32 BoneIndex = SkelMeshComp->GetBoneIndex(PaintData.BoneName);
+        if (BoneIndex == INDEX_NONE)
+        {
+            UE_LOG(ELogLevel::Warning, TEXT("ApplyAttachmentPaintData: Bone '%s' not found, skipping vertex %d"),
+                *PaintData.BoneName.ToString(), PaintData.SimVertexIndex);
+            SkipCount++;
+            continue;
+        }
+
+        // Compute local offset from rest position and bone transform
+        // This preserves the cloth shape regardless of initial transforms
+        FVector VertexRestPos = ClothAsset->RestPositions[PaintData.SimVertexIndex];
+        FTransform BoneTransform = SkelMeshComp->GetBoneTransform(BoneIndex);
+        
+        // Transform vertex from cloth local space to bone local space
+        FVector LocalOffset = BoneTransform.InverseTransformPosition(VertexRestPos);
+
+        // Create local transform
+        FTransform LocalTransform;
+        LocalTransform.SetTranslation(LocalOffset);
+        LocalTransform.SetRotation(BoneTransform.GetRotation().Inverse());
+        LocalTransform.SetScale3D(FVector::OneVector);
+
+        // Bind attachment using paint data parameters
+        ClothComp->BindAttachmentToBone(
+            PaintData.SimVertexIndex,
+            SkelMeshComp,
+            PaintData.BoneName,
+            LocalTransform,
+            PaintData.Stiffness,
+            PaintData.AttachDistance
+        );
+
+        SuccessCount++;
+
+        // Log first few attachments for debugging
+        if (SuccessCount <= 3)
+        {
+            UE_LOG(ELogLevel::Display, TEXT("ApplyAttachmentPaintData: Vertex %d → Bone '%s' (Weight=%.2f, Stiffness=%.2f)"),
+                PaintData.SimVertexIndex, *PaintData.BoneName.ToString(),
+                PaintData.KinematicWeight, PaintData.Stiffness);
+        }
+    }
+
+    UE_LOG(ELogLevel::Display, TEXT("ApplyAttachmentPaintData: Applied %d attachments (%d skipped)"),
+        SuccessCount, SkipCount);
 }

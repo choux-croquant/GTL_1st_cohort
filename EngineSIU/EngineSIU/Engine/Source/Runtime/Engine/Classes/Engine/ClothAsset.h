@@ -143,6 +143,10 @@ public:
     //TArray<FClothAttachmentData> AttachmentsData;
     //TArray<uint32> AttachmentIndices;
 
+    // NEW: Attachment paint data (Edit Mode authoring)
+    // Per-vertex attachment data authored in editor and applied at runtime
+    TArray<FClothAttachmentPaintData> AttachmentPaintData;
+
     // Per-vertex painting data for authoring
     TArray<FClothVertexPaintData> VertexPaintData;
 };

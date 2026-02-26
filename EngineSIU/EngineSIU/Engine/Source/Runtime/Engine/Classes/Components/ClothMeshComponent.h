@@ -191,6 +191,37 @@ public:
 
     UPROPERTY(VisibleAnywhere, FString, LastErrorMessage, = "")
 
+    // ===== ATTACHMENT PAINTING (Phase 2) =====
+
+    // Attachment paint mode active
+    UPROPERTY(EditAnywhere, bool, bAttachmentPaintModeActive, = false)
+
+    // Z-threshold for auto-selecting top vertices (0.9 = top 10%)
+    UPROPERTY(EditAnywhere, float, AttachmentZThreshold, = 0.9f)
+
+    // Target bone name for attachment
+    UPROPERTY(EditAnywhere, FName, TargetBoneName, = NAME_None)
+
+    // Kinematic weight for selected vertices (0.0 = free, 1.0 = fully pinned)
+    UPROPERTY(EditAnywhere, float, KinematicWeight, = 1.0f)
+
+    // Attachment stiffness (0.0 = soft, 1.0 = hard)
+    UPROPERTY(EditAnywhere, float, AttachmentStiffness, = 1.0f)
+
+    // Attachment distance (0.0 = kinematic, >0 = LRA with stretch)
+    UPROPERTY(EditAnywhere, float, AttachmentDistance, = 0.0f)
+
+public:
+    // Attachment painting functions
+    void AutoSelectTopVertices();
+    void AssignBoneToSelection();
+    void ApplyAttachmentPaintDataToAsset();
+    void ClearAttachmentPaintData();
+
+protected:
+    // Selected vertex indices (for painting)
+    TArray<uint32> SelectedVertexIndices;
+
 protected:
     // Materials
     TArray<UMaterial *> Materials;

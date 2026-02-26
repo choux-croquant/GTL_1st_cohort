@@ -102,6 +102,9 @@ void UClothAsset::SerializeAsset(FArchive &Ar)
     //Ar << AttachmentsData;
     //Ar << AttachmentIndices;
 
+    // NEW: Attachment paint data (Edit Mode authoring)
+    Ar << AttachmentPaintData;
+
     // Vertex paint data
     Ar << VertexPaintData;
 
